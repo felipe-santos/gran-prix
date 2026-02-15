@@ -10,6 +10,7 @@ impl Backend for CPUBackend {
         "CPU (SIMD + Rayon)"
     }
 
+    #[tracing::instrument(skip(self, a, b), name = "kernel_matmul")]
     fn matmul_t(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool) -> Result<Tensor> {
         let lhs = if trans_a { a.t() } else { a.view() };
         let rhs = if trans_b { b.t() } else { b.view() };
@@ -38,6 +39,7 @@ impl Backend for CPUBackend {
         Ok(res)
     }
 
+    #[tracing::instrument(skip(self, a, b), name = "kernel_add_relu_fused")]
     fn add_relu(&self, a: &Tensor, b: &Tensor) -> Result<Tensor> {
         use ndarray::Zip;
         let mut res = a.clone();

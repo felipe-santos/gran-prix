@@ -1,4 +1,5 @@
 pub mod layers;
+pub mod macros;
 pub mod activations;
 pub mod optim;
 pub mod loss;

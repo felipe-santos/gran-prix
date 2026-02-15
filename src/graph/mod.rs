@@ -157,6 +157,7 @@ impl Graph {
     }
 
     /// Forward pass: Computes and caches values
+    #[tracing::instrument(skip(self), name = "graph_execute")]
     pub fn execute(&mut self, target: NodeId) -> Result<Tensor> {
         if let Some(val) = &self.values[target.0] {
             return Ok(val.clone());
@@ -190,6 +191,7 @@ impl Graph {
     }
 
     /// Backward pass: Propagates gradients starting from the target node
+    #[tracing::instrument(skip(self, grad_output), name = "graph_backward")]
     pub fn backward(&mut self, target: NodeId, grad_output: Tensor) -> Result<()> {
         // Reset gradients
         for g in &mut self.gradients {
