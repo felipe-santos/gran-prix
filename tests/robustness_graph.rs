@@ -56,7 +56,6 @@ fn test_diamond_topology() {
     
     graph.execute(y).unwrap();
     graph.backward(y, array![[1.0, 1.0]].into_dyn().into()).unwrap();
-    
     // Grad should be d(ReLU)/dx + d(Sigmoid)/dx
     // For x=1: d(ReLU)/dx = 1.0
     // d(Sigmoid)/dx at x=1 is sigmoid(1)*(1-sigmoid(1)) = 0.731 * 0.269 = 0.1966

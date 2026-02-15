@@ -34,12 +34,5 @@ fn main() -> anyhow::Result<()> {
     let result = new_graph.execute(out_node)?;
     println!("Result: {:?}", result);
     
-    if result.view() == array![[1.0, 1.0]].into_dyn().view() {
-        println!("✅ SUCCESS: Graph was perfectly preserved through serialization.");
-    } else {
-        println!("❌ ERROR: Result mismatch after re-load.");
-    }
- bitumen
-
     Ok(())
 }
