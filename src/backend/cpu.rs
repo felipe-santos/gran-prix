@@ -40,34 +40,45 @@ impl Backend for CPUBackend {
         
         let mut output = ndarray::Array4::<f32>::zeros((n, co, oh, ow));
         
-        use rayon::prelude::*;
-
-        output.axis_iter_mut(ndarray::Axis(0))
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(ni, mut out_batch)| {
-                for coi in 0..co {
-                    for hi in 0..oh {
-                        for wi in 0..ow {
-                            let mut sum = 0.0;
-                            for cii in 0..ci {
-                                for k_hi in 0..kh {
-                                    for k_wi in 0..kw {
-                                        let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
-                                        let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
-                                        
-                                        if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
-                                            sum += input4[[ni, cii, in_h as usize, in_w as usize]] * 
-                                                   weight4[[coi, cii, k_hi, k_wi]];
-                                        }
+        let kernel = |(ni, mut out_batch): (usize, ndarray::ArrayViewMut3<f32>)| {
+            for coi in 0..co {
+                for hi in 0..oh {
+                    for wi in 0..ow {
+                        let mut sum = 0.0;
+                        for cii in 0..ci {
+                            for k_hi in 0..kh {
+                                for k_wi in 0..kw {
+                                    let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
+                                    let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
+                                    
+                                    if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
+                                        sum += input4[[ni, cii, in_h as usize, in_w as usize]] * 
+                                                weight4[[coi, cii, k_hi, k_wi]];
                                     }
                                 }
                             }
-                            out_batch[[coi, hi, wi]] = sum;
                         }
+                        out_batch[[coi, hi, wi]] = sum;
                     }
                 }
-            });
+            }
+        };
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            output.axis_iter_mut(ndarray::Axis(0))
+                .into_par_iter()
+                .enumerate()
+                .for_each(kernel);
+        }
+
+        #[cfg(not(feature = "rayon"))]
+        {
+            output.axis_iter_mut(ndarray::Axis(0))
+                .enumerate()
+                .for_each(kernel);
+        }
         
         Ok(output.into_dyn().into())
     }
@@ -91,57 +102,79 @@ impl Backend for CPUBackend {
         let mut grad_input = ndarray::Array4::<f32>::zeros((n, ci, h, w));
         let mut grad_weight = ndarray::Array4::<f32>::zeros((co, ci, kh, kw));
         
-        use rayon::prelude::*;
-        
-        grad_input.axis_iter_mut(ndarray::Axis(0))
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(ni, mut g_in_batch)| {
-                for coi in 0..co {
-                    for hi in 0..oh {
-                        for wi in 0..ow {
-                            let g_out = grad_out4[[ni, coi, hi, wi]];
-                            for cii in 0..ci {
-                                for k_hi in 0..kh {
-                                    for k_wi in 0..kw {
-                                        let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
-                                        let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
-                                        
-                                        if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
-                                            g_in_batch[[cii, in_h as usize, in_w as usize]] += g_out * weight4[[coi, cii, k_hi, k_wi]];
-                                        }
+        let kernel_grad_input = |(ni, mut g_in_batch): (usize, ndarray::ArrayViewMut3<f32>)| {
+            for coi in 0..co {
+                for hi in 0..oh {
+                    for wi in 0..ow {
+                        let g_out = grad_out4[[ni, coi, hi, wi]];
+                        for cii in 0..ci {
+                            for k_hi in 0..kh {
+                                for k_wi in 0..kw {
+                                    let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
+                                    let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
+                                    
+                                    if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
+                                        g_in_batch[[cii, in_h as usize, in_w as usize]] += g_out * weight4[[coi, cii, k_hi, k_wi]];
                                     }
                                 }
                             }
                         }
                     }
                 }
-            });
+            }
+        };
 
-        grad_weight.axis_iter_mut(ndarray::Axis(0))
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(coi, mut g_w_co)| {
-                for ni in 0..n {
-                    for hi in 0..oh {
-                        for wi in 0..ow {
-                            let g_out = grad_out4[[ni, coi, hi, wi]];
-                            for cii in 0..ci {
-                                for k_hi in 0..kh {
-                                    for k_wi in 0..kw {
-                                        let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
-                                        let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
-                                        
-                                        if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
-                                            g_w_co[[cii, k_hi, k_wi]] += g_out * input4[[ni, cii, in_h as usize, in_w as usize]];
-                                        }
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            grad_input.axis_iter_mut(ndarray::Axis(0))
+                .into_par_iter()
+                .enumerate()
+                .for_each(kernel_grad_input);
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            grad_input.axis_iter_mut(ndarray::Axis(0))
+                .enumerate()
+                .for_each(kernel_grad_input);
+        }
+
+        let kernel_grad_weight = |(coi, mut g_w_co): (usize, ndarray::ArrayViewMut3<f32>)| {
+            for ni in 0..n {
+                for hi in 0..oh {
+                    for wi in 0..ow {
+                        let g_out = grad_out4[[ni, coi, hi, wi]];
+                        for cii in 0..ci {
+                            for k_hi in 0..kh {
+                                for k_wi in 0..kw {
+                                    let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
+                                    let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
+                                    
+                                    if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
+                                        g_w_co[[cii, k_hi, k_wi]] += g_out * input4[[ni, cii, in_h as usize, in_w as usize]];
                                     }
                                 }
                             }
                         }
                     }
                 }
-            });
+            }
+        };
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            grad_weight.axis_iter_mut(ndarray::Axis(0))
+                .into_par_iter()
+                .enumerate()
+                .for_each(kernel_grad_weight);
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            grad_weight.axis_iter_mut(ndarray::Axis(0))
+                .enumerate()
+                .for_each(kernel_grad_weight);
+        }
         
         Ok((grad_input.into_dyn().into(), grad_weight.into_dyn().into()))
     }
@@ -157,27 +190,37 @@ impl Backend for CPUBackend {
         
         let mut output = ndarray::Array4::<f32>::zeros((n, c, oh, ow));
         
-        use rayon::prelude::*;
-        
-        output.axis_iter_mut(ndarray::Axis(0))
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(ni, mut out_batch)| {
-                for ci in 0..c {
-                    for hi in 0..oh {
-                        for wi in 0..ow {
-                            let mut max_val = f32::NEG_INFINITY;
-                            for kh in 0..kernel_size {
-                                for kw in 0..kernel_size {
-                                    let val = input4[[ni, ci, hi * stride + kh, wi * stride + kw]];
-                                    if val > max_val { max_val = val; }
-                                }
+        let kernel = |(ni, mut out_batch): (usize, ndarray::ArrayViewMut3<f32>)| {
+            for ci in 0..c {
+                for hi in 0..oh {
+                    for wi in 0..ow {
+                        let mut max_val = f32::NEG_INFINITY;
+                        for kh in 0..kernel_size {
+                            for kw in 0..kernel_size {
+                                let val = input4[[ni, ci, hi * stride + kh, wi * stride + kw]];
+                                if val > max_val { max_val = val; }
                             }
-                            out_batch[[ci, hi, wi]] = max_val;
                         }
+                        out_batch[[ci, hi, wi]] = max_val;
                     }
                 }
-            });
+            }
+        };
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            output.axis_iter_mut(ndarray::Axis(0))
+                .into_par_iter()
+                .enumerate()
+                .for_each(kernel);
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            output.axis_iter_mut(ndarray::Axis(0))
+                .enumerate()
+                .for_each(kernel);
+        }
         
         Ok(output.into_dyn().into())
     }
@@ -196,38 +239,48 @@ impl Backend for CPUBackend {
         
         let mut grad_input = ndarray::Array4::<f32>::zeros((n, c, h, w));
         
-        use rayon::prelude::*;
-        
-        grad_input.axis_iter_mut(ndarray::Axis(0))
-            .into_par_iter()
-            .enumerate()
-            .for_each(|(ni, mut g_in_batch)| {
-                for ci in 0..c {
-                    for hi in 0..oh {
-                        for wi in 0..ow {
-                            let g_out = grad_out4[[ni, ci, hi, wi]];
-                            
-                            let mut max_val = f32::NEG_INFINITY;
-                            let mut max_h = 0;
-                            let mut max_w = 0;
-                            
-                            for kh in 0..kernel_size {
-                                for kw in 0..kernel_size {
-                                    let cur_h = hi * stride + kh;
-                                    let cur_w = wi * stride + kw;
-                                    let val = input4[[ni, ci, cur_h, cur_w]];
-                                    if val > max_val {
-                                        max_val = val;
-                                        max_h = cur_h;
-                                        max_w = cur_w;
-                                    }
+        let kernel = |(ni, mut g_in_batch): (usize, ndarray::ArrayViewMut3<f32>)| {
+            for ci in 0..c {
+                for hi in 0..oh {
+                    for wi in 0..ow {
+                        let g_out = grad_out4[[ni, ci, hi, wi]];
+                        
+                        let mut max_val = f32::NEG_INFINITY;
+                        let mut max_h = 0;
+                        let mut max_w = 0;
+                        
+                        for kh in 0..kernel_size {
+                            for kw in 0..kernel_size {
+                                let cur_h = hi * stride + kh;
+                                let cur_w = wi * stride + kw;
+                                let val = input4[[ni, ci, cur_h, cur_w]];
+                                if val > max_val {
+                                    max_val = val;
+                                    max_h = cur_h;
+                                    max_w = cur_w;
                                 }
                             }
-                            g_in_batch[[ci, max_h, max_w]] += g_out;
                         }
+                        g_in_batch[[ci, max_h, max_w]] += g_out;
                     }
                 }
-            });
+            }
+        };
+
+        #[cfg(feature = "rayon")]
+        {
+            use rayon::prelude::*;
+            grad_input.axis_iter_mut(ndarray::Axis(0))
+                .into_par_iter()
+                .enumerate()
+                .for_each(kernel);
+        }
+        #[cfg(not(feature = "rayon"))]
+        {
+            grad_input.axis_iter_mut(ndarray::Axis(0))
+                .enumerate()
+                .for_each(kernel);
+        }
         
         Ok(grad_input.into_dyn().into())
     }
@@ -238,7 +291,12 @@ impl Backend for CPUBackend {
 
     fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor> {
         let mut res = x.clone();
+        #[cfg(feature = "rayon")]
         Zip::from(res.view_mut()).par_for_each(|v| {
+            *v = 1.0 / (1.0 + (-*v).exp());
+        });
+        #[cfg(not(feature = "rayon"))]
+        Zip::from(res.view_mut()).for_each(|v| {
             *v = 1.0 / (1.0 + (-*v).exp());
         });
         Ok(res)
@@ -246,7 +304,12 @@ impl Backend for CPUBackend {
 
     fn relu(&self, x: &Tensor) -> GPResult<Tensor> {
         let mut res = x.clone();
+        #[cfg(feature = "rayon")]
         Zip::from(res.view_mut()).par_for_each(|v| {
+            if *v < 0.0 { *v = 0.0; }
+        });
+        #[cfg(not(feature = "rayon"))]
+        Zip::from(res.view_mut()).for_each(|v| {
             if *v < 0.0 { *v = 0.0; }
         });
         Ok(res)
@@ -266,7 +329,12 @@ impl Backend for CPUBackend {
 
     fn relu_backward(&self, input: &Tensor, grad_output: &Tensor) -> GPResult<Tensor> {
         let mut grad = grad_output.try_view()?.to_owned();
+        #[cfg(feature = "rayon")]
         Zip::from(grad.view_mut()).and(input.try_view()?).par_for_each(|g, &i| {
+            if i <= 0.0 { *g = 0.0; }
+        });
+        #[cfg(not(feature = "rayon"))]
+        Zip::from(grad.view_mut()).and(input.try_view()?).for_each(|g, &i| {
             if i <= 0.0 { *g = 0.0; }
         });
         Ok(grad.into_dyn().into())
@@ -274,7 +342,12 @@ impl Backend for CPUBackend {
 
     fn sigmoid_backward(&self, output: &Tensor, grad_output: &Tensor) -> GPResult<Tensor> {
         let mut grad = grad_output.try_view()?.to_owned();
+        #[cfg(feature = "rayon")]
         Zip::from(grad.view_mut()).and(output.try_view()?).par_for_each(|g, &si| {
+            *g *= si * (1.0 - si);
+        });
+        #[cfg(not(feature = "rayon"))]
+        Zip::from(grad.view_mut()).and(output.try_view()?).for_each(|g, &si| {
             *g *= si * (1.0 - si);
         });
         Ok(grad.into_dyn().into())
