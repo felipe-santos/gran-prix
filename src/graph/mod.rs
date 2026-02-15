@@ -5,7 +5,6 @@ pub mod verifier;
 pub mod buffer_pool;
 use crate::backend::Backend;
 use crate::Tensor;
-use crate::tensor::TensorOps;
 use anyhow::Result;
 use serde::{Serialize, Deserialize};
 
