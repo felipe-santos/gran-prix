@@ -12,6 +12,7 @@ console_error_panic_hook = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = "0.4"
 ndarray = { version = "0.15", features = ["serde"] }
+getrandom = { version = "0.2", features = ["js"] }
 
 [dependencies.gran-prix]
 path = "../"

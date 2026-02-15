@@ -22,3 +22,8 @@
 /origin
 
 model.json
+
+demo-web/node_modules
+demo-web/dist
+
+gran-prix-wasm/target
