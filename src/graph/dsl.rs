@@ -14,6 +14,10 @@ impl<'a> GraphBuilder<'a> {
         self.graph.input(tensor)
     }
 
+    pub fn param(&mut self, tensor: Tensor) -> NodeId {
+        self.graph.param(tensor)
+    }
+
     pub fn matmul(&mut self, a: NodeId, b: NodeId) -> NodeId {
         self.graph.op(Box::new(MatMul), vec![a, b])
     }

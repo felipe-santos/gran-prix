@@ -3,14 +3,17 @@ pub mod optimizer;
 use crate::backend::Backend;
 use crate::Tensor;
 use anyhow::Result;
+use serde::{Serialize, Deserialize};
 
 /// Unique identifier for a node in the graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub usize);
 
 /// A node in the computation graph.
+#[derive(Serialize, Deserialize)]
 pub enum Node {
     Input(Tensor),
+    Param(Tensor), // Trainable parameters
     Op {
         op: Box<dyn Operation>,
         inputs: Vec<NodeId>,
@@ -18,6 +21,7 @@ pub enum Node {
 }
 
 /// A generic operation in the DAG.
+#[typetag::serde]
 pub trait Operation: Send + Sync {
     fn name(&self) -> &str;
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor>;
@@ -26,7 +30,9 @@ pub trait Operation: Send + Sync {
 
 // --- Concrete Operations ---
 
+#[derive(Serialize, Deserialize)]
 pub struct MatMul;
+#[typetag::serde]
 impl Operation for MatMul {
     fn name(&self) -> &str { "MatMul" }
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
@@ -41,7 +47,9 @@ impl Operation for MatMul {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Add;
+#[typetag::serde]
 impl Operation for Add {
     fn name(&self) -> &str { "Add" }
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
@@ -53,7 +61,9 @@ impl Operation for Add {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct ReLUOp;
+#[typetag::serde]
 impl Operation for ReLUOp {
     fn name(&self) -> &str { "ReLU" }
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
@@ -68,7 +78,9 @@ impl Operation for ReLUOp {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct SigmoidOp;
+#[typetag::serde]
 impl Operation for SigmoidOp {
     fn name(&self) -> &str { "Sigmoid" }
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
@@ -85,12 +97,16 @@ impl Operation for SigmoidOp {
 }
 
 /// The Execution Graph (Planta).
+#[derive(Serialize, Deserialize)]
 pub struct Graph {
     nodes: Vec<Node>,
-    backend: Box<dyn Backend>,
+    #[serde(skip)]
+    backend: Option<Box<dyn Backend>>,
     /// Cache of values from the last forward pass
+    #[serde(skip)]
     values: Vec<Option<Tensor>>,
     /// Accumulated gradients
+    #[serde(skip)]
     gradients: Vec<Option<Tensor>>,
 }
 
@@ -98,15 +114,35 @@ impl Graph {
     pub fn new(backend: Box<dyn Backend>) -> Self {
         Self {
             nodes: Vec::new(),
-            backend,
+            backend: Some(backend),
             values: Vec::new(),
             gradients: Vec::new(),
+        }
+    }
+
+    /// Sets the backend after deserialization and initializes internal state
+    pub fn set_backend(&mut self, backend: Box<dyn Backend>) {
+        self.backend = Some(backend);
+        // Re-initialize caches after deserialization
+        if self.values.len() < self.nodes.len() {
+            self.values.resize(self.nodes.len(), None);
+        }
+        if self.gradients.len() < self.nodes.len() {
+            self.gradients.resize(self.nodes.len(), None);
         }
     }
 
     pub fn input(&mut self, tensor: Tensor) -> NodeId {
         let id = NodeId(self.nodes.len());
         self.nodes.push(Node::Input(tensor));
+        self.values.push(None);
+        self.gradients.push(None);
+        id
+    }
+
+    pub fn param(&mut self, tensor: Tensor) -> NodeId {
+        let id = NodeId(self.nodes.len());
+        self.nodes.push(Node::Param(tensor));
         self.values.push(None);
         self.gradients.push(None);
         id
@@ -128,7 +164,7 @@ impl Graph {
 
         // Clone node data to avoid borrow conflict
         let node_data = match &self.nodes[target.0] {
-            Node::Input(t) => return {
+            Node::Input(t) | Node::Param(t) => return {
                 self.values[target.0] = Some(t.clone());
                 Ok(t.clone())
             },
@@ -140,9 +176,11 @@ impl Graph {
             input_tensors.push(self.execute(input_id)?);
         }
 
+        let backend = self.backend.as_ref().ok_or_else(|| anyhow::anyhow!("Backend not initialized"))?;
+
         // Re-borrow the operation (this is safe now)
         let val = if let Node::Op { op, .. } = &self.nodes[target.0] {
-            op.forward(&input_tensors, self.backend.as_ref())?
+            op.forward(&input_tensors, backend.as_ref())?
         } else {
             unreachable!()
         };
@@ -162,6 +200,8 @@ impl Graph {
 
         // Traverse nodes in reverse order (assuming they were added in topological order)
         // For a true DAG we'd need a topological sort, but for most models construction order works.
+        let backend = self.backend.as_ref().ok_or_else(|| anyhow::anyhow!("Backend not initialized"))?;
+
         for i in (0..self.nodes.len()).rev() {
             if let Some(grad) = self.gradients[i].clone() {
                 if let Node::Op { op, inputs } = &self.nodes[i] {
@@ -170,7 +210,7 @@ impl Graph {
                         input_tensors.push(self.values[input_id.0].as_ref().unwrap().clone());
                     }
 
-                    let input_grads = op.backward(&input_tensors, &grad, self.backend.as_ref())?;
+                    let input_grads = op.backward(&input_tensors, &grad, backend.as_ref())?;
 
                     for (j, &input_id) in inputs.iter().enumerate() {
                         let g = &input_grads[j];

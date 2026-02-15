@@ -4,7 +4,9 @@ use anyhow::Result;
 /// Professional Optimizer for the Execution Graph.
 pub struct GraphOptimizer;
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct AddReLUOp;
+#[typetag::serde]
 impl crate::graph::Operation for AddReLUOp {
     fn name(&self) -> &str { "AddReLU (Fused)" }
     fn forward(&self, inputs: &[crate::Tensor], backend: &dyn crate::backend::Backend) -> Result<crate::Tensor> {
