@@ -11,8 +11,14 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
     /// 2D Convolution: [N, Ci, H, W] * [Co, Ci, Kh, Kw] -> [N, Co, Oh, Ow]
     fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> Result<Tensor>;
 
+    /// 2D Convolution Backward: calculates gradients for input and weight.
+    fn conv2d_backward(&self, input: &Tensor, weight: &Tensor, grad_output: &Tensor, stride: usize, padding: usize) -> Result<(Tensor, Tensor)>;
+
     /// Max Pooling 2D
     fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> Result<Tensor>;
+
+    /// Max Pooling 2D Backward
+    fn max_pool2d_backward(&self, input: &Tensor, grad_output: &Tensor, kernel_size: usize, stride: usize) -> Result<Tensor>;
 
     fn add(&self, a: &Tensor, b: &Tensor) -> Result<Tensor>;
     fn relu(&self, x: &Tensor) -> Result<Tensor>;

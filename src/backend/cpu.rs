@@ -60,6 +60,49 @@ impl Backend for CPUBackend {
         Ok(output.into_dyn())
     }
 
+    fn conv2d_backward(&self, input: &Tensor, weight: &Tensor, grad_output: &Tensor, stride: usize, padding: usize) -> Result<(Tensor, Tensor)> {
+        let input4 = input.view().into_dimensionality::<ndarray::Ix4>()?;
+        let weight4 = weight.view().into_dimensionality::<ndarray::Ix4>()?;
+        let grad_out4 = grad_output.view().into_dimensionality::<ndarray::Ix4>()?;
+        
+        let (n, ci, h, w) = input4.dim();
+        let (co, _ci, kh, kw) = weight4.dim();
+        let (_n, _co, oh, ow) = grad_out4.dim();
+        
+        let mut grad_input = ndarray::Array4::<f32>::zeros((n, ci, h, w));
+        let mut grad_weight = ndarray::Array4::<f32>::zeros((co, ci, kh, kw));
+        
+        // Use chunks to parallelize over batch and output channels
+        // For simplicity and to avoid complex mutexes on grad_weight, we'll keep it simple for now or use a different strategy.
+        // Actually, for grad_input, since each output affects multiple inputs, we need to be careful.
+        
+        for ni in 0..n {
+            for coi in 0..co {
+                for hi in 0..oh {
+                    for wi in 0..ow {
+                        let g_out = grad_out4[[ni, coi, hi, wi]];
+                        
+                        for cii in 0..ci {
+                            for k_hi in 0..kh {
+                                for k_wi in 0..kw {
+                                    let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
+                                    let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
+                                    
+                                    if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
+                                        grad_input[[ni, cii, in_h as usize, in_w as usize]] += g_out * weight4[[coi, cii, k_hi, k_wi]];
+                                        grad_weight[[coi, cii, k_hi, k_wi]] += g_out * input4[[ni, cii, in_h as usize, in_w as usize]];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok((grad_input.into_dyn(), grad_weight.into_dyn()))
+    }
+
     fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> Result<Tensor> {
         let input4 = input.view().into_dimensionality::<ndarray::Ix4>()?;
         let (n, c, h, w) = input4.dim();
@@ -87,6 +130,48 @@ impl Backend for CPUBackend {
         }
         
         Ok(output.into_dyn())
+    }
+
+    fn max_pool2d_backward(&self, input: &Tensor, grad_output: &Tensor, kernel_size: usize, stride: usize) -> Result<Tensor> {
+        let input4 = input.view().into_dimensionality::<ndarray::Ix4>()?;
+        let grad_out4 = grad_output.view().into_dimensionality::<ndarray::Ix4>()?;
+        
+        let (n, c, h, w) = input4.dim();
+        let (_n, _c, oh, ow) = grad_out4.dim();
+        
+        let mut grad_input = ndarray::Array4::<f32>::zeros((n, c, h, w));
+        
+        for ni in 0..n {
+            for ci in 0..c {
+                for hi in 0..oh {
+                    for wi in 0..ow {
+                        let g_out = grad_out4[[ni, ci, hi, wi]];
+                        
+                        // Find max index again
+                        let mut max_val = f32::NEG_INFINITY;
+                        let mut max_h = 0;
+                        let mut max_w = 0;
+                        
+                        for kh in 0..kernel_size {
+                            for kw in 0..kernel_size {
+                                let cur_h = hi * stride + kh;
+                                let cur_w = wi * stride + kw;
+                                let val = input4[[ni, ci, cur_h, cur_w]];
+                                if val > max_val {
+                                    max_val = val;
+                                    max_h = cur_h;
+                                    max_w = cur_w;
+                                }
+                            }
+                        }
+                        
+                        grad_input[[ni, ci, max_h, max_w]] += g_out;
+                    }
+                }
+            }
+        }
+        
+        Ok(grad_input.into_dyn())
     }
 
     fn add(&self, a: &Tensor, b: &Tensor) -> Result<Tensor> {

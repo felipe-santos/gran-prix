@@ -82,11 +82,9 @@ impl Operation for Conv2D {
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
         backend.conv2d(&inputs[0], &inputs[1], self.stride, self.padding)
     }
-    fn backward(&self, _inputs: &[Tensor], _grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
-        // TODO: Implement Autograd for Conv2D
-        // This is complex and usually involves 'im2col' or specialized kernels.
-        // For now, we return zeroes as we focus on forward and inference first.
-        Ok(vec![Tensor::new_zeros(_inputs[0].shape()), Tensor::new_zeros(_inputs[1].shape())])
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
+        let (grad_input, grad_weight) = backend.conv2d_backward(&inputs[0], &inputs[1], grad_output, self.stride, self.padding)?;
+        Ok(vec![grad_input, grad_weight])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
         let (n, _ci, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
@@ -111,9 +109,9 @@ impl Operation for MaxPool2D {
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
         backend.max_pool2d(&inputs[0], self.kernel_size, self.stride)
     }
-    fn backward(&self, _inputs: &[Tensor], _grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
-        // TODO: Implement Autograd for Pooling
-        Ok(vec![Tensor::new_zeros(_inputs[0].shape())])
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
+        let grad_input = backend.max_pool2d_backward(&inputs[0], grad_output, self.kernel_size, self.stride)?;
+        Ok(vec![grad_input])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
         let (n, c, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
