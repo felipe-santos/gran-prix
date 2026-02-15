@@ -1,5 +1,10 @@
-use ndarray::{ArrayD, IxDyn, ArrayViewD, Dimension};
+use ndarray::{ArrayD, IxDyn, ArrayViewD, ArrayViewMutD};
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use crate::{GPError, GPResult, types::Shape, Device};
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
+#[cfg(feature = "cuda")]
+use cudarc::driver::{LaunchAsync};
 
 #[derive(Clone, Debug)]
 pub enum Storage {
@@ -39,12 +44,12 @@ impl<'de> Deserialize<'de> for Storage {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tensor {
     storage: Storage,
-    shape: IxDyn,
+    shape: Shape,
 }
 
 impl Tensor {
     pub fn new_cpu(data: ArrayD<f32>) -> Self {
-        let shape = data.raw_dim();
+        let shape = Shape(data.raw_dim());
         Self {
             storage: Storage::Cpu(data),
             shape,
@@ -52,7 +57,7 @@ impl Tensor {
     }
 
     pub fn shape(&self) -> &[usize] {
-        self.shape.slice()
+        self.shape.as_slice()
     }
 
     pub fn ndim(&self) -> usize {
@@ -60,38 +65,51 @@ impl Tensor {
     }
 
     /// Returns a view of the tensor as an ndarray ArrayViewD if it's on the CPU.
-    /// Returns None if the tensor is on another device.
-    pub fn as_cpu(&self) -> Option<&ArrayD<f32>> {
+    pub fn as_cpu(&self) -> GPResult<&ArrayD<f32>> {
         match &self.storage {
-            Storage::Cpu(data) => Some(data),
+            Storage::Cpu(data) => Ok(data),
             #[cfg(feature = "cuda")]
-            _ => None,
+            Storage::Cuda(_) => Err(GPError::DeviceMismatch { 
+                required: "CPU".to_string(), 
+                actual: "CUDA".to_string() 
+            }),
         }
     }
 
-    pub fn as_cpu_mut(&mut self) -> Option<&mut ArrayD<f32>> {
+    pub fn as_cpu_mut(&mut self) -> GPResult<&mut ArrayD<f32>> {
         match &mut self.storage {
-            Storage::Cpu(data) => Some(data),
+            Storage::Cpu(data) => Ok(data),
             #[cfg(feature = "cuda")]
-            _ => None,
+            Storage::Cuda(_) => Err(GPError::DeviceMismatch { 
+                required: "CPU".to_string(), 
+                actual: "CUDA".to_string() 
+            }),
         }
     }
 
     /// Helper to get ndarray view, with expectation it is on CPU.
     pub fn view(&self) -> ArrayViewD<'_, f32> {
-        self.as_cpu().expect("Attempted to view a non-CPU tensor as ndarray. Move to CPU first.").view()
+        self.as_cpu().expect("Attempted to view a non-CPU tensor. Move to CPU first.").view()
+    }
+
+    pub fn try_view(&self) -> GPResult<ArrayViewD<'_, f32>> {
+        self.as_cpu().map(|a| a.view())
+    }
+
+    pub fn try_view_mut(&mut self) -> GPResult<ndarray::ArrayViewMutD<'_, f32>> {
+        self.as_cpu_mut().map(|a| a.view_mut())
     }
 
     pub fn view_mut(&mut self) -> ndarray::ArrayViewMutD<'_, f32> {
-        self.as_cpu_mut().expect("Attempted to view_mut a non-CPU tensor as ndarray. Move to CPU first.").view_mut()
+        self.as_cpu_mut().expect("Attempted to view_mut a non-CPU tensor. Move to CPU first.").view_mut()
     }
 
     #[cfg(feature = "cuda")]
-    pub fn to_cuda(&self, device: &Arc<cudarc::driver::CudaDevice>) -> anyhow::Result<Self> {
+    pub fn to_cuda(&self, device: &Arc<cudarc::driver::CudaDevice>) -> GPResult<Self> {
         match &self.storage {
             Storage::Cpu(data) => {
-                let slice = device.htod_copy(data.as_slice().ok_or_else(|| anyhow::anyhow!("Non-contiguous CPU tensor"))?.to_vec())
-                    .map_err(|e| anyhow::anyhow!("CUDA HtoD copy failed: {:?}", e))?;
+                let slice = device.htod_copy(data.as_slice().ok_or_else(|| GPError::TensorError("Non-contiguous CPU tensor".to_string()))?.to_vec())
+                    .map_err(|e| GPError::BackendError(format!("CUDA HtoD copy failed: {:?}", e)))?;
                 Ok(Self {
                     storage: Storage::Cuda(Arc::new(slice)),
                     shape: self.shape.clone(),
@@ -101,14 +119,15 @@ impl Tensor {
         }
     }
 
-    pub fn to_host(&self) -> anyhow::Result<Self> {
+    pub fn to_host(&self) -> GPResult<Self> {
         match &self.storage {
             Storage::Cpu(_) => Ok(self.clone()),
             #[cfg(feature = "cuda")]
             Storage::Cuda(slice) => {
                 let data = slice.device().dtoh_sync_copy(slice.as_ref())
-                    .map_err(|e| anyhow::anyhow!("CUDA DtoH copy failed: {:?}", e))?;
-                let array = ArrayD::from_shape_vec(self.shape.clone(), data)?;
+                    .map_err(|e| GPError::BackendError(format!("CUDA DtoH copy failed: {:?}", e)))?;
+                let array = ArrayD::from_shape_vec(self.shape.0.clone(), data)
+                    .map_err(|e| GPError::TensorError(format!("Failed to create host array: {:?}", e)))?;
                 Ok(Self::new_cpu(array))
             }
         }
@@ -122,25 +141,33 @@ impl Tensor {
     pub fn new_cuda(slice: Arc<cudarc::driver::CudaSlice<f32>>, shape: Vec<usize>) -> Self {
         Self {
             storage: Storage::Cuda(slice),
-            shape: IxDyn(&shape),
+            shape: Shape::from_slice(&shape),
         }
     }
 
-    pub fn into_shape(self, shape: &[usize]) -> anyhow::Result<Self> {
+    pub fn into_shape(self, shape: &[usize]) -> GPResult<Self> {
         match self.storage {
             Storage::Cpu(data) => {
-                Ok(Self::new_cpu(data.into_shape(IxDyn(shape))?))
+                let reshaped = data.into_shape(IxDyn(shape))
+                    .map_err(|e| GPError::IncompatibleShapes { 
+                        expected: shape.to_vec(), 
+                        found: self.shape.as_slice().to_vec() 
+                    })?;
+                Ok(Self::new_cpu(reshaped))
             }
             #[cfg(feature = "cuda")]
             Storage::Cuda(slice) => {
                 let new_size: usize = shape.iter().product();
-                let old_size: usize = self.shape.slice().iter().product();
+                let old_size: usize = self.shape.size();
                 if new_size != old_size {
-                    return Err(anyhow::anyhow!("Reshape mismatch: {} vs {}", old_size, new_size));
+                    return Err(GPError::IncompatibleShapes { 
+                        expected: shape.to_vec(), 
+                        found: self.shape.as_slice().to_vec() 
+                    });
                 }
                 Ok(Self {
                     storage: Storage::Cuda(slice),
-                    shape: IxDyn(shape),
+                    shape: Shape::from_slice(shape),
                 })
             }
         }
@@ -308,19 +335,23 @@ impl TensorOps for Tensor {
 }
 
 impl Tensor {
-    pub fn mean(&self) -> Option<f32> {
+    pub fn device(&self) -> Device {
         match &self.storage {
-            Storage::Cpu(data) => data.mean(),
+            Storage::Cpu(_) => Device::Cpu,
             #[cfg(feature = "cuda")]
-            _ => panic!("mean() not implemented for non-CPU tensors"),
+            Storage::Cuda(slice) => Device::Cuda(slice.device().id()),
+        }
+    }
+
+    pub fn mean(&self) -> GPResult<f32> {
+        match &self.storage {
+            Storage::Cpu(data) => data.mean().ok_or_else(|| GPError::TensorError("Empty tensor".to_string())),
+            #[cfg(feature = "cuda")]
+            Storage::Cuda(_) => Err(GPError::NotImplemented("mean() for CUDA".to_string())),
         }
     }
 
     pub fn len(&self) -> usize {
-        match &self.storage {
-            Storage::Cpu(data) => data.len(),
-            #[cfg(feature = "cuda")]
-            Storage::Cuda(_) => self.shape.slice().iter().product(),
-        }
+        self.shape.size()
     }
 }

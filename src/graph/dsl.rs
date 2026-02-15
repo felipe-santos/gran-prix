@@ -1,5 +1,5 @@
-use crate::graph::{Graph, NodeId, MatMul, Add, ReLUOp, SigmoidOp, Conv2D, MaxPool2D};
-use crate::Tensor;
+use crate::graph::{Graph, MatMul, Add, ReLUOp, SigmoidOp, Conv2D, MaxPool2D};
+use crate::{Tensor, NodeId};
 
 pub struct GraphBuilder<'a> {
     graph: &'a mut Graph,

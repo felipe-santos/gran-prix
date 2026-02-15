@@ -3,14 +3,10 @@ pub mod optimizer;
 pub mod memory_planner;
 pub mod verifier;
 pub mod buffer_pool;
-use crate::backend::Backend;
-use crate::Tensor;
-use anyhow::Result;
-use serde::{Serialize, Deserialize};
 
-/// Unique identifier for a node in the graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct NodeId(pub usize);
+use crate::backend::Backend;
+use crate::{GPError, GPResult, Tensor, NodeId, Device, types::Shape};
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 /// A node in the computation graph.
 #[derive(Serialize, Deserialize)]
@@ -37,11 +33,11 @@ impl Node {
 #[typetag::serde]
 pub trait Operation: Send + Sync {
     fn name(&self) -> &str;
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor>;
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>>;
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor>;
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>>;
     
     /// Static shape inference: Determines output shape without computing values.
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>>;
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>>;
 }
 
 // --- Concrete Operations ---
@@ -51,19 +47,22 @@ pub struct MatMul;
 #[typetag::serde]
 impl Operation for MatMul {
     fn name(&self) -> &str { "MatMul" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
         backend.matmul_t(&inputs[0], &inputs[1], false, false)
     }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
         // grad_A = grad_output * B^T
         let grad_a = backend.matmul_t(grad_output, &inputs[1], false, true)?;
         // grad_B = A^T * grad_output
         let grad_b = backend.matmul_t(&inputs[0], grad_output, true, false)?;
         Ok(vec![grad_a, grad_b])
     }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         if input_shapes[0][1] != input_shapes[1][0] {
-            return Err(anyhow::anyhow!("Shape mismatch in MatMul: {:?} and {:?}", input_shapes[0], input_shapes[1]));
+            return Err(GPError::IncompatibleShapes { 
+                expected: vec![input_shapes[0][0], input_shapes[1][0]], 
+                found: vec![input_shapes[0][1], input_shapes[1][0]] 
+            });
         }
         Ok(vec![input_shapes[0][0], input_shapes[1][1]])
     }
@@ -78,20 +77,18 @@ pub struct Conv2D {
 #[typetag::serde]
 impl Operation for Conv2D {
     fn name(&self) -> &str { "Conv2D" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
         backend.conv2d(&inputs[0], &inputs[1], self.stride, self.padding)
     }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
-        let (grad_input, grad_weight) = backend.conv2d_backward(&inputs[0], &inputs[1], grad_output, self.stride, self.padding)?;
-        Ok(vec![grad_input, grad_weight])
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+        let (gi, gw) = backend.conv2d_backward(&inputs[0], &inputs[1], grad_output, self.stride, self.padding)?;
+        Ok(vec![gi, gw])
     }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         let (n, _ci, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
         let (co, _ci_w, kh, kw) = (input_shapes[1][0], input_shapes[1][1], input_shapes[1][2], input_shapes[1][3]);
-        
         let oh = (h + 2 * self.padding - kh) / self.stride + 1;
         let ow = (w + 2 * self.padding - kw) / self.stride + 1;
-        
         Ok(vec![n, co, oh, ow])
     }
 }
@@ -105,14 +102,13 @@ pub struct MaxPool2D {
 #[typetag::serde]
 impl Operation for MaxPool2D {
     fn name(&self) -> &str { "MaxPool2D" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
         backend.max_pool2d(&inputs[0], self.kernel_size, self.stride)
     }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
-        let grad_input = backend.max_pool2d_backward(&inputs[0], grad_output, self.kernel_size, self.stride)?;
-        Ok(vec![grad_input])
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+        Ok(vec![backend.max_pool2d_backward(&inputs[0], grad_output, self.kernel_size, self.stride)?])
     }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         let (n, c, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
         let oh = (h - self.kernel_size) / self.stride + 1;
         let ow = (w - self.kernel_size) / self.stride + 1;
@@ -125,15 +121,17 @@ pub struct Add;
 #[typetag::serde]
 impl Operation for Add {
     fn name(&self) -> &str { "Add" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
         backend.add(&inputs[0], &inputs[1])
     }
-    fn backward(&self, _inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
+    fn backward(&self, _inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
         // Identity for both inputs
         Ok(vec![grad_output.clone(), grad_output.clone()])
     }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
-        // Element-wise or broadcast: assuming shapes match for now
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
+        if input_shapes[0] != input_shapes[1] {
+            return Err(GPError::IncompatibleShapes { expected: input_shapes[0].clone(), found: input_shapes[1].clone() });
+        }
         Ok(input_shapes[0].clone())
     }
 }
@@ -143,14 +141,13 @@ pub struct ReLUOp;
 #[typetag::serde]
 impl Operation for ReLUOp {
     fn name(&self) -> &str { "ReLU" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
         backend.relu(&inputs[0])
     }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
-        let grad = backend.relu_backward(&inputs[0], grad_output)?;
-        Ok(vec![grad])
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+        Ok(vec![backend.relu_backward(&inputs[0], grad_output)?])
     }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         Ok(input_shapes[0].clone())
     }
 }
@@ -160,15 +157,17 @@ pub struct SigmoidOp;
 #[typetag::serde]
 impl Operation for SigmoidOp {
     fn name(&self) -> &str { "Sigmoid" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
         backend.sigmoid(&inputs[0])
     }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
-        let s = backend.sigmoid(&inputs[0])?;
-        let grad = backend.sigmoid_backward(&s, grad_output)?;
-        Ok(vec![grad])
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+        // inputs[0] is X, but sigmoid_backward needs Y = sigmoid(X)
+        // For efficiency, some backends might prefer the output Y.
+        // Let's assume our backend.sigmoid_backward takes Y.
+        let y = backend.sigmoid(&inputs[0])?; 
+        Ok(vec![backend.sigmoid_backward(&y, grad_output)?])
     }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         Ok(input_shapes[0].clone())
     }
 }
@@ -181,21 +180,22 @@ pub struct Reshape {
 #[typetag::serde]
 impl Operation for Reshape {
     fn name(&self) -> &str { "Reshape" }
-    fn forward(&self, inputs: &[Tensor], _backend: &dyn Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], _backend: &dyn Backend) -> GPResult<Tensor> {
         let mut t = inputs[0].clone();
         t = t.into_shape(self.target_shape.as_slice())?.into_dyn();
         Ok(t)
     }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
         let original_shape = inputs[0].shape();
         let mut grad = grad_output.clone();
         grad = grad.into_shape(original_shape)?.into_dyn();
         Ok(vec![grad])
     }
-    fn output_shape(&self, _input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    fn output_shape(&self, _input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         Ok(self.target_shape.clone())
     }
 }
+
 
 /// The Execution Graph (Planta).
 #[derive(Serialize, Deserialize)]
@@ -258,78 +258,80 @@ impl Graph {
     }
 
     /// Forward pass: Computes and caches values
-    #[tracing::instrument(skip(self), name = "graph_execute")]
-    pub fn execute(&mut self, target: NodeId) -> Result<Tensor> {
-        if let Some(val) = &self.values[target.0] {
+    pub fn execute(&mut self, target: NodeId) -> GPResult<Tensor> {
+        // Check cache with explicit type hint for compiler
+        if let Some(val) = self.values.get(target.0).and_then(|v: &Option<Tensor>| v.as_ref()) {
             return Ok(val.clone());
         }
 
-        // Clone node data to avoid borrow conflict
-        let node_data = match &self.nodes[target.0] {
-            Node::Input(t) | Node::Param(t) => return {
-                self.values[target.0] = Some(t.clone());
-                Ok(t.clone())
-            },
-            Node::Op { op, inputs } => (op.name().to_string(), inputs.clone()),
+        // Get inputs first to avoid long immutable borrow of self.nodes
+        let inputs = match self.nodes.get(target.0).ok_or_else(|| GPError::InferenceError(format!("Node not found: {:?}", target)))? {
+            Node::Input(t) => return Ok(t.clone()),
+            Node::Param(t) => return Ok(t.clone()),
+            Node::Op { inputs, .. } => inputs.clone(),
         };
 
-        let mut input_tensors = Vec::new();
-        for &input_id in &node_data.1 {
+        let mut input_tensors = Vec::with_capacity(inputs.len());
+        for &input_id in &inputs {
             input_tensors.push(self.execute(input_id)?);
         }
 
-        let backend = self.backend.as_ref().ok_or_else(|| anyhow::anyhow!("Backend not initialized"))?;
-
-        // Re-borrow the operation (this is safe now)
+        let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
         let val = if let Node::Op { op, .. } = &self.nodes[target.0] {
-            op.forward(&input_tensors, backend.as_ref())?
+            op.forward(&input_tensors, backend)?
         } else {
             unreachable!()
         };
 
+        if self.values.len() <= target.0 {
+            self.values.resize(target.0 + 1, None);
+        }
         self.values[target.0] = Some(val.clone());
         Ok(val)
     }
 
     /// Backward pass: Propagates gradients starting from the target node
-    #[tracing::instrument(skip(self, grad_output), name = "graph_backward")]
-    pub fn backward(&mut self, target: NodeId, grad_output: Tensor) -> Result<()> {
-        // Reset gradients
-        for g in &mut self.gradients {
-            *g = None;
+    pub fn backward(&mut self, target: NodeId, grad_output: Tensor) -> GPResult<()> {
+        if self.gradients.len() <= target.0 {
+            self.gradients.resize(target.0 + 1, None);
         }
 
-        self.gradients[target.0] = Some(grad_output);
+        // Accumulate gradient
+        if let Some(existing_grad) = &self.gradients[target.0] {
+            self.gradients[target.0] = Some(existing_grad + &grad_output);
+        } else {
+            self.gradients[target.0] = Some(grad_output.clone());
+        }
 
-        // Traverse nodes in reverse order (assuming they were added in topological order)
-        // For a true DAG we'd need a topological sort, but for most models construction order works.
-        let backend = self.backend.as_ref().ok_or_else(|| anyhow::anyhow!("Backend not initialized"))?;
+        let inputs = match &self.nodes[target.0] {
+            Node::Op { inputs, .. } => inputs.clone(),
+            _ => return Ok(()),
+        };
 
-        for i in (0..self.nodes.len()).rev() {
-            if let Some(grad) = self.gradients[i].clone() {
-                if let Node::Op { op, inputs } = &self.nodes[i] {
-                    let mut input_tensors = Vec::new();
-                    for &input_id in inputs {
-                        input_tensors.push(self.values[input_id.0].as_ref().unwrap().clone());
-                    }
+        let mut input_tensors = Vec::with_capacity(inputs.len());
+        for &input_id in &inputs {
+            input_tensors.push(self.values[input_id.0].as_ref()
+                .ok_or_else(|| GPError::InferenceError(format!("Value not found for node {:?}", input_id)))?.clone());
+        }
 
-                    let input_grads = op.backward(&input_tensors, &grad, backend.as_ref())?;
-
-                    for (j, &input_id) in inputs.iter().enumerate() {
-                        let g = &input_grads[j];
-                        match &mut self.gradients[input_id.0] {
-                            Some(existing) => *existing += g,
-                            None => self.gradients[input_id.0] = Some(g.clone()),
-                        }
-                    }
-                }
-            }
+        let current_grad = self.gradients[target.0].as_ref().unwrap();
+        let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
+        
+        // Re-borrow op here
+        let input_grads = if let Node::Op { op, .. } = &self.nodes[target.0] {
+            op.backward(&input_tensors, current_grad, backend)?
+        } else {
+            unreachable!()
+        };
+        
+        for (i, &input_id) in inputs.iter().enumerate() {
+            self.backward(input_id, input_grads[i].clone())?;
         }
         Ok(())
     }
 
     pub fn get_gradient(&self, id: NodeId) -> Option<&Tensor> {
-        self.gradients.get(id.0).and_then(|g| g.as_ref())
+        self.gradients.get(id.0).and_then(|g: &Option<Tensor>| g.as_ref())
     }
 
     pub fn nodes(&self) -> &[Node] {
@@ -348,8 +350,8 @@ impl Graph {
 
     /// Mutates parameters based on gradients and a learning rate.
     /// This is a basic form of SGD implementation.
-    pub fn update_parameters(&mut self, learning_rate: f32) -> Result<()> {
-        let backend = self.backend.as_ref().ok_or_else(|| anyhow::anyhow!("Backend not initialized"))?;
+    pub fn update_parameters(&mut self, learning_rate: f32) -> GPResult<()> {
+        let backend = self.backend.as_ref().ok_or(GPError::BackendNotInitialized)?;
         for i in 0..self.nodes.len() {
             if let Some(grad) = &self.gradients[i] {
                 if let Node::Param(ref mut param) = &mut self.nodes[i] {

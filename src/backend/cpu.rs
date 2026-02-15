@@ -1,6 +1,5 @@
 use crate::backend::Backend;
-use crate::Tensor;
-use anyhow::Result;
+use crate::{Tensor, GPResult, GPError};
 use ndarray::Zip;
 
 #[derive(Debug)]
@@ -8,10 +7,14 @@ pub struct CPUBackend;
 
 impl Backend for CPUBackend {
     #[tracing::instrument(skip(self, a, b), name = "kernel_matmul")]
-    fn matmul_t(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool) -> Result<Tensor> {
-        // Convert dynamic dims to 2D for dot product
-        let a2 = a.view().into_dimensionality::<ndarray::Ix2>()?;
-        let b2 = b.view().into_dimensionality::<ndarray::Ix2>()?;
+    fn matmul_t(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool) -> GPResult<Tensor> {
+        let a_view = a.try_view()?;
+        let b_view = b.try_view()?;
+
+        let a2 = a_view.into_dimensionality::<ndarray::Ix2>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0, 0], found: a.shape().to_vec() })?;
+        let b2 = b_view.into_dimensionality::<ndarray::Ix2>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0, 0], found: b.shape().to_vec() })?;
         
         let lhs = if trans_a { a2.t() } else { a2 };
         let rhs = if trans_b { b2.t() } else { b2 };
@@ -20,9 +23,14 @@ impl Backend for CPUBackend {
         Ok(res.into_dyn().into())
     }
 
-    fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> Result<Tensor> {
-        let input4 = input.view().into_dimensionality::<ndarray::Ix4>()?;
-        let weight4 = weight.view().into_dimensionality::<ndarray::Ix4>()?;
+    fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> GPResult<Tensor> {
+        let input_view = input.try_view()?;
+        let weight_view = weight.try_view()?;
+
+        let input4 = input_view.into_dimensionality::<ndarray::Ix4>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: input.shape().to_vec() })?;
+        let weight4 = weight_view.into_dimensionality::<ndarray::Ix4>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: weight.shape().to_vec() })?;
         
         let (n, ci, h, w) = input4.dim();
         let (co, _ci, kh, kw) = weight4.dim();
@@ -34,7 +42,6 @@ impl Backend for CPUBackend {
         
         use rayon::prelude::*;
 
-        // Parallelize over Batch dimension
         output.axis_iter_mut(ndarray::Axis(0))
             .into_par_iter()
             .enumerate()
@@ -65,10 +72,17 @@ impl Backend for CPUBackend {
         Ok(output.into_dyn().into())
     }
 
-    fn conv2d_backward(&self, input: &Tensor, weight: &Tensor, grad_output: &Tensor, stride: usize, padding: usize) -> Result<(Tensor, Tensor)> {
-        let input4 = input.view().into_dimensionality::<ndarray::Ix4>()?;
-        let weight4 = weight.view().into_dimensionality::<ndarray::Ix4>()?;
-        let grad_out4 = grad_output.view().into_dimensionality::<ndarray::Ix4>()?;
+    fn conv2d_backward(&self, input: &Tensor, weight: &Tensor, grad_output: &Tensor, stride: usize, padding: usize) -> GPResult<(Tensor, Tensor)> {
+        let input_view = input.try_view()?;
+        let weight_view = weight.try_view()?;
+        let grad_out_view = grad_output.try_view()?;
+
+        let input4 = input_view.into_dimensionality::<ndarray::Ix4>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: input.shape().to_vec() })?;
+        let weight4 = weight_view.into_dimensionality::<ndarray::Ix4>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: weight.shape().to_vec() })?;
+        let grad_out4 = grad_out_view.into_dimensionality::<ndarray::Ix4>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: grad_output.shape().to_vec() })?;
         
         let (n, ci, h, w) = input4.dim();
         let (co, _ci, kh, kw) = weight4.dim();
@@ -79,7 +93,6 @@ impl Backend for CPUBackend {
         
         use rayon::prelude::*;
         
-        // 1. Gradient for Input: Parallelize over Batch dimension (no write collisions)
         grad_input.axis_iter_mut(ndarray::Axis(0))
             .into_par_iter()
             .enumerate()
@@ -105,7 +118,6 @@ impl Backend for CPUBackend {
                 }
             });
 
-        // 2. Gradient for Weight: Parallelize over Output Channels (each thread owns a slice of weight grad)
         grad_weight.axis_iter_mut(ndarray::Axis(0))
             .into_par_iter()
             .enumerate()
@@ -134,8 +146,10 @@ impl Backend for CPUBackend {
         Ok((grad_input.into_dyn().into(), grad_weight.into_dyn().into()))
     }
 
-    fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> Result<Tensor> {
-        let input4 = input.view().into_dimensionality::<ndarray::Ix4>()?;
+    fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> GPResult<Tensor> {
+        let input_view = input.try_view()?;
+        let input4 = input_view.into_dimensionality::<ndarray::Ix4>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: input.shape().to_vec() })?;
         let (n, c, h, w) = input4.dim();
         
         let oh = (h - kernel_size) / stride + 1;
@@ -168,9 +182,14 @@ impl Backend for CPUBackend {
         Ok(output.into_dyn().into())
     }
 
-    fn max_pool2d_backward(&self, input: &Tensor, grad_output: &Tensor, kernel_size: usize, stride: usize) -> Result<Tensor> {
-        let input4 = input.view().into_dimensionality::<ndarray::Ix4>()?;
-        let grad_out4 = grad_output.view().into_dimensionality::<ndarray::Ix4>()?;
+    fn max_pool2d_backward(&self, input: &Tensor, grad_output: &Tensor, kernel_size: usize, stride: usize) -> GPResult<Tensor> {
+        let input_view = input.try_view()?;
+        let grad_out_view = grad_output.try_view()?;
+
+        let input4 = input_view.into_dimensionality::<ndarray::Ix4>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: input.shape().to_vec() })?;
+        let grad_out4 = grad_out_view.into_dimensionality::<ndarray::Ix4>()
+            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: grad_output.shape().to_vec() })?;
         
         let (n, c, h, w) = input4.dim();
         let (_n, _c, oh, ow) = grad_out4.dim();
@@ -213,11 +232,11 @@ impl Backend for CPUBackend {
         Ok(grad_input.into_dyn().into())
     }
 
-    fn add(&self, a: &Tensor, b: &Tensor) -> Result<Tensor> {
-        Ok((a.view().to_owned() + &b.view()).into_dyn().into())
+    fn add(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
+        Ok((a.try_view()?.to_owned() + &b.try_view()?).into_dyn().into())
     }
 
-    fn sigmoid(&self, x: &Tensor) -> Result<Tensor> {
+    fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor> {
         let mut res = x.clone();
         Zip::from(res.view_mut()).par_for_each(|v| {
             *v = 1.0 / (1.0 + (-*v).exp());
@@ -225,7 +244,7 @@ impl Backend for CPUBackend {
         Ok(res)
     }
 
-    fn relu(&self, x: &Tensor) -> Result<Tensor> {
+    fn relu(&self, x: &Tensor) -> GPResult<Tensor> {
         let mut res = x.clone();
         Zip::from(res.view_mut()).par_for_each(|v| {
             if *v < 0.0 { *v = 0.0; }
@@ -234,30 +253,28 @@ impl Backend for CPUBackend {
     }
 
     #[tracing::instrument(skip(self, a, b), name = "kernel_add_relu_fused")]
-    fn add_relu(&self, a: &Tensor, b: &Tensor) -> Result<Tensor> {
-        let mut res = a.view().to_owned() + &b.view();
+    fn add_relu(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
+        let mut res = a.try_view()?.to_owned() + &b.try_view()?;
         res.map_inplace(|v| if *v < 0.0 { *v = 0.0 });
         Ok(res.into_dyn().into())
     }
 
-    fn update_parameter(&self, param: &mut Tensor, grad: &Tensor, learning_rate: f32) -> Result<()> {
+    fn update_parameter(&self, param: &mut Tensor, grad: &Tensor, learning_rate: f32) -> GPResult<()> {
         *param -= &(grad * learning_rate);
         Ok(())
     }
 
-    fn relu_backward(&self, input: &Tensor, grad_output: &Tensor) -> Result<Tensor> {
-        let mut grad = grad_output.view().to_owned();
-        let _in_view = input.view();
-        Zip::from(grad.view_mut()).and(input.view()).par_for_each(|g, &i| {
+    fn relu_backward(&self, input: &Tensor, grad_output: &Tensor) -> GPResult<Tensor> {
+        let mut grad = grad_output.try_view()?.to_owned();
+        Zip::from(grad.view_mut()).and(input.try_view()?).par_for_each(|g, &i| {
             if i <= 0.0 { *g = 0.0; }
         });
         Ok(grad.into_dyn().into())
     }
 
-    fn sigmoid_backward(&self, output: &Tensor, grad_output: &Tensor) -> Result<Tensor> {
-        let mut grad = grad_output.view().to_owned();
-        let _out_view = output.view();
-        Zip::from(grad.view_mut()).and(output.view()).par_for_each(|g, &si| {
+    fn sigmoid_backward(&self, output: &Tensor, grad_output: &Tensor) -> GPResult<Tensor> {
+        let mut grad = grad_output.try_view()?.to_owned();
+        Zip::from(grad.view_mut()).and(output.try_view()?).par_for_each(|g, &si| {
             *g *= si * (1.0 - si);
         });
         Ok(grad.into_dyn().into())

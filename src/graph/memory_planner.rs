@@ -1,5 +1,5 @@
 use crate::graph::{Graph, Node};
-use anyhow::Result;
+use crate::GPResult;
 use std::collections::HashMap;
 
 /// Plans memory reuse for the computation graph.
@@ -11,7 +11,7 @@ pub struct MemoryPlanner {
 }
 
 impl MemoryPlanner {
-    pub fn plan(graph: &Graph) -> Result<Self> {
+    pub fn plan(graph: &Graph) -> GPResult<Self> {
         let node_count = graph.nodes().len();
         let mut liveness = vec![0; node_count]; // Last node index that uses this tensor
         
@@ -31,9 +31,6 @@ impl MemoryPlanner {
         let mut buffer_count = 0;
 
         for i in 0..node_count {
-            // Check for buffers that can be freed BEFORE allocating for node i
-            // Actually, we can't free inputs of node i until AFTER we compute node i.
-            
             // Allocate buffer for node i
             let buf_idx = if let Some(free_idx) = free_buffers.pop() {
                 free_idx
@@ -47,8 +44,6 @@ impl MemoryPlanner {
             active_buffers.insert(buf_idx, i);
 
             // Free buffers whose tensors are no longer needed
-            // A tensor is no longer needed after its last use (liveness[idx] == i)
-            // We check this for all active buffers.
             let mut to_remove = Vec::new();
             for (&bi, &ni) in &active_buffers {
                 if liveness[ni] <= i {
