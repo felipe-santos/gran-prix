@@ -1,7 +1,7 @@
 use gran_prix::graph::Graph;
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::{model, linear};
-use ndarray::array;
+use gran_prix::{layers::linear};
+
 use tracing_subscriber::fmt::format::FmtSpan;
 
 fn main() -> anyhow::Result<()> {

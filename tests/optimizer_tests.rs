@@ -20,7 +20,7 @@ fn test_kernel_fusion_add_relu() {
     assert!(graph.nodes()[3].op().unwrap().name().contains("ReLU"));
 
     // Optimize
-    GraphOptimizer::optimize(&mut graph);
+    let _ = GraphOptimizer::optimize(&mut graph);
     
     // After optimization:
     // 0: val, 1: val, 2: AddReLU, 3: NOP (ReLU replaced by AddReLU)

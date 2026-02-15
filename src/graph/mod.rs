@@ -125,9 +125,70 @@ impl Operation for Add {
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
         backend.add(&inputs[0], &inputs[1])
     }
-    fn backward(&self, _inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        // Identity for both inputs
-        Ok(vec![grad_output.clone(), grad_output.clone()])
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+        let shape_a = inputs[0].shape();
+        let shape_b = inputs[1].shape();
+        let shape_out = grad_output.shape();
+
+        // Helper to resolve broadcast dimensions
+        let resolve_grad = |target_shape: &[usize], grad: &Tensor| -> GPResult<Tensor> {
+            if target_shape == grad.shape() {
+                return Ok(grad.clone());
+            }
+            // Identify axes to reduce
+            // Broadcasting rules: align from right.
+            // If target has fewer dims, reduce leading dims.
+            // If dim is 1 in target and >1 in grad, reduce that dim.
+            
+            let grad_dims = grad.shape().len();
+            let target_dims = target_shape.len();
+            let mut axes_to_reduce = Vec::new();
+            
+            // Reduce extra leading dims
+            if grad_dims > target_dims {
+                for i in 0..(grad_dims - target_dims) {
+                    axes_to_reduce.push(i);
+                }
+            }
+            
+            // Check matching trailing dims
+            for i in 0..target_dims {
+                let g_idx = grad_dims - 1 - i;
+                let t_idx = target_dims - 1 - i;
+                
+                if target_shape[t_idx] == 1 && grad.shape()[g_idx] > 1 {
+                    axes_to_reduce.push(g_idx);
+                }
+            }
+            
+            if axes_to_reduce.is_empty() {
+                 return Ok(grad.clone());
+            }
+            
+            backend.reduce_sum(grad, &axes_to_reduce, true)
+                .and_then(|t| {
+                    // If we reduced leading dims, we might need to reshape to drop them if keep_dims=true kept them as 1?
+                    // make sure output shape matches target shape exactly.
+                    // Our reduce_sum implementation with keep_dims=true keeps them as 1.
+                    // If target has fewer dims, we need to drop leading 1s.
+                    if t.shape().len() != target_shape.len() {
+                         // Attempt reshape
+                         // Should verify total elements match
+                         // t.values match target.values (broadcasting validation?)
+                         // Just force reshape
+                         let val = t.try_view()?.to_owned().into_shape(target_shape)
+                             .map_err(|_e| GPError::IncompatibleShapes { expected: target_shape.to_vec(), found: t.shape().to_vec() })?;
+                         Ok(val.into_dyn().into())
+                    } else {
+                         Ok(t)
+                    }
+                })
+        };
+
+        Ok(vec![
+            resolve_grad(shape_a, grad_output)?,
+            resolve_grad(shape_b, grad_output)?
+        ])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         if input_shapes[0] != input_shapes[1] {
@@ -265,11 +326,24 @@ impl Graph {
             return Ok(val.clone());
         }
 
-        // Get inputs first to avoid long immutable borrow of self.nodes
-        let inputs = match self.nodes.get(target.0).ok_or_else(|| GPError::InferenceError(format!("Node not found: {:?}", target)))? {
-            Node::Input(t) => return Ok(t.clone()),
-            Node::Param(t) => return Ok(t.clone()),
+        // Helper to check if node is leaf (Input/Param) and return its value if so
+        let leaf_val = match self.nodes.get(target.0).ok_or_else(|| GPError::InferenceError(format!("Node not found: {:?}", target)))? {
+            Node::Input(t) => Some(t.clone()),
+            Node::Param(t) => Some(t.clone()),
+            Node::Op { .. } => None,
+        };
+
+        if let Some(val) = leaf_val {
+            if self.values.len() <= target.0 {
+                self.values.resize(target.0 + 1, None);
+            }
+            self.values[target.0] = Some(val.clone());
+            return Ok(val);
+        }
+
+        let inputs = match &self.nodes[target.0] {
             Node::Op { inputs, .. } => inputs.clone(),
+            _ => unreachable!(),
         };
 
         let mut input_tensors = Vec::with_capacity(inputs.len());
@@ -346,6 +420,12 @@ impl Graph {
     pub fn clear_values(&mut self) {
         for v in &mut self.values {
             *v = None;
+        }
+    }
+
+    pub fn clear_gradients(&mut self) {
+        for g in &mut self.gradients {
+            *g = None;
         }
     }
 

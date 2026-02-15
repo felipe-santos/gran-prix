@@ -279,4 +279,27 @@ impl Backend for CPUBackend {
         });
         Ok(grad.into_dyn().into())
     }
+
+    fn reduce_sum(&self, input: &Tensor, axes: &[usize], keep_dims: bool) -> GPResult<Tensor> {
+        let view = input.try_view()?;
+        
+        let mut curr = view.to_owned();
+        let mut sorted_axes = axes.to_vec();
+        sorted_axes.sort_by(|a, b| b.cmp(a));
+        
+        for &axis in &sorted_axes {
+             curr = curr.sum_axis(ndarray::Axis(axis));
+        }
+        
+        if keep_dims {
+             let mut new_shape = view.shape().to_vec();
+             for &axis in axes {
+                 new_shape[axis] = 1;
+             }
+             curr = curr.into_shape(new_shape)
+                 .map_err(|_e| GPError::IncompatibleShapes { expected: vec![], found: vec![] })?; 
+        }
+
+        Ok(curr.into_dyn().into())
+    }
 }

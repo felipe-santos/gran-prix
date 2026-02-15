@@ -1,50 +1,20 @@
+pub mod storage;
+pub use storage::Storage;
+
 use ndarray::{ArrayD, IxDyn, ArrayViewD};
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use serde::{Serialize, Deserialize};
 use crate::{GPError, GPResult, types::Shape, Device};
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 #[cfg(feature = "cuda")]
 use cudarc::driver::{LaunchAsync};
 
-#[derive(Clone, Debug)]
-pub enum Storage {
-    Cpu(ArrayD<f32>),
-    #[cfg(feature = "cuda")]
-    Cuda(Arc<cudarc::driver::CudaSlice<f32>>),
-}
-
-// Manual Serialize/Deserialize for Storage because CudaSlice doesn't support it.
-// We always save/load from CPU for persistence.
-impl Serialize for Storage {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
-        match self {
-            Storage::Cpu(data) => data.serialize(serializer),
-            #[cfg(feature = "cuda")]
-            Storage::Cuda(slice) => {
-                // For serialization, we must move to host
-                let data = slice.device().dtoh_sync_copy(slice.as_ref())
-                    .map_err(serde::ser::Error::custom)?;
-                serializer.serialize_newtype_variant("Storage", 0, "Cpu", &data)
-            }
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Storage {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
-        let data = ArrayD::<f32>::deserialize(deserializer)?;
-        Ok(Storage::Cpu(data))
-    }
-}
-
 /// An N-Dimensional Tensor abstraction supporting multiple backends.
 /// Encapsulates storage (CPU/GPU) and shape information.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tensor {
-    storage: Storage,
-    shape: Shape,
+    pub(crate) storage: Storage,
+    pub(crate) shape: Shape,
 }
 
 impl Tensor {
@@ -176,6 +146,13 @@ impl Tensor {
     pub fn into_dyn(self) -> Self {
         self
     }
+    
+    pub fn iter(&self) -> ndarray::iter::Iter<'_, f32, IxDyn> {
+        self.as_cpu().expect("iter() only supported on CPU tensors").iter()
+    }
+    pub fn iter_mut(&mut self) -> ndarray::iter::IterMut<'_, f32, IxDyn> {
+        self.as_cpu_mut().expect("iter_mut() only supported on CPU tensors").iter_mut()
+    }
 }
 
 // Implement basic traits for ease of transition
@@ -185,154 +162,8 @@ impl From<ArrayD<f32>> for Tensor {
     }
 }
 
-// Operator Overloading for CPU Tensors
-impl std::ops::Add for &Tensor {
-    type Output = Tensor;
-    fn add(self, rhs: Self) -> Self::Output {
-        match (&self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => (a + b).into(),
-            #[cfg(feature = "cuda")]
-            _ => panic!("Binary operations on non-CPU tensors not yet implemented or mismatched devices."),
-        }
-    }
-}
-
-impl std::ops::Sub for &Tensor {
-    type Output = Tensor;
-    fn sub(self, rhs: Self) -> Self::Output {
-        match (&self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => (a - b).into(),
-            #[cfg(feature = "cuda")]
-            _ => panic!("Binary operations on non-CPU tensors not yet implemented or mismatched devices."),
-        }
-    }
-}
-
-impl std::ops::Sub<Tensor> for Tensor {
-    type Output = Tensor;
-    fn sub(self, rhs: Tensor) -> Self::Output {
-        &self - &rhs
-    }
-}
-
-impl std::ops::Sub<&Tensor> for f32 {
-    type Output = Tensor;
-    fn sub(self, rhs: &Tensor) -> Self::Output {
-        match &rhs.storage {
-            Storage::Cpu(a) => (self - a).into(),
-            #[cfg(feature = "cuda")]
-            _ => panic!("Scalar subtraction on non-CPU tensors not yet implemented."),
-        }
-    }
-}
-
-impl std::ops::Mul<f32> for &Tensor {
-    type Output = Tensor;
-    fn mul(self, rhs: f32) -> Self::Output {
-        match &self.storage {
-            Storage::Cpu(a) => (a * rhs).into(),
-            #[cfg(feature = "cuda")]
-            _ => panic!("Scalar multiplication on non-CPU tensors not yet implemented."),
-        }
-    }
-}
-
-impl std::ops::Mul<&Tensor> for f32 {
-    type Output = Tensor;
-    fn mul(self, rhs: &Tensor) -> Self::Output {
-        rhs * self
-    }
-}
-
-impl std::ops::Mul<&Tensor> for &Tensor {
-    type Output = Tensor;
-    fn mul(self, rhs: &Tensor) -> Self::Output {
-        match (&self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => (a * b).into(),
-            #[cfg(feature = "cuda")]
-            _ => panic!("Element-wise multiplication on non-CPU tensors not yet implemented."),
-        }
-    }
-}
-
-impl std::ops::Div<f32> for &Tensor {
-    type Output = Tensor;
-    fn div(self, rhs: f32) -> Self::Output {
-        match &self.storage {
-            Storage::Cpu(a) => (a / rhs).into(),
-            #[cfg(feature = "cuda")]
-            _ => panic!("Scalar division on non-CPU tensors not yet implemented."),
-        }
-    }
-}
-
-impl std::ops::SubAssign<&Tensor> for Tensor {
-    fn sub_assign(&mut self, rhs: &Tensor) {
-        match (&mut self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => *a -= b,
-            #[cfg(feature = "cuda")]
-            _ => panic!("In-place operations on non-CPU tensors not yet implemented or mismatched devices."),
-        }
-    }
-}
-
-impl std::ops::AddAssign<&Tensor> for Tensor {
-    fn add_assign(&mut self, rhs: &Tensor) {
-        match (&mut self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => *a += b,
-            #[cfg(feature = "cuda")]
-            _ => panic!("In-place operations on non-CPU tensors not yet implemented or mismatched devices."),
-        }
-    }
-}
-
-impl PartialEq for Tensor {
-    fn eq(&self, other: &Self) -> bool {
-        match (&self.storage, &other.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => a == b,
-            #[cfg(feature = "cuda")]
-            _ => panic!("PartialEq comparison involving CUDA tensors not yet implemented"),
-        }
-    }
-}
-
-// Support for .iter() and deref-like access for CPU
-impl Tensor {
-    pub fn iter(&self) -> ndarray::iter::Iter<'_, f32, IxDyn> {
-        self.as_cpu().expect("iter() only supported on CPU tensors").iter()
-    }
-    pub fn iter_mut(&mut self) -> ndarray::iter::IterMut<'_, f32, IxDyn> {
-        self.as_cpu_mut().expect("iter_mut() only supported on CPU tensors").iter_mut()
-    }
-}
-
-/// Helper trait for common tensor operations.
-pub trait TensorOps {
-    fn new_zeros(shape: &[usize]) -> Self;
-    fn new_random(shape: &[usize]) -> Self;
-    fn mapv<F>(&self, f: F) -> Self where F: Fn(f32) -> f32 + Sync + Send;
-}
-
-impl TensorOps for Tensor {
-    fn new_zeros(shape: &[usize]) -> Self {
-        ArrayD::zeros(IxDyn(shape)).into()
-    }
-
-    fn new_random(shape: &[usize]) -> Self {
-        use ndarray_rand::RandomExt;
-        use rand::distributions::Uniform;
-        ArrayD::random(IxDyn(shape), Uniform::new(-1.0, 1.0)).into()
-    }
-
-    fn mapv<F>(&self, f: F) -> Self 
-    where F: Fn(f32) -> f32 + Sync + Send {
-        match &self.storage {
-            Storage::Cpu(data) => data.mapv(f).into(),
-            #[cfg(feature = "cuda")]
-            _ => panic!("mapv not implemented for non-CPU tensors"),
-        }
-    }
-}
+pub mod ops;
+pub use ops::TensorOps;
 
 impl Tensor {
     pub fn device(&self) -> Device {

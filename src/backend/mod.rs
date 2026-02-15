@@ -35,6 +35,11 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
 
     /// Updates a parameter tensor using its gradient and a learning rate.
     /// Standard SGD update: param = param - lr * grad
+    /// Sums the tensor over the specified axes.
+    fn reduce_sum(&self, input: &Tensor, axes: &[usize], keep_dims: bool) -> GPResult<Tensor>;
+
+    /// Updates a parameter tensor using its gradient and a learning rate.
+    /// Standard SGD update: param = param - lr * grad
     fn update_parameter(&self, param: &mut Tensor, grad: &Tensor, learning_rate: f32) -> GPResult<()>;
 }
 

@@ -20,7 +20,7 @@ fn main() -> anyhow::Result<()> {
     println!("Graph constructed (Node {} is ReLU pointing to Node {} Add)", output.0, sum.0);
 
     // 2. Run the Optimizer
-    GraphOptimizer::optimize(&mut graph);
+    let _ = GraphOptimizer::optimize(&mut graph);
 
     // 3. Execution
     println!("\nExecuting Optimized Graph...");

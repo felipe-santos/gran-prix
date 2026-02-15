@@ -2,7 +2,7 @@ use gran_prix::graph::{Graph, Operation};
 use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::backend::Backend;
-use gran_prix::Tensor;
+use gran_prix::{Tensor, GPResult};
 use anyhow::Result;
 use serde::{Serialize, Deserialize};
 use ndarray::array;
@@ -18,20 +18,20 @@ pub struct PowerOp {
 impl Operation for PowerOp {
     fn name(&self) -> &str { "Power" }
     
-    fn forward(&self, inputs: &[Tensor], _backend: &dyn Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], _backend: &dyn Backend) -> GPResult<Tensor> {
         // Use the TensorOps trait mapv
         use gran_prix::tensor::TensorOps;
         Ok(inputs[0].mapv(|v| v.powf(self.exponent)))
     }
 
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
         // d(x^n)/dx = n * x^(n-1)
         use gran_prix::tensor::TensorOps;
         let mut grad = inputs[0].mapv(|v| self.exponent * v.powf(self.exponent - 1.0));
         grad = &grad * grad_output;
         Ok(vec![grad])
     }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         Ok(input_shapes[0].clone())
     }
 }

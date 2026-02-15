@@ -1,7 +1,7 @@
 use gran_prix::graph::{Graph, Operation};
 use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::Tensor;
+use gran_prix::{Tensor, GPResult};
 use anyhow::Result;
 use serde::{Serialize, Deserialize};
 use ndarray::array;
@@ -12,13 +12,13 @@ struct CustomAddOp;
 #[typetag::serde]
 impl Operation for CustomAddOp {
     fn name(&self) -> &str { "CustomAdd" }
-    fn forward(&self, inputs: &[Tensor], _backend: &dyn gran_prix::backend::Backend) -> Result<Tensor> {
+    fn forward(&self, inputs: &[Tensor], _backend: &dyn gran_prix::backend::Backend) -> GPResult<Tensor> {
         Ok(&inputs[0] + &inputs[1])
     }
-    fn backward(&self, _inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn gran_prix::backend::Backend) -> Result<Vec<Tensor>> {
+    fn backward(&self, _inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn gran_prix::backend::Backend) -> GPResult<Vec<Tensor>> {
         Ok(vec![grad_output.clone(), grad_output.clone()])
     }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         Ok(input_shapes[0].clone())
     }
 }

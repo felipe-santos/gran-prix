@@ -39,10 +39,10 @@ fn main() -> anyhow::Result<()> {
     println!("\n--- Step 4: Zero-Allocation Execution Simulation ---");
     for (i, _node) in graph.nodes().iter().enumerate() {
         let buffer_idx = plan.plan[i].unwrap();
-        let shape = &shapes[&gran_prix::graph::NodeId(i)];
+        let shape = &shapes[&gran_prix::NodeId(i)];
         
         // In a real optimized pass, we'd use the pool's buffer as the output
-        let _temp_buffer = pool.get_buffer(buffer_idx, shape);
+        let _temp_buffer = pool.get_buffer(buffer_idx, gran_prix::Shape::from(shape.clone()));
         // ... (kernel invocation with pre-allocated buffer) ...
     }
     

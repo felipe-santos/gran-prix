@@ -30,7 +30,7 @@ fn test_memory_pool_allocation() {
     let mut pool = BufferPool::new(1);
     let shape = vec![2, 2];
     
-    let b1 = pool.get_buffer(0, &shape);
+    let b1 = pool.get_buffer(0, gran_prix::Shape::from(shape.clone()));
     assert_eq!(b1.shape(), &[2, 2]);
     
     // Test verifier with different shapes
