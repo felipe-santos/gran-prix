@@ -29,7 +29,7 @@ impl Verifier {
                     }
 
                     let output_shape = op.output_shape(&input_shapes)
-                        .map_err(|e| GPError::InferenceError(format!("Shape error at node {} ({}): {:?}", i, op.name(), e)))?;
+                        .map_err(|e| GPError::InferenceError(format!("Shape error at node {} ({}): {}", i, op.name(), e)))?;
                     
                     predicted_shapes.insert(id, output_shape);
                 }

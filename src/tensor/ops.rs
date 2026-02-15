@@ -1,5 +1,5 @@
 use super::{Tensor, Storage};
-use crate::{GPError, Device};
+
 use ndarray::{ArrayD, IxDyn};
 #[cfg(feature = "cuda")]
 use ndarray_rand::RandomExt;
@@ -40,7 +40,7 @@ impl std::ops::Sub<&Tensor> for f32 {
     type Output = Tensor;
     fn sub(self, rhs: &Tensor) -> Self::Output {
         match &rhs.storage {
-            (Storage::Cpu(a)) => (self - a).into(),
+            Storage::Cpu(a) => (self - a).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Scalar subtraction on non-CPU tensors not yet implemented."),
         }
@@ -51,7 +51,7 @@ impl std::ops::Mul<f32> for &Tensor {
     type Output = Tensor;
     fn mul(self, rhs: f32) -> Self::Output {
         match &self.storage {
-            (Storage::Cpu(a)) => (a * rhs).into(),
+            Storage::Cpu(a) => (a * rhs).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Scalar multiplication on non-CPU tensors not yet implemented."),
         }
@@ -80,7 +80,7 @@ impl std::ops::Div<f32> for &Tensor {
     type Output = Tensor;
     fn div(self, rhs: f32) -> Self::Output {
         match &self.storage {
-            (Storage::Cpu(a)) => (a / rhs).into(),
+            Storage::Cpu(a) => (a / rhs).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Scalar division on non-CPU tensors not yet implemented."),
         }

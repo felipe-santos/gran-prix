@@ -3,7 +3,7 @@ use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::backend::Backend;
 use gran_prix::{Tensor, GPResult};
-use anyhow::Result;
+
 use serde::{Serialize, Deserialize};
 use ndarray::array;
 

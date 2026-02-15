@@ -128,7 +128,7 @@ impl Operation for Add {
     fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
         let shape_a = inputs[0].shape();
         let shape_b = inputs[1].shape();
-        let shape_out = grad_output.shape();
+        let _shape_out = grad_output.shape();
 
         // Helper to resolve broadcast dimensions
         let resolve_grad = |target_shape: &[usize], grad: &Tensor| -> GPResult<Tensor> {

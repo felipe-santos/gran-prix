@@ -1,38 +1,37 @@
-use gran_prix::models::Sequential;
-use gran_prix::layers::Linear;
-use gran_prix::activations::Sigmoid;
+use gran_prix::graph::Graph;
+use gran_prix::graph::dsl::GraphBuilder;
+use gran_prix::backend::cpu::CPUBackend;
+use gran_prix::{GPResult, Tensor, TensorOps};
 use ndarray::array;
 
-fn main() -> anyhow::Result<()> {
-    // 1. Create and Configure a Model
-    let mut model = Sequential::new();
-    model.add(Linear::new(2, 4, "hidden"));
-    model.add(Sigmoid);
-    model.add(Linear::new(4, 1, "output"));
-    // 1. Initial prediction
-    let input = array![[0.5, 0.5]].into_dyn();
-    let original_out = model.forward(input.clone().into());
-    println!("Original prediction: {:.4}", original_out.view()[[0, 0]]);
+fn main() -> GPResult<()> {
+    println!("🚀 Edge Inference Demo");
 
-    // 2. Save model
-    let json = serde_json::to_string_pretty(&model)?;
-    std::fs::write("model.json", json)?;
-    println!("Model saved to model.json");
+    let backend = Box::new(CPUBackend);
+    let mut graph = Graph::new(backend);
+    let mut gb = GraphBuilder::new(&mut graph);
 
-    // 3. Load model
-    let loaded_json = std::fs::read_to_string("model.json")?;
-    let mut loaded_model: Sequential = serde_json::from_str(&loaded_json)?;
-    println!("Model loaded successfully");
+    // Inputs
+    let input = gb.val(array![[0.5, 0.1]].into_dyn().into());
 
-    // 4. Verify Loaded prediction
-    let loaded_out = loaded_model.forward(input.into());
-    println!("Loaded prediction:   {:.4}", loaded_out.view()[[0, 0]]);
+    // Model Definition
+    // layer 1: Linear(2->4) -> ReLU
+    let w1 = gb.param(Tensor::new_random(&[2, 4]));
+    let b1 = gb.param(Tensor::new_zeros(&[4]));
+    let l1 = gb.matmul(input, w1);
+    let l1_bias = gb.add(l1, b1);
+    let h1 = gb.relu(l1_bias);
 
-    if (original_out.view()[[0, 0]] - loaded_out.view()[[0, 0]]).abs() < 1e-6 {
-        println!("\n✅ Success! Loaded model behavior matches the original.");
-    } else {
-        println!("\n❌ Error: Model behavior mismatch after loading.");
-    }
+    // layer 2: Linear(4->1) -> Sigmoid
+    let w2 = gb.param(Tensor::new_random(&[4, 1]));
+    let b2 = gb.param(Tensor::new_zeros(&[1]));
+    let l2 = gb.matmul(h1, w2);
+    let l2_bias = gb.add(l2, b2);
+    let output = gb.sigmoid(l2_bias);
 
+    // Execution
+    let result = graph.execute(output)?;
+    println!("Inference Result: {:?}", result);
+    
     Ok(())
 }

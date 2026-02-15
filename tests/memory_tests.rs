@@ -44,5 +44,5 @@ fn test_memory_pool_allocation() {
     
     let res = Verifier::verify(&graph);
     assert!(res.is_err());
-    assert!(res.unwrap_err().to_string().contains("Shape mismatch"));
+    assert!(res.unwrap_err().to_string().contains("Incompatible shapes"));
 }
