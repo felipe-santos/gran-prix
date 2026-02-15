@@ -17,9 +17,9 @@ fn main() -> anyhow::Result<()> {
     let mut graph = Graph::new(backend);
     
     let out = model!(&mut graph, g => {
-        let x = g.val(array![[0.1, 0.2, 0.3, 0.4]].into_dyn());
-        let w = g.param(ndarray::Array2::zeros((4, 10)).into_dyn());
-        let b = g.param(ndarray::Array2::zeros((1, 10)).into_dyn());
+        let x = g.val(array![[0.1, 0.2, 0.3, 0.4]].into_dyn().into());
+        let w = g.param(ndarray::Array2::zeros((4, 10)).into_dyn().into());
+        let b = g.param(ndarray::Array2::zeros((1, 10)).into_dyn().into());
         linear!(g, x, w, b)
     });
 
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
     let _res = graph.execute(out)?;
     
     let grad_output = ndarray::Array2::ones((1, 10)).into_dyn();
-    graph.backward(out, grad_output)?;
+    graph.backward(out, grad_output.into())?;
 
     println!("\n✅ Profiling complete. Check the logs for exact kernel durations!");
 

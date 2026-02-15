@@ -1,4 +1,5 @@
 use crate::{Tensor, Layer};
+use crate::tensor::TensorOps;
 
 use serde::{Serialize, Deserialize};
 
@@ -38,7 +39,10 @@ impl Layer for Sigmoid {
 
     fn backward(&mut self, input: &Tensor, grad_output: &Tensor) -> Tensor {
         let output = self.forward(input);
-        grad_output * &output * (1.0 - &output)
+        // Using our new operator overloading for Tensor
+        let one_minus_out = 1.0 - &output;
+        let s_prime = &output * &one_minus_out;
+        grad_output * &s_prime
     }
 
     fn update(&mut self, _learning_rate: f32) {}

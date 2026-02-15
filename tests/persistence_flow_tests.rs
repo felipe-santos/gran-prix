@@ -29,12 +29,12 @@ fn test_full_persistence_with_custom_op() {
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
     
-    let x = gb.val(array![[1.0, 1.0]].into_dyn());
-    let y = gb.val(array![[2.0, 2.0]].into_dyn());
+    let x = gb.val(array![[1.0, 1.0]].into_dyn().into());
+    let y = gb.val(array![[2.0, 2.0]].into_dyn().into());
     let node = graph.op(Box::new(CustomAddOp), vec![x, y]);
     
     let result = graph.execute(node).unwrap();
-    assert_eq!(result, array![[3.0, 3.0]].into_dyn());
+    assert_eq!(result, array![[3.0, 3.0]].into_dyn().into());
     
     // Serialize
     let json = serde_json::to_string(&graph).unwrap();
@@ -44,5 +44,5 @@ fn test_full_persistence_with_custom_op() {
     new_graph.set_backend(Box::new(CPUBackend));
     
     let result_loaded = new_graph.execute(node).unwrap();
-    assert_eq!(result_loaded, array![[3.0, 3.0]].into_dyn());
+    assert_eq!(result_loaded, array![[3.0, 3.0]].into_dyn().into());
 }

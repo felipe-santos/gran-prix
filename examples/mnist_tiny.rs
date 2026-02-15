@@ -2,7 +2,7 @@ use gran_prix::graph::Graph;
 use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::Tensor;
-use ndarray::{ArrayD, Array4, Array2};
+use ndarray::{Array4, Array2};
 use std::time::Instant;
 
 fn generate_synthetic_data(num_samples: usize, img_size: usize) -> (Vec<Tensor>, Vec<f32>) {
@@ -32,7 +32,7 @@ fn generate_synthetic_data(num_samples: usize, img_size: usize) -> (Vec<Tensor>,
             (rand::random::<f32>() - 0.5) * 0.2
         }));
 
-        inputs.push(img.into_dyn());
+        inputs.push(img.into_dyn().into());
         labels.push(label);
     }
     (inputs, labels)
@@ -56,12 +56,12 @@ fn main() {
     // Flatten -> (1, 100)
     // Linear(100, 1) -> Sigmoid
 
-    let x = gb.val(Array4::<f32>::zeros((1, 1, img_size, img_size)).into_dyn());
+    let x = gb.val(Array4::<f32>::zeros((1, 1, img_size, img_size)).into_dyn().into());
     
     // Conv Layer
     let w_conv = gb.param(Array4::<f32>::from_shape_fn((4, 1, 3, 3), |_| {
         (rand::random::<f32>() - 0.5) * 0.1
-    }).into_dyn());
+    }).into_dyn().into());
     let conv = gb.conv2d(x, w_conv, 1, 1);
     let relu1 = gb.relu(conv);
     
@@ -74,8 +74,8 @@ fn main() {
     // Output Layer (Linear)
     let w_out = gb.param(Array2::<f32>::from_shape_fn((100, 1), |_| {
         (rand::random::<f32>() - 0.5) * 0.1
-    }).into_dyn());
-    let b_out = gb.param(Array2::<f32>::zeros((1, 1)).into_dyn());
+    }).into_dyn().into());
+    let b_out = gb.param(Array2::<f32>::zeros((1, 1)).into_dyn().into());
     let logits = gb.linear(flattened, w_out, b_out);
     let prediction = gb.sigmoid(logits);
 
@@ -102,7 +102,7 @@ fn main() {
 
             // 3. Forward
             let out = graph.execute(prediction).unwrap();
-            let pred_val = out[[0, 0]];
+            let pred_val = out.view()[[0, 0]];
             
             // Binary Cross Entropy Loss Gradient: (pred - label)
             let loss_grad = pred_val - label;
@@ -113,7 +113,7 @@ fn main() {
             }
 
             // 4. Backward
-            graph.backward(prediction, Array2::from_elem((1, 1), loss_grad).into_dyn()).unwrap();
+            graph.backward(prediction, Array2::from_elem((1, 1), loss_grad).into_dyn().into()).unwrap();
 
             // 5. Update
             graph.update_parameters(learning_rate).unwrap();
@@ -137,7 +137,7 @@ fn main() {
         }
         graph.clear_values();
         let out = graph.execute(prediction).unwrap();
-        let pred_val = out[[0, 0]];
+        let pred_val = out.view()[[0, 0]];
         if (pred_val > 0.5 && label == 1.0) || (pred_val <= 0.5 && label == 0.0) {
             test_correct += 1;
         }

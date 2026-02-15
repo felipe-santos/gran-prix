@@ -10,14 +10,14 @@ fn main() -> anyhow::Result<()> {
     let mut graph = Graph::new(backend);
     
     let out_node = model!(&mut graph, g => {
-        let x = g.val(array![[1.0, 2.0]].into_dyn());
-        let w = g.param(array![[0.5, 0.1], [0.2, 0.4]].into_dyn());
-        let b = g.param(array![[0.1, 0.1]].into_dyn());
+        let x = g.val(array![[1.0, 2.0]].into_dyn().into());
+        let w = g.param(array![[0.5, 0.1], [0.2, 0.4]].into_dyn().into());
+        let b = g.param(array![[0.1, 0.1]].into_dyn().into());
         linear!(g, x, w, b)
     });
 
     let result = graph.execute(out_node)?;
-    if result == array![[1.0, 1.0]].into_dyn() {
+    if result.view() == array![[1.0, 1.0]].into_dyn().view() {
         println!("✅ Original graph execution successful!");
     }
     
@@ -34,11 +34,12 @@ fn main() -> anyhow::Result<()> {
     let result = new_graph.execute(out_node)?;
     println!("Result: {:?}", result);
     
-    if result == array![[1.0, 1.0]].into_dyn() {
+    if result.view() == array![[1.0, 1.0]].into_dyn().view() {
         println!("✅ SUCCESS: Graph was perfectly preserved through serialization.");
     } else {
         println!("❌ ERROR: Result mismatch after re-load.");
     }
+ bitumen
 
     Ok(())
 }

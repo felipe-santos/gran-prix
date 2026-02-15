@@ -13,9 +13,9 @@ fn main() -> anyhow::Result<()> {
     
     // 1. Build a VALID graph
     println!("Case 1: Validating a correct graph...");
-    let x = gb.val(array![[1.0, 2.0]].into_dyn()); // [1, 2]
-    let w = gb.val(array![[0.5, 0.1], [0.2, 0.4]].into_dyn()); // [2, 2]
-    let _b = gb.val(array![[0.1, 0.1]].into_dyn());
+    let x = gb.val(array![[1.0, 2.0]].into_dyn().into()); // [1, 2]
+    let w = gb.val(array![[0.5, 0.1], [0.2, 0.4]].into_dyn().into()); // [2, 2]
+    let _b = gb.val(array![[0.1, 0.1]].into_dyn().into());
     let _ = gb.matmul(x, w); // Should be [1, 2]
     
     Verifier::verify(&graph)?;
@@ -26,8 +26,8 @@ fn main() -> anyhow::Result<()> {
     let mut bad_graph = Graph::new(Box::new(CPUBackend));
     let mut bgb = GraphBuilder::new(&mut bad_graph);
     
-    let x2 = bgb.val(array![[1.0, 2.0, 3.0]].into_dyn()); // [1, 3]
-    let w2 = bgb.val(array![[0.5, 0.1], [0.2, 0.4]].into_dyn()); // [2, 2]
+    let x2 = bgb.val(array![[1.0, 2.0, 3.0]].into_dyn().into()); // [1, 3]
+    let w2 = bgb.val(array![[0.5, 0.1], [0.2, 0.4]].into_dyn().into()); // [2, 2]
     let _ = bgb.matmul(x2, w2); // Mismatch! 3 != 2
     
     match Verifier::verify(&bad_graph) {

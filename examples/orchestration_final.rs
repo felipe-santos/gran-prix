@@ -14,14 +14,14 @@ fn main() -> anyhow::Result<()> {
     let mut gb = GraphBuilder::new(&mut graph);
     
     // Model Nodes
-    let x = gb.val(array![[1.0, 0.0]].into_dyn());
-    let w1 = gb.val(array![[0.5, 0.5], [0.5, 0.5]].into_dyn());
-    let b1 = gb.val(array![[0.0, 0.0]].into_dyn());
+    let x = gb.val(array![[1.0, 0.0]].into_dyn().into());
+    let w1 = gb.val(array![[0.5, 0.5], [0.5, 0.5]].into_dyn().into());
+    let b1 = gb.val(array![[0.0, 0.0]].into_dyn().into());
     let h1 = gb.linear(x, w1, b1);
     let a1 = gb.relu(h1);
     
-    let w2 = gb.val(array![[0.8, -0.2], [0.3, 0.7]].into_dyn());
-    let b2 = gb.val(array![[0.0, 0.0]].into_dyn());
+    let w2 = gb.val(array![[0.8, -0.2], [0.3, 0.7]].into_dyn().into());
+    let b2 = gb.val(array![[0.0, 0.0]].into_dyn().into());
     let h2 = gb.linear(a1, w2, b2);
     let out = gb.sigmoid(h2);
 

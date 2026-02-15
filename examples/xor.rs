@@ -14,14 +14,14 @@ fn main() {
         [0.0, 1.0],
         [1.0, 0.0],
         [1.0, 1.0]
-    ].into_dyn();
+    ].into_dyn().into();
     
     let targets: Tensor = array![
         [0.0],
         [1.0],
         [1.0],
         [0.0]
-    ].into_dyn();
+    ].into_dyn().into();
 
     // 2. Define Architecture
     let mut model = Sequential::new();
@@ -57,6 +57,6 @@ fn main() {
     println!("\nFinal Results:");
     for i in 0..4 {
         println!("In: {:?} | Expected: {:?} | Predicted: {:.4}", 
-            inputs.slice(ndarray::s![i, ..]), targets.slice(ndarray::s![i, ..]), final_output[[i, 0]]);
+            inputs.view().slice(ndarray::s![i, ..]), targets.view().slice(ndarray::s![i, ..]), final_output.view()[[i, 0]]);
     }
 }

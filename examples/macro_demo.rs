@@ -11,9 +11,9 @@ fn main() -> anyhow::Result<()> {
     
     // Using the macro for a cleaner look
     let target = model!(&mut graph, g => {
-        let x = g.val(array![[1.0, 2.0]].into_dyn());
-        let w = g.param(array![[0.5, 0.1], [0.2, 0.4]].into_dyn());
-        let b = g.param(array![[0.1, 0.1]].into_dyn());
+        let x = g.val(array![[1.0, 2.0]].into_dyn().into());
+        let w = g.param(array![[0.5, 0.1], [0.2, 0.4]].into_dyn().into());
+        let b = g.param(array![[0.1, 0.1]].into_dyn().into());
         
         linear!(g, x, w, b) // Professional sugar
     });

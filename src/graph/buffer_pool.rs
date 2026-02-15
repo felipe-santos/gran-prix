@@ -22,7 +22,8 @@ impl BufferPool {
         }
         
         // Dynamic allocation (fallback or first-time)
-        let new_tensor = Tensor::zeros(shape);
+        use crate::tensor::TensorOps;
+        let new_tensor = Tensor::new_zeros(shape);
         self.buffers[idx] = Some(new_tensor.clone());
         new_tensor
     }

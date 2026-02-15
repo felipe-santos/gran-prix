@@ -146,11 +146,8 @@ impl Operation for ReLUOp {
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
         backend.relu(&inputs[0])
     }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
-        let mut grad = grad_output.clone();
-        ndarray::Zip::from(&mut grad).and(&inputs[0]).for_each(|g, &i| {
-            if i <= 0.0 { *g = 0.0; }
-        });
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
+        let grad = backend.relu_backward(&inputs[0], grad_output)?;
         Ok(vec![grad])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
@@ -168,10 +165,7 @@ impl Operation for SigmoidOp {
     }
     fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>> {
         let s = backend.sigmoid(&inputs[0])?;
-        let mut grad = grad_output.clone();
-        ndarray::Zip::from(&mut grad).and(&s).for_each(|g, &si| {
-            *g *= si * (1.0 - si);
-        });
+        let grad = backend.sigmoid_backward(&s, grad_output)?;
         Ok(vec![grad])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
@@ -355,11 +349,11 @@ impl Graph {
     /// Mutates parameters based on gradients and a learning rate.
     /// This is a basic form of SGD implementation.
     pub fn update_parameters(&mut self, learning_rate: f32) -> Result<()> {
+        let backend = self.backend.as_ref().ok_or_else(|| anyhow::anyhow!("Backend not initialized"))?;
         for i in 0..self.nodes.len() {
             if let Some(grad) = &self.gradients[i] {
                 if let Node::Param(ref mut param) = &mut self.nodes[i] {
-                    // param = param - lr * grad
-                    *param = (param.view().to_owned() - (grad * learning_rate)).into_dyn();
+                    backend.update_parameter(param, grad, learning_rate)?;
                 }
             }
         }

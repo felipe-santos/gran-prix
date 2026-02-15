@@ -24,9 +24,20 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
     fn relu(&self, x: &Tensor) -> Result<Tensor>;
     fn sigmoid(&self, x: &Tensor) -> Result<Tensor>;
 
+    /// ReLU Backward: dL/dX = dL/dY * (Y > 0)
+    fn relu_backward(&self, input: &Tensor, grad_output: &Tensor) -> Result<Tensor>;
+    
+    /// Sigmoid Backward: dL/dX = dL/dY * Y * (1 - Y)
+    fn sigmoid_backward(&self, output: &Tensor, grad_output: &Tensor) -> Result<Tensor>;
+
     /// Fused kernel: ReLU(A + B)
     /// Goal: Minimize memory bandwidth by doing addition and activation in one sweep.
     fn add_relu(&self, a: &Tensor, b: &Tensor) -> Result<Tensor>;
+
+    /// Updates a parameter tensor using its gradient and a learning rate.
+    /// Standard SGD update: param = param - lr * grad
+    fn update_parameter(&self, param: &mut Tensor, grad: &Tensor, learning_rate: f32) -> Result<()>;
 }
 
 pub mod cpu;
+pub mod cuda;

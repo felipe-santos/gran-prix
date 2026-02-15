@@ -17,7 +17,7 @@ impl Backend for CPUBackend {
         let rhs = if trans_b { b2.t() } else { b2 };
         
         let res = lhs.dot(&rhs);
-        Ok(res.into_dyn())
+        Ok(res.into_dyn().into())
     }
 
     fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> Result<Tensor> {
@@ -62,7 +62,7 @@ impl Backend for CPUBackend {
                 }
             });
         
-        Ok(output.into_dyn())
+        Ok(output.into_dyn().into())
     }
 
     fn conv2d_backward(&self, input: &Tensor, weight: &Tensor, grad_output: &Tensor, stride: usize, padding: usize) -> Result<(Tensor, Tensor)> {
@@ -131,7 +131,7 @@ impl Backend for CPUBackend {
                 }
             });
         
-        Ok((grad_input.into_dyn(), grad_weight.into_dyn()))
+        Ok((grad_input.into_dyn().into(), grad_weight.into_dyn().into()))
     }
 
     fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> Result<Tensor> {
@@ -165,7 +165,7 @@ impl Backend for CPUBackend {
                 }
             });
         
-        Ok(output.into_dyn())
+        Ok(output.into_dyn().into())
     }
 
     fn max_pool2d_backward(&self, input: &Tensor, grad_output: &Tensor, kernel_size: usize, stride: usize) -> Result<Tensor> {
@@ -210,16 +210,16 @@ impl Backend for CPUBackend {
                 }
             });
         
-        Ok(grad_input.into_dyn())
+        Ok(grad_input.into_dyn().into())
     }
 
     fn add(&self, a: &Tensor, b: &Tensor) -> Result<Tensor> {
-        Ok(a + b)
+        Ok((a.view().to_owned() + &b.view()).into_dyn().into())
     }
 
     fn sigmoid(&self, x: &Tensor) -> Result<Tensor> {
         let mut res = x.clone();
-        Zip::from(&mut res).par_for_each(|v| {
+        Zip::from(res.view_mut()).par_for_each(|v| {
             *v = 1.0 / (1.0 + (-*v).exp());
         });
         Ok(res)
@@ -227,7 +227,7 @@ impl Backend for CPUBackend {
 
     fn relu(&self, x: &Tensor) -> Result<Tensor> {
         let mut res = x.clone();
-        Zip::from(&mut res).par_for_each(|v| {
+        Zip::from(res.view_mut()).par_for_each(|v| {
             if *v < 0.0 { *v = 0.0; }
         });
         Ok(res)
@@ -235,11 +235,31 @@ impl Backend for CPUBackend {
 
     #[tracing::instrument(skip(self, a, b), name = "kernel_add_relu_fused")]
     fn add_relu(&self, a: &Tensor, b: &Tensor) -> Result<Tensor> {
-        let mut res = a.clone();
-        Zip::from(&mut res).and(b).par_for_each(|r, &bi| {
-            let sum = *r + bi;
-            *r = if sum < 0.0 { 0.0 } else { sum };
+        let mut res = a.view().to_owned() + &b.view();
+        res.map_inplace(|v| if *v < 0.0 { *v = 0.0 });
+        Ok(res.into_dyn().into())
+    }
+
+    fn update_parameter(&self, param: &mut Tensor, grad: &Tensor, learning_rate: f32) -> Result<()> {
+        *param -= &(grad * learning_rate);
+        Ok(())
+    }
+
+    fn relu_backward(&self, input: &Tensor, grad_output: &Tensor) -> Result<Tensor> {
+        let mut grad = grad_output.view().to_owned();
+        let _in_view = input.view();
+        Zip::from(grad.view_mut()).and(input.view()).par_for_each(|g, &i| {
+            if i <= 0.0 { *g = 0.0; }
         });
-        Ok(res)
+        Ok(grad.into_dyn().into())
+    }
+
+    fn sigmoid_backward(&self, output: &Tensor, grad_output: &Tensor) -> Result<Tensor> {
+        let mut grad = grad_output.view().to_owned();
+        let _out_view = output.view();
+        Zip::from(grad.view_mut()).and(output.view()).par_for_each(|g, &si| {
+            *g *= si * (1.0 - si);
+        });
+        Ok(grad.into_dyn().into())
     }
 }

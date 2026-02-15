@@ -13,11 +13,11 @@ fn main() -> anyhow::Result<()> {
     
     // Build a linear chain: A -> B -> C -> D
     // Each step should ideally reuse buffers
-    let x = gb.val(array![[1.0, 1.0]].into_dyn());
-    let w1 = gb.val(array![[1.0, 0.0], [0.0, 1.0]].into_dyn());
+    let x = gb.val(array![[1.0, 1.0]].into_dyn().into());
+    let w1 = gb.val(array![[1.0, 0.0], [0.0, 1.0]].into_dyn().into());
     let a = gb.matmul(x, w1);
     let b = gb.relu(a);
-    let w2 = gb.val(array![[2.0, 0.0], [0.0, 2.0]].into_dyn());
+    let w2 = gb.val(array![[2.0, 0.0], [0.0, 2.0]].into_dyn().into());
     let c = gb.matmul(b, w2);
     let d = gb.sigmoid(c);
     

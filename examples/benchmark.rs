@@ -8,8 +8,8 @@ fn main() -> anyhow::Result<()> {
     
     // Large Matrix Multiplication (Professional Scale)
     let size = 500; // Defined size for GFLOPS calculation
-    let a = Array2::from_elem((size, size), 1.0).into_dyn();
-    let b = Array2::from_elem((size, size), 1.0).into_dyn();
+    let a = Array2::from_elem((size, size), 1.0).into_dyn().into();
+    let b = Array2::from_elem((size, size), 1.0).into_dyn().into();
     
     println!("Benchmarking MatMul ({}x{}) x 50 iterations...", size, size);
     let start = Instant::now();

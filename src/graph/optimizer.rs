@@ -15,7 +15,9 @@ impl crate::graph::Operation for AddReLUOp {
     fn backward(&self, inputs: &[crate::Tensor], grad_output: &crate::Tensor, backend: &dyn crate::backend::Backend) -> Result<Vec<crate::Tensor>> {
         let sum = backend.add(&inputs[0], &inputs[1])?;
         let mut grad = grad_output.clone();
-        ndarray::Zip::from(&mut grad).and(&sum).for_each(|g, &s| {
+        
+        // Use .view_mut() and .view() to get ndarray buffers for Zip
+        ndarray::Zip::from(grad.view_mut()).and(sum.view()).for_each(|g, &s| {
             if s <= 0.0 { *g = 0.0; }
         });
         Ok(vec![grad.clone(), grad])

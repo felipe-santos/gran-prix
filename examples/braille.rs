@@ -14,16 +14,9 @@ fn main() {
         [0.0, 0.0, 0.0, 0.0, 1.0, 0.0], // (contraction) -> 2
         [1.0, 0.0, 0.0, 0.0, 0.0, 0.0], // a -> 32
         [1.0, 1.0, 0.0, 0.0, 0.0, 0.0]  // b -> 48
-    ].into_dyn();
+    ].into_dyn().into();
     
-    // Normalizing targets to [0, 1] for Sigmoid output
-    let targets: Tensor = array![
-        [0.0],
-        [0.29],
-        [0.02],
-        [0.32],
-        [0.48]
-    ].into_dyn();
+    let targets: Tensor = array![[0.0], [29.0], [2.0], [32.0], [48.0]].into_dyn().into();
 
     // 2. Define Architecture
     let mut model = Sequential::new();
@@ -55,6 +48,6 @@ fn main() {
     println!("\nFinal Results (Predicted vs Target):");
     for i in 0..5 {
         println!("Pattern {:?} | Expected: {:.2} | Predicted: {:.4}", 
-            i, targets[[i, 0]], final_output[[i, 0]]);
+            i, targets.view()[[i, 0]], final_output.view()[[i, 0]]);
     }
 }

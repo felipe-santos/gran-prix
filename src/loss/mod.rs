@@ -15,6 +15,7 @@ impl Loss for MSE {
 
     fn gradient(&self, predicted: &Tensor, target: &Tensor) -> Tensor {
         let n = predicted.len() as f32;
-        2.0 * (predicted - target) / n
+        let diff = predicted - target;
+        &(2.0 * &diff) / n
     }
 }

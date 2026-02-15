@@ -16,3 +16,8 @@ thiserror = "1.0"
 anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+cudarc = { version = "0.12", features = ["std", "nvrtc", "curand", "cublas", "cuda-version-from-build-system"], optional = true }
+
+[features]
+cuda = ["dep:cudarc"]
+default = []

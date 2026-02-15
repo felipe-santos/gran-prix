@@ -15,13 +15,13 @@ fn main() {
         [0.2, 0.8], // Danger, close -> Turn Left (0.0)
         [0.9, 0.2], // Safe, slow -> Straight
         [0.1, 1.0]  // Critical Danger -> Turn Left (0.0)
-    ].into_dyn();
+    ].into_dyn().into();
     let targets: Tensor = array![
         [0.5],
         [0.0],
         [0.5],
         [0.0]
-    ].into_dyn();
+    ].into_dyn().into();
 
     // 2. Define NPC Brain
     let mut npc_brain = Sequential::new();
@@ -48,11 +48,11 @@ fn main() {
     }
 
     // 4. Test NPC with a new situation
-    let new_danger: Tensor = array![[0.15, 0.9]].into_dyn(); // Very close, high velocity
+    let new_danger: Tensor = array![[0.15, 0.9]].into_dyn().into(); // Very close, high velocity
     let action = npc_brain.forward(new_danger);
     
-    println!("\nNPC Decision for [Distance: 0.15, Velocity: 0.9]: {:.4}", action[[0, 0]]);
-    if action[[0, 0]] < 0.2 {
+    println!("\nNPC Decision for [Distance: 0.15, Velocity: 0.9]: {:.4}", action.view()[[0, 0]]);
+    if action.view()[[0, 0]] < 0.2 {
         println!("Result: 🏃 Safe! NPC successfully learned to swerve left to avoid collision.");
     } else {
         println!("Result: 💥 Crash! NPC needs more training.");

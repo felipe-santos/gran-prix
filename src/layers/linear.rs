@@ -23,10 +23,10 @@ impl Linear {
         let grad_biases = Array2::zeros((1, output_dim));
 
         Self {
-            weights: weights.into_dyn(),
-            biases: biases.into_dyn(),
-            grad_weights: grad_weights.into_dyn(),
-            grad_biases: grad_biases.into_dyn(),
+            weights: weights.into_dyn().into(),
+            biases: biases.into_dyn().into(),
+            grad_weights: grad_weights.into_dyn().into(),
+            grad_biases: grad_biases.into_dyn().into(),
             name: name.to_string(),
         }
     }
@@ -39,7 +39,7 @@ impl Layer for Linear {
         let w = self.weights.view().into_dimensionality::<ndarray::Ix2>().unwrap();
         let b = self.biases.view().into_dimensionality::<ndarray::Ix2>().unwrap();
         
-        (x.dot(&w) + b).into_dyn()
+        (x.dot(&w) + b).into_dyn().into()
     }
 
     fn backward(&mut self, input: &Tensor, grad_output: &Tensor) -> Tensor {
@@ -49,13 +49,13 @@ impl Layer for Linear {
 
         // dL/dW = input^T . grad_output
         let gw = x.t().dot(&grad_out);
-        self.grad_weights = gw.into_dyn();
+        self.grad_weights = gw.into_dyn().into();
         
         // dL/dB = sum of grad_output across batch (rows)
-        self.grad_biases = grad_output.sum_axis(ndarray::Axis(0)).insert_axis(ndarray::Axis(0));
+        self.grad_biases = grad_output.view().sum_axis(ndarray::Axis(0)).insert_axis(ndarray::Axis(0)).into_dyn().into();
         
         // dL/dX = grad_output . W^T
-        grad_out.dot(&w.t()).into_dyn()
+        grad_out.dot(&w.t()).into_dyn().into()
     }
 
     fn update(&mut self, learning_rate: f32) {

@@ -13,7 +13,7 @@ fn test_buffer_recycling() {
     let mut gb = GraphBuilder::new(&mut graph);
     
     // Sequential Ops that could reuse buffers
-    let x = gb.val(array![[1.0, 1.0]].into_dyn());
+    let x = gb.val(array![[1.0, 1.0]].into_dyn().into());
     let a = gb.relu(x);
     let b = gb.relu(a);
     let c = gb.relu(b);
@@ -38,8 +38,8 @@ fn test_memory_pool_allocation() {
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
     
-    let x = gb.val(array![[1.0, 2.0, 3.0]].into_dyn()); // [1, 3]
-    let w = gb.val(array![[0.1, 0.1], [0.1, 0.1]].into_dyn()); // [2, 2]
+    let x = gb.val(array![[1.0, 2.0, 3.0]].into_dyn().into()); // [1, 3]
+    let w = gb.val(array![[0.1, 0.1], [0.1, 0.1]].into_dyn().into()); // [2, 2]
     let _out = gb.matmul(x, w); // Should fail verification
     
     let res = Verifier::verify(&graph);

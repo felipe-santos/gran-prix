@@ -11,12 +11,12 @@ fn main() -> anyhow::Result<()> {
     let mut gb = GraphBuilder::new(&mut graph);
     
     // 1. Define nodes:    // y = ReLU(x * w + b)
-    let x = gb.val(array![[1.0, 2.0]].into_dyn());
-    let w = gb.val(array![[0.5, 0.1], [0.2, 0.4]].into_dyn());
-    let b = gb.val(array![[0.1, 0.1]].into_dyn());
+    let x = gb.val(array![[1.0, 2.0]].into_dyn().into());
+    let w = gb.val(array![[0.5, 0.1], [0.2, 0.4]].into_dyn().into());
+    let b = gb.val(array![[0.1, 0.1]].into_dyn().into());
     
-    let mm = gb.matmul(x, w);
-    let sum = gb.add(mm, b);
+    let _out = gb.matmul(x, w); // Should fail verification
+    let sum = gb.add(_out, b);
     let y = gb.relu(sum);
 
     // Forward pass
@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
     // Backward pass (Automatic Differentiation)
     println!("\n--- Backward Pass (Autograd) ---");
     // We want to calculate gradients with respect to output = [1, 1]
-    graph.backward(y, array![[1.0, 1.0]].into_dyn())?;
+    graph.backward(y, array![[1.0, 1.0]].into_dyn().into())?;
     
     // 4. Inspect Gradients
     let grad_w = graph.get_gradient(w).unwrap();
