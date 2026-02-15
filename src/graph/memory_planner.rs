@@ -1,6 +1,6 @@
-use crate::graph::{Graph, Node, NodeId};
+use crate::graph::{Graph, Node};
 use anyhow::Result;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 /// Plans memory reuse for the computation graph.
 pub struct MemoryPlanner {

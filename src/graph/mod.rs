@@ -1,6 +1,8 @@
 pub mod dsl;
 pub mod optimizer;
 pub mod memory_planner;
+pub mod verifier;
+pub mod buffer_pool;
 use crate::backend::Backend;
 use crate::Tensor;
 use anyhow::Result;
