@@ -1,71 +1,88 @@
-# Gran-Prix: High-Performance AI Engine in Rust 🏎️🦀
+# 🏎️ Gran-Prix: The Modular Deep Learning Engine in Rust
 
-Gran-Prix is a professional-grade, high-performance neural network engine built from the ground up in Rust. It combines a state-of-the-art **DAG execution graph** with **automatic differentiation (Autograd)** and **static memory orchestration**.
+**Gran-Prix** is a professional-grade, high-performance neural network engine built from the ground up in Rust. It combines a state-of-the-art **DAG execution graph** with **automatic differentiation (Autograd)** and **static memory orchestration**.
 
-Designed for both precision and speed, Gran-Prix moves beyond simple MLPs into a robust, extensible platform for modern AI research and deployment.
+> **"Feng-shui Architecture"**: The codebase follows a strict modular design, separating the computation graph (`src/graph`), tensor operations (`src/tensor`), and execution backends (`src/backend`).
 
-## ✨ Key Features
+---
 
-### 🏛️ Professional Architecture
-- **DAG-based Execution**: Build complex models with branching, merging (e.g., ResNets), and recurrent-like structures.
-- **Autograd Engine**: Fully automatic differentiation with professional gradient accumulation.
-- **Kernel Fusion**: Computational graph optimizer that fuses operations (e.g., `Add` + `ReLU`) into single, high-speed kernels.
+## 🧐 What is it?
+Gran-Prix is a library (crate) that allows you to build, train, and run Deep Learning models directly in Rust. Unlike wrappers around PyTorch or TensorFlow, Gran-Prix is a **native engine**:
+- **Tensors**: Multi-dimensional arrays with support for CPU and CUDA storage.
+- **Computational Graph**: A Directed Acyclic Graph (DAG) that records operations for backpropagation.
+- **Autograd**: Automatic calculation of gradients for training.
 
-### 🛡️ Static Safety & Memory Orchestration
-- **Static Verifier**: Compile-time check for graph connectivity and matrix shape consistency (e.g., MatMul dimensions).
-- **Memory Planner**: Advanced liveness analysis that recycles tensor buffers, reducing memory footprint by up to 60-70%.
-- **Zero-Allocation Inference**: Designed for high-speed edge deployment.
+## 🚀 Why use it?
+1.  **Education**: Perfect for understanding how Deep Learning frameworks work under the hood (Backprop, Optimizers, Memory Management).
+2.  **Edge & Embedded**: Designed for environments where installing Python/PyTorch is impossible or too heavy.
+3.  **Performance**:
+    - **Memory Planner**: Statically analyzes the graph to recycle memory buffers, reducing footprint.
+    - **Zero-Cost Abstractions**: Rust's type system ensures safety without runtime overhead.
+4.  **Control**: Full control over the execution loop, ideal for Game AI, Robotics, and Real-time Systems.
 
-### 🔌 Extensibility & Persistence
-- **Plugin System**: Add custom operators and math kernels without modifying the core engine using `typetag`.
-- **Full Persistence**: Save and load complete optimized graphs (including parameters) to JSON with zero loss of data.
-- **Fluent DSL**: High-level macro system (`model!`, `linear!`) for rapid model prototyping.
+## 🛠️ How to use?
 
-## 🚀 Quick Start
-
-### Building
-```bash
-cargo build --release
+### 1. Installation
+Add to your `Cargo.toml`:
+```toml
+[dependencies]
+gran-prix = { path = "." } # Or git repo
+ndarray = "0.15"
 ```
 
-### Next-Gen Usage (DSL)
+### 2. Building a Model (The `GraphBuilder` API)
 ```rust
-use gran_prix::graph::Graph;
+use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::{model, linear};
+use gran_prix::Tensor;
 use ndarray::array;
 
-fn main() -> anyhow::Result<()> {
-    let mut graph = Graph::new(Box::new(CPUBackend));
-    
-    // Build model using the high-speed DSL
-    let output = model!(&mut graph, g => {
-        let x = g.val(array![[1.0, 2.0]]);
-        let w = g.param(array![[0.5, 0.1], [0.2, 0.4]]);
-        let b = g.param(array![[0.1, 0.1]]);
-        linear!(g, x, w, b)
-    });
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Initialize Engine
+    let backend = Box::new(CPUBackend);
+    let mut graph = Graph::new(backend);
+    let mut gb = GraphBuilder::new(&mut graph);
 
-    let res = graph.execute(output)?;
-    println!("Graph Result: {:?}", res);
+    // 2. Define Inputs
+    let x = gb.val(array![[1.0, 2.0]].into_dyn().into());
+
+    // 3. Define Layers (Linear: y = xW + b)
+    let w = gb.param(Tensor::new_random(&[2, 2]));
+    let b = gb.param(Tensor::new_zeros(&[2]));
+    
+    let dense = gb.matmul(x, w);
+    let output = gb.add(dense, b);
+
+    // 4. Execute
+    let result = graph.execute(output)?;
+    println!("Result: {:?}", result);
+    
     Ok(())
 }
 ```
 
-## 🎯 Current Roadmap & Future Goals
-- [ ] **CNN Support**: Implement Convolutional and Pooling layers.
-- [ ] **Accelerator Backends**: CUDA and OpenCL support via custom kernels.
-- [ ] **Advanced Data Pipelines**: Optimized loaders for MNIST, CIFAR, and COCO.
-- [ ] **Reinforcement Learning**: Built-in support for policy-gradient and Q-learning agents.
+## 🌍 Where & When?
+- **Game AI**: Train NPCs inside your Rust game engine (see `examples/game_ai.rs`).
+- **IoT/Edge**: Run inference on Raspberry Pi or embedded Linux devices.
+- **Backend Services**: High-performance inference in pure Rust microservices (no Python sidecars).
 
-## 🧪 Verification
-Gran-Prix is **Battle-Tested** with a comprehensive suite of 20+ robust tests:
+## 🧩 Architecture Highlights
+- **Unified Tensor**: `src/tensor/` abstracts `Storage` (CPU/CUDA) to allow seamless backend switching.
+- **Graph DSL**: `src/graph/dsl.rs` provides a fluent API for building complex topologies (ResNets, CNNs).
+- **Op Plugins**: Extensible Operation trait allowing new layer types without forking the engine.
+
+## 🧪 Verified Examples
+Run these to see the engine in action:
 ```bash
-cargo test
+# Train a CNN on synthetic data
+cargo run --example mnist_tiny
+
+# Train an agent to avoid obstacles
+cargo run --example game_ai
+
+# See memory optimization in action
+cargo run --example memory_demo
 ```
 
-## 🌍 Project Vision
-For a deep dive into our engineering philosophy and "where we are going", see the [Vision & Roadmap](file:///home/ubuntu/.gemini/antigravity/brain/2f43caac-41a8-4d76-bedd-5edc07e23401/vision_and_roadmap.md).
-
 ---
-*Built with ❤️ by the Gran-Prix Engineering Team.*
+*Maintained by the Gran-Prix Engineering Team.*
