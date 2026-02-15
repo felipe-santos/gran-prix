@@ -2,7 +2,9 @@
 use cudarc::driver::{CudaDevice, LaunchConfig, LaunchAsync};
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
+#[cfg(feature = "cuda")]
 use crate::{Tensor, GPResult, GPError};
+#[cfg(feature = "cuda")]
 use crate::backend::Backend;
 
 #[cfg(feature = "cuda")]

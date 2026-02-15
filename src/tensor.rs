@@ -1,4 +1,4 @@
-use ndarray::{ArrayD, IxDyn, ArrayViewD, ArrayViewMutD};
+use ndarray::{ArrayD, IxDyn, ArrayViewD};
 use serde::{Serialize, Deserialize, Serializer, Deserializer};
 use crate::{GPError, GPResult, types::Shape, Device};
 #[cfg(feature = "cuda")]
@@ -149,7 +149,7 @@ impl Tensor {
         match self.storage {
             Storage::Cpu(data) => {
                 let reshaped = data.into_shape(IxDyn(shape))
-                    .map_err(|e| GPError::IncompatibleShapes { 
+                    .map_err(|_e| GPError::IncompatibleShapes { 
                         expected: shape.to_vec(), 
                         found: self.shape.as_slice().to_vec() 
                     })?;

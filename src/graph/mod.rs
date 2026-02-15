@@ -5,8 +5,9 @@ pub mod verifier;
 pub mod buffer_pool;
 
 use crate::backend::Backend;
-use crate::{GPError, GPResult, Tensor, NodeId, Device, types::Shape};
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
+use crate::{GPError, GPResult, Tensor, NodeId};
+use serde::{Serialize, Deserialize};
+
 
 /// A node in the computation graph.
 #[derive(Serialize, Deserialize)]

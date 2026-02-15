@@ -1,6 +1,6 @@
 use crate::graph::{Graph, Node};
-use crate::{GPResult, GPError, Tensor};
 use crate::backend::Backend;
+use crate::{GPResult, Tensor};
 use crate::tensor::TensorOps;
 use serde::{Serialize, Deserialize};
 
@@ -17,16 +17,13 @@ impl crate::graph::Operation for AddReLUOp {
         backend.add_relu(&inputs[0], &inputs[1])
     }
     fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        let sum = backend.add(&inputs[0], &inputs[1])?;
-        let mut grad = grad_output.clone();
+        let grad = grad_output.clone();
         
         // For CPU, we can perform this optimization. For CUDA, the backend should ideally handle fused backward too.
         // For now, let's keep it simple and safe.
-        let mut mask = sum.clone();
-        mask.try_view_mut()?.mapv_inplace(|v| if v <= 0.0 { 0.0 } else { 1.0 });
-        
-        let grad_masked = backend.add(&Tensor::new_zeros(mask.shape().clone()), &(&grad * &mask))?;
-        
+        let mask = backend.relu_backward(&inputs[0], &grad)?; // Assuming 'ones' was a placeholder for 'grad' or similar context
+        // Use mask to zero out gradients where input < 0
+        let grad_masked = backend.add(&Tensor::new_zeros(mask.shape()), &(&grad * &mask))?;
         Ok(vec![grad_masked.clone(), grad_masked])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
