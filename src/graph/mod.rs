@@ -23,6 +23,16 @@ pub enum Node {
     },
 }
 
+impl Node {
+    pub fn op(&self) -> Option<&dyn Operation> {
+        if let Node::Op { op, .. } = self {
+            Some(op.as_ref())
+        } else {
+            None
+        }
+    }
+}
+
 /// A generic operation in the DAG.
 #[typetag::serde]
 pub trait Operation: Send + Sync {

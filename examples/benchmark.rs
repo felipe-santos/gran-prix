@@ -14,7 +14,7 @@ fn main() -> anyhow::Result<()> {
     println!("Benchmarking MatMul ({}x{}) on CPU Backend...", size, size);
     
     let start = Instant::now();
-    let _result = backend.matmul(&a, &b)?;
+    let _result = backend.matmul_t(&a, &b, false, false)?;
     let duration = start.elapsed();
     
     println!("Time taken: {:?}", duration);

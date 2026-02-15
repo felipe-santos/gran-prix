@@ -1,4 +1,4 @@
-use gran_prix::graph::{Graph, Operation, NodeId};
+use gran_prix::graph::{Graph, Operation};
 use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::backend::Backend;

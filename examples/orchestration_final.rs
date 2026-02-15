@@ -37,7 +37,7 @@ fn main() -> anyhow::Result<()> {
 
     // Demonstration of "Static Execution" concept
     println!("\n--- Step 4: Zero-Allocation Execution Simulation ---");
-    for (i, node) in graph.nodes().iter().enumerate() {
+    for (i, _node) in graph.nodes().iter().enumerate() {
         let buffer_idx = plan.plan[i].unwrap();
         let shape = &shapes[&gran_prix::graph::NodeId(i)];
         

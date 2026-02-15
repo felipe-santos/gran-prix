@@ -1,7 +1,6 @@
 use gran_prix::graph::Graph;
 use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::Tensor;
 use ndarray::array;
 
 fn main() -> anyhow::Result<()> {
