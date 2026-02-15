@@ -1,4 +1,4 @@
-# 🏎️ Gran-Prix: The Modular Deep Learning Engine in Rust
+# Gran-Prix: The Modular Deep Learning Engine in Rust
 
 **Gran-Prix** is a professional-grade, high-performance neural network engine built from the ground up in Rust. It combines a state-of-the-art **DAG execution graph** with **automatic differentiation (Autograd)** and **static memory orchestration**.
 
@@ -6,13 +6,13 @@
 
 ---
 
-## 🧐 What is it?
+## What is it?
 Gran-Prix is a library (crate) that allows you to build, train, and run Deep Learning models directly in Rust. Unlike wrappers around PyTorch or TensorFlow, Gran-Prix is a **native engine**:
 - **Tensors**: Multi-dimensional arrays with support for CPU and CUDA storage.
 - **Computational Graph**: A Directed Acyclic Graph (DAG) that records operations for backpropagation.
 - **Autograd**: Automatic calculation of gradients for training.
 
-## 🚀 Why use it?
+## Why use it?
 1.  **Education**: Perfect for understanding how Deep Learning frameworks work under the hood (Backprop, Optimizers, Memory Management).
 2.  **Edge & Embedded**: Designed for environments where installing Python/PyTorch is impossible or too heavy.
 3.  **Performance**:
@@ -20,7 +20,7 @@ Gran-Prix is a library (crate) that allows you to build, train, and run Deep Lea
     - **Zero-Cost Abstractions**: Rust's type system ensures safety without runtime overhead.
 4.  **Control**: Full control over the execution loop, ideal for Game AI, Robotics, and Real-time Systems.
 
-## 🛠️ How to use?
+## How to use?
 
 ### 1. Installation
 Add to your `Cargo.toml`:
@@ -61,17 +61,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-## 🌍 Where & When?
+## Where & When?
 - **Game AI**: Train NPCs inside your Rust game engine (see `examples/game_ai.rs`).
 - **IoT/Edge**: Run inference on Raspberry Pi or embedded Linux devices.
 - **Backend Services**: High-performance inference in pure Rust microservices (no Python sidecars).
 
-## 🧩 Architecture Highlights
+## Architecture Highlights
 - **Unified Tensor**: `src/tensor/` abstracts `Storage` (CPU/CUDA) to allow seamless backend switching.
 - **Graph DSL**: `src/graph/dsl.rs` provides a fluent API for building complex topologies (ResNets, CNNs).
 - **Op Plugins**: Extensible Operation trait allowing new layer types without forking the engine.
 
-## 🧪 Verified Examples
+## Verified Examples
 Run these to see the engine in action:
 ```bash
 # Train a CNN on synthetic data
