@@ -21,7 +21,6 @@ impl Backend for CPUBackend {
     }
 
     fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> Result<Tensor> {
-        // [N, Ci, H, W] * [Co, Ci, Kh, Kw] -> [N, Co, Oh, Ow]
         let input4 = input.view().into_dimensionality::<ndarray::Ix4>()?;
         let weight4 = weight.view().into_dimensionality::<ndarray::Ix4>()?;
         
@@ -33,29 +32,35 @@ impl Backend for CPUBackend {
         
         let mut output = ndarray::Array4::<f32>::zeros((n, co, oh, ow));
         
-        // Naive implementation for now, will optimize later
-        for ni in 0..n {
-            for coi in 0..co {
-                for hi in 0..oh {
-                    for wi in 0..ow {
-                        let mut sum = 0.0;
-                        for cii in 0..ci {
-                            for k_hi in 0..kh {
-                                for k_wi in 0..kw {
-                                    let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
-                                    let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
-                                    
-                                    if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
-                                        sum += input4[[ni, cii, in_h as usize, in_w as usize]] * weight4[[coi, cii, k_hi, k_wi]];
+        use rayon::prelude::*;
+
+        // Parallelize over Batch dimension
+        output.axis_iter_mut(ndarray::Axis(0))
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(ni, mut out_batch)| {
+                for coi in 0..co {
+                    for hi in 0..oh {
+                        for wi in 0..ow {
+                            let mut sum = 0.0;
+                            for cii in 0..ci {
+                                for k_hi in 0..kh {
+                                    for k_wi in 0..kw {
+                                        let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
+                                        let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
+                                        
+                                        if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
+                                            sum += input4[[ni, cii, in_h as usize, in_w as usize]] * 
+                                                   weight4[[coi, cii, k_hi, k_wi]];
+                                        }
                                     }
                                 }
                             }
+                            out_batch[[coi, hi, wi]] = sum;
                         }
-                        output[[ni, coi, hi, wi]] = sum;
                     }
                 }
-            }
-        }
+            });
         
         Ok(output.into_dyn())
     }
@@ -72,33 +77,59 @@ impl Backend for CPUBackend {
         let mut grad_input = ndarray::Array4::<f32>::zeros((n, ci, h, w));
         let mut grad_weight = ndarray::Array4::<f32>::zeros((co, ci, kh, kw));
         
-        // Use chunks to parallelize over batch and output channels
-        // For simplicity and to avoid complex mutexes on grad_weight, we'll keep it simple for now or use a different strategy.
-        // Actually, for grad_input, since each output affects multiple inputs, we need to be careful.
+        use rayon::prelude::*;
         
-        for ni in 0..n {
-            for coi in 0..co {
-                for hi in 0..oh {
-                    for wi in 0..ow {
-                        let g_out = grad_out4[[ni, coi, hi, wi]];
-                        
-                        for cii in 0..ci {
-                            for k_hi in 0..kh {
-                                for k_wi in 0..kw {
-                                    let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
-                                    let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
-                                    
-                                    if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
-                                        grad_input[[ni, cii, in_h as usize, in_w as usize]] += g_out * weight4[[coi, cii, k_hi, k_wi]];
-                                        grad_weight[[coi, cii, k_hi, k_wi]] += g_out * input4[[ni, cii, in_h as usize, in_w as usize]];
+        // 1. Gradient for Input: Parallelize over Batch dimension (no write collisions)
+        grad_input.axis_iter_mut(ndarray::Axis(0))
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(ni, mut g_in_batch)| {
+                for coi in 0..co {
+                    for hi in 0..oh {
+                        for wi in 0..ow {
+                            let g_out = grad_out4[[ni, coi, hi, wi]];
+                            for cii in 0..ci {
+                                for k_hi in 0..kh {
+                                    for k_wi in 0..kw {
+                                        let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
+                                        let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
+                                        
+                                        if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
+                                            g_in_batch[[cii, in_h as usize, in_w as usize]] += g_out * weight4[[coi, cii, k_hi, k_wi]];
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
-        }
+            });
+
+        // 2. Gradient for Weight: Parallelize over Output Channels (each thread owns a slice of weight grad)
+        grad_weight.axis_iter_mut(ndarray::Axis(0))
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(coi, mut g_w_co)| {
+                for ni in 0..n {
+                    for hi in 0..oh {
+                        for wi in 0..ow {
+                            let g_out = grad_out4[[ni, coi, hi, wi]];
+                            for cii in 0..ci {
+                                for k_hi in 0..kh {
+                                    for k_wi in 0..kw {
+                                        let in_h = (hi * stride) as i32 + k_hi as i32 - padding as i32;
+                                        let in_w = (wi * stride) as i32 + k_wi as i32 - padding as i32;
+                                        
+                                        if in_h >= 0 && in_h < h as i32 && in_w >= 0 && in_w < w as i32 {
+                                            g_w_co[[cii, k_hi, k_wi]] += g_out * input4[[ni, cii, in_h as usize, in_w as usize]];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         
         Ok((grad_input.into_dyn(), grad_weight.into_dyn()))
     }
@@ -112,22 +143,27 @@ impl Backend for CPUBackend {
         
         let mut output = ndarray::Array4::<f32>::zeros((n, c, oh, ow));
         
-        for ni in 0..n {
-            for ci in 0..c {
-                for hi in 0..oh {
-                    for wi in 0..ow {
-                        let mut max_val = f32::NEG_INFINITY;
-                        for kh in 0..kernel_size {
-                            for kw in 0..kernel_size {
-                                let val = input4[[ni, ci, hi * stride + kh, wi * stride + kw]];
-                                if val > max_val { max_val = val; }
+        use rayon::prelude::*;
+        
+        output.axis_iter_mut(ndarray::Axis(0))
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(ni, mut out_batch)| {
+                for ci in 0..c {
+                    for hi in 0..oh {
+                        for wi in 0..ow {
+                            let mut max_val = f32::NEG_INFINITY;
+                            for kh in 0..kernel_size {
+                                for kw in 0..kernel_size {
+                                    let val = input4[[ni, ci, hi * stride + kh, wi * stride + kw]];
+                                    if val > max_val { max_val = val; }
+                                }
                             }
+                            out_batch[[ci, hi, wi]] = max_val;
                         }
-                        output[[ni, ci, hi, wi]] = max_val;
                     }
                 }
-            }
-        }
+            });
         
         Ok(output.into_dyn())
     }
@@ -141,35 +177,38 @@ impl Backend for CPUBackend {
         
         let mut grad_input = ndarray::Array4::<f32>::zeros((n, c, h, w));
         
-        for ni in 0..n {
-            for ci in 0..c {
-                for hi in 0..oh {
-                    for wi in 0..ow {
-                        let g_out = grad_out4[[ni, ci, hi, wi]];
-                        
-                        // Find max index again
-                        let mut max_val = f32::NEG_INFINITY;
-                        let mut max_h = 0;
-                        let mut max_w = 0;
-                        
-                        for kh in 0..kernel_size {
-                            for kw in 0..kernel_size {
-                                let cur_h = hi * stride + kh;
-                                let cur_w = wi * stride + kw;
-                                let val = input4[[ni, ci, cur_h, cur_w]];
-                                if val > max_val {
-                                    max_val = val;
-                                    max_h = cur_h;
-                                    max_w = cur_w;
+        use rayon::prelude::*;
+        
+        grad_input.axis_iter_mut(ndarray::Axis(0))
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(ni, mut g_in_batch)| {
+                for ci in 0..c {
+                    for hi in 0..oh {
+                        for wi in 0..ow {
+                            let g_out = grad_out4[[ni, ci, hi, wi]];
+                            
+                            let mut max_val = f32::NEG_INFINITY;
+                            let mut max_h = 0;
+                            let mut max_w = 0;
+                            
+                            for kh in 0..kernel_size {
+                                for kw in 0..kernel_size {
+                                    let cur_h = hi * stride + kh;
+                                    let cur_w = wi * stride + kw;
+                                    let val = input4[[ni, ci, cur_h, cur_w]];
+                                    if val > max_val {
+                                        max_val = val;
+                                        max_h = cur_h;
+                                        max_w = cur_w;
+                                    }
                                 }
                             }
+                            g_in_batch[[ci, max_h, max_w]] += g_out;
                         }
-                        
-                        grad_input[[ni, ci, max_h, max_w]] += g_out;
                     }
                 }
-            }
-        }
+            });
         
         Ok(grad_input.into_dyn())
     }

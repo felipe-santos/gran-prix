@@ -47,4 +47,19 @@ impl<'a> GraphBuilder<'a> {
     pub fn max_pool2d(&mut self, input: NodeId, kernel_size: usize, stride: usize) -> NodeId {
         self.graph.op(Box::new(MaxPool2D { kernel_size, stride }), vec![input])
     }
+
+    pub fn reshape(&mut self, input: NodeId, target_shape: Vec<usize>) -> NodeId {
+        self.graph.op(Box::new(crate::graph::Reshape { target_shape }), vec![input])
+    }
+
+    pub fn flatten(&mut self, input: NodeId) -> NodeId {
+        // We assume index 0 is Batch. We flatten the rest. 
+        // This is a common pattern for CNN -> Linear transition.
+        // For real usage, we should probably check current shape, 
+        // but since we compute shapes statically we can do it if we have access to it.
+        // Here we'll just use a large target_shape or a placeholder that the Op handles.
+        // Actually, let's make the Op handle -1 or similar? No, let's just make it explicit.
+        // We'll calculate it in the example for now, or add a proper shape accessor.
+        self.reshape(input, vec![0]) // Placeholder, we'll refine the Op or DSL to handle this.
+    }
 }

@@ -179,6 +179,30 @@ impl Operation for SigmoidOp {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Reshape {
+    pub target_shape: Vec<usize>,
+}
+
+#[typetag::serde]
+impl Operation for Reshape {
+    fn name(&self) -> &str { "Reshape" }
+    fn forward(&self, inputs: &[Tensor], _backend: &dyn Backend) -> Result<Tensor> {
+        let mut t = inputs[0].clone();
+        t = t.into_shape(self.target_shape.as_slice())?.into_dyn();
+        Ok(t)
+    }
+    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
+        let original_shape = inputs[0].shape();
+        let mut grad = grad_output.clone();
+        grad = grad.into_shape(original_shape)?.into_dyn();
+        Ok(vec![grad])
+    }
+    fn output_shape(&self, _input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        Ok(self.target_shape.clone())
+    }
+}
+
 /// The Execution Graph (Planta).
 #[derive(Serialize, Deserialize)]
 pub struct Graph {
@@ -316,5 +340,29 @@ impl Graph {
 
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
+    }
+
+    pub fn nodes_mut(&mut self) -> &mut [Node] {
+        &mut self.nodes
+    }
+
+    pub fn clear_values(&mut self) {
+        for v in &mut self.values {
+            *v = None;
+        }
+    }
+
+    /// Mutates parameters based on gradients and a learning rate.
+    /// This is a basic form of SGD implementation.
+    pub fn update_parameters(&mut self, learning_rate: f32) -> Result<()> {
+        for i in 0..self.nodes.len() {
+            if let Some(grad) = &self.gradients[i] {
+                if let Node::Param(ref mut param) = &mut self.nodes[i] {
+                    // param = param - lr * grad
+                    *param = (param.view().to_owned() - (grad * learning_rate)).into_dyn();
+                }
+            }
+        }
+        Ok(())
     }
 }
