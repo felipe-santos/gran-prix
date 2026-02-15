@@ -23,10 +23,10 @@ impl Linear {
         let grad_biases = Array2::zeros((1, output_dim));
 
         Self {
-            weights,
-            biases,
-            grad_weights,
-            grad_biases,
+            weights: weights.into_dyn(),
+            biases: biases.into_dyn(),
+            grad_weights: grad_weights.into_dyn(),
+            grad_biases: grad_biases.into_dyn(),
             name: name.to_string(),
         }
     }
@@ -35,19 +35,27 @@ impl Linear {
 #[typetag::serde]
 impl Layer for Linear {
     fn forward(&self, input: &Tensor) -> Tensor {
-        input.dot(&self.weights) + &self.biases
+        let x = input.view().into_dimensionality::<ndarray::Ix2>().unwrap();
+        let w = self.weights.view().into_dimensionality::<ndarray::Ix2>().unwrap();
+        let b = self.biases.view().into_dimensionality::<ndarray::Ix2>().unwrap();
+        
+        (x.dot(&w) + b).into_dyn()
     }
 
     fn backward(&mut self, input: &Tensor, grad_output: &Tensor) -> Tensor {
+        let x = input.view().into_dimensionality::<ndarray::Ix2>().unwrap();
+        let grad_out = grad_output.view().into_dimensionality::<ndarray::Ix2>().unwrap();
+        let w = self.weights.view().into_dimensionality::<ndarray::Ix2>().unwrap();
+
         // dL/dW = input^T . grad_output
-        self.grad_weights = input.t().dot(grad_output);
+        let gw = x.t().dot(&grad_out);
+        self.grad_weights = gw.into_dyn();
         
         // dL/dB = sum of grad_output across batch (rows)
         self.grad_biases = grad_output.sum_axis(ndarray::Axis(0)).insert_axis(ndarray::Axis(0));
         
-        // Return gradient with respect to input for backprop
         // dL/dX = grad_output . W^T
-        grad_output.dot(&self.weights.t())
+        grad_out.dot(&w.t()).into_dyn()
     }
 
     fn update(&mut self, learning_rate: f32) {

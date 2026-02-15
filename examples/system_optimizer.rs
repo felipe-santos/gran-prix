@@ -16,13 +16,13 @@ fn main() {
         [0.9, 0.9], // High Load, Many Req -> Small Cache (0.2)
         [0.5, 0.5], // Medium Load, Medium Req -> Medium Cache (0.5)
         [0.8, 0.1]  // High Load, Few Req -> Medium/Small Cache (0.3)
-    ];
+    ].into_dyn();
     let targets: Tensor = array![
         [0.9],
         [0.2],
         [0.5],
         [0.3]
-    ];
+    ].into_dyn();
 
     // 2. Define Optimizer Brain
     let mut tuner = Sequential::new();
@@ -50,7 +50,7 @@ fn main() {
     }
 
     // 4. Test on a novel system state
-    let sudden_load_spike: Tensor = array![[0.95, 0.8]]; // 95% CPU, 80% RPS
+    let sudden_load_spike: Tensor = array![[0.95, 0.8]].into_dyn(); // 95% CPU, 80% RPS
     let cache_size_rec = tuner.forward(sudden_load_spike);
     
     println!("\nSystem State [CPU: 95%, RPS: 80%]");

@@ -38,22 +38,22 @@ impl Operation for PowerOp {
 fn main() -> anyhow::Result<()> {
     println!("🔌 Gran-Prix Plugin System: Custom Operation (Power)");
     
+    // Use the custom operation in a graph
     let backend = Box::new(CPUBackend);
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
     
-    // 1. Use the custom operation
-    let x = gb.val(array![[2.0, 3.0]]);
-    // We register the custom op manually in the graph
+    let x = gb.val(array![[2.0, 3.0]].into_dyn());
     let power_node = graph.op(Box::new(PowerOp { exponent: 3.0 }), vec![x]);
     
-    // 2. Execute
+    // Forward pass
+    println!("Step 1: Running Forward Pass...");
     let result = graph.execute(power_node)?;
-    println!("Power Result (2^3, 3^3): {:?}", result);
-
-    // 3. Verify Autograd for the custom op
-    println!("\nVerifying Autograd for Custom Op...");
-    graph.backward(power_node, array![[1.0, 1.0]])?;
+    println!("Result (x^3): {:?}", result);
+    
+    // Backward pass
+    println!("\nStep 2: Running Backward Pass (Custom Autograd)...");
+    graph.backward(power_node, array![[1.0, 1.0]].into_dyn())?;
     let grad_x = graph.get_gradient(x).unwrap();
     println!("Gradient wrt x (3 * x^2): {:?}", grad_x);
     println!("(Expected: [12, 27])");

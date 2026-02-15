@@ -12,8 +12,8 @@ fn main() -> anyhow::Result<()> {
     let mut gb = GraphBuilder::new(&mut graph);
     
     // 1. Construct a sub-optimal graph: (A + B) -> ReLU
-    let a = gb.val(array![[1.0, -2.0]]);
-    let b = gb.val(array![[0.5, 0.5]]);
+    let a = gb.val(array![[1.0, -2.0]].into_dyn());
+    let b = gb.val(array![[0.5, 0.5]].into_dyn());
     let sum = gb.add(a, b);
     let output = gb.relu(sum);
     

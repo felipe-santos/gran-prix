@@ -1,29 +1,32 @@
 use gran_prix::models::Sequential;
 use gran_prix::layers::Linear;
-use gran_prix::activations::Sigmoid;
+use gran_prix::activations::{ReLU, Sigmoid};
 use gran_prix::loss::{Loss, MSE};
 use gran_prix::Tensor;
 use ndarray::array;
 
 fn main() {
-    // 1. Prepare Data (XOR)
+    println!("✨ Gran-Prix XOR Challenge: MLP with Sequential API");
+
+    // 1. Prepare Data
     let inputs: Tensor = array![
         [0.0, 0.0],
         [0.0, 1.0],
         [1.0, 0.0],
         [1.0, 1.0]
-    ];
+    ].into_dyn();
+    
     let targets: Tensor = array![
         [0.0],
         [1.0],
         [1.0],
         [0.0]
-    ];
+    ].into_dyn();
 
     // 2. Define Architecture
     let mut model = Sequential::new();
     model.add(Linear::new(2, 4, "hidden"));
-    model.add(Sigmoid);
+    model.add(ReLU);
     model.add(Linear::new(4, 1, "output"));
     model.add(Sigmoid);
 
@@ -31,8 +34,8 @@ fn main() {
     let learning_rate = 0.5;
 
     // 3. Training Loop
-    println!("Starting XOR training...");
-    for epoch in 0..50001 {
+    println!("Starting training...");
+    for epoch in 0..10001 {
         // Forward pass
         let output = model.forward(inputs.clone());
         let loss = loss_fn.calculate(&output, &targets);
@@ -54,6 +57,6 @@ fn main() {
     println!("\nFinal Results:");
     for i in 0..4 {
         println!("In: {:?} | Expected: {:?} | Predicted: {:.4}", 
-            inputs.row(i), targets.row(i), final_output[[i, 0]]);
+            inputs.slice(ndarray::s![i, ..]), targets.slice(ndarray::s![i, ..]), final_output[[i, 0]]);
     }
 }

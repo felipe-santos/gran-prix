@@ -10,22 +10,24 @@ fn main() -> anyhow::Result<()> {
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
     
-    // 1. Define nodes: Y = X * W + B
-    let x = gb.val(array![[1.0, 2.0]]);
-    let w = gb.val(array![[0.5, 0.1], [0.2, 0.4]]);
-    let b = gb.val(array![[0.1, 0.1]]);
+    // 1. Define nodes:    // y = ReLU(x * w + b)
+    let x = gb.val(array![[1.0, 2.0]].into_dyn());
+    let w = gb.val(array![[0.5, 0.1], [0.2, 0.4]].into_dyn());
+    let b = gb.val(array![[0.1, 0.1]].into_dyn());
     
-    let y = gb.linear(x, w, b);
-    
-    // 2. Forward Pass
-    println!("Running Forward...");
-    let result = graph.execute(y)?;
-    println!("Result: {:?}", result);
-    
-    // 3. Backward Pass
-    // Assume grad_output = [[1.0, 1.0]]
-    println!("\nRunning Backward (Autograd)...");
-    graph.backward(y, array![[1.0, 1.0]])?;
+    let mm = gb.matmul(x, w);
+    let sum = gb.add(mm, b);
+    let y = gb.relu(sum);
+
+    // Forward pass
+    println!("--- Forward Pass ---");
+    let output = graph.execute(y)?;
+    println!("Model Output: {:?}", output);
+
+    // Backward pass (Automatic Differentiation)
+    println!("\n--- Backward Pass (Autograd) ---");
+    // We want to calculate gradients with respect to output = [1, 1]
+    graph.backward(y, array![[1.0, 1.0]].into_dyn())?;
     
     // 4. Inspect Gradients
     let grad_w = graph.get_gradient(w).unwrap();

@@ -12,7 +12,7 @@ fn test_memory_collision_safety() {
     let mut gb = GraphBuilder::new(&mut graph);
     
     // Very dense graph with shared inputs
-    let x = gb.val(array![[1.0, 1.0]]);
+    let x = gb.val(array![[1.0, 1.0]].into_dyn());
     let a = gb.relu(x);
     let b = gb.sigmoid(x);
     let c = gb.add(a, b);
@@ -38,8 +38,8 @@ fn test_verifier_large_dimension_safety() {
     let mut gb = GraphBuilder::new(&mut graph);
     
     // MatMul with dimension mismatch at scale
-    let x = gb.val(ndarray::Array2::zeros((100, 50)));
-    let w = gb.val(ndarray::Array2::zeros((40, 100))); // Incorrect 40 instead of 50
+    let x = gb.val(ndarray::Array2::zeros((100, 50)).into_dyn());
+    let w = gb.val(ndarray::Array2::zeros((40, 100)).into_dyn()); // Incorrect 40 instead of 50
     let _out = gb.matmul(x, w);
     
     let res = Verifier::verify(&graph);

@@ -12,9 +12,9 @@ fn main() -> anyhow::Result<()> {
     // Using the DSL (Fluent API)
     let mut gb = GraphBuilder::new(&mut graph);
     
-    let x = gb.val(array![[1.0, 2.0]]);
-    let w = gb.val(array![[0.5, 0.1], [0.2, 0.4]]);
-    let b = gb.val(array![[0.1, 0.1]]);
+    let x = gb.val(array![[1.0, 2.0]].into_dyn());
+    let w = gb.val(array![[0.5, 0.1], [0.2, 0.4]].into_dyn());
+    let b = gb.val(array![[0.1, 0.1]].into_dyn());
     
     // High-level "Planta" construction
     let output_node = gb.linear(x, w, b);

@@ -22,9 +22,7 @@ impl BufferPool {
         }
         
         // Dynamic allocation (fallback or first-time)
-        // Convert &[usize] to (usize, usize) for Array2
-        let tuple_shape = (shape[0], shape[1]);
-        let new_tensor = Tensor::zeros(tuple_shape);
+        let new_tensor = Tensor::zeros(shape);
         self.buffers[idx] = Some(new_tensor.clone());
         new_tensor
     }

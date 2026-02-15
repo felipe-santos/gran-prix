@@ -10,8 +10,8 @@ fn test_kernel_fusion_add_relu() {
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
     
-    let h1 = gb.val(array![[1.0, -1.0]]);
-    let h2 = gb.val(array![[0.5, 0.5]]);
+    let h1 = gb.val(array![[1.0, -1.0]].into_dyn());
+    let h2 = gb.val(array![[0.5, 0.5]].into_dyn());
     let sum = gb.add(h1, h2);
     let out = gb.relu(sum);
     
@@ -29,5 +29,5 @@ fn test_kernel_fusion_add_relu() {
     
     // Verify execution
     let res = graph.execute(out).unwrap();
-    assert_eq!(res, array![[1.5, 0.0]]);
+    assert_eq!(res, array![[1.5, 0.0]].into_dyn());
 }

@@ -1,6 +1,6 @@
 use gran_prix::graph::Graph;
-use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
+use gran_prix::{model, linear};
 use ndarray::array;
 
 fn main() -> anyhow::Result<()> {
@@ -8,12 +8,18 @@ fn main() -> anyhow::Result<()> {
     
     let backend = Box::new(CPUBackend);
     let mut graph = Graph::new(backend);
-    let mut gb = GraphBuilder::new(&mut graph);
     
-    // 1. Build a graph with inputs and params
-    let x = gb.val(array![[1.0, 1.0]]);
-    let w = gb.param(array![[0.5, 0.5], [0.5, 0.5]]);
-    let out = gb.matmul(x, w);
+    let out_node = model!(&mut graph, g => {
+        let x = g.val(array![[1.0, 2.0]].into_dyn());
+        let w = g.param(array![[0.5, 0.1], [0.2, 0.4]].into_dyn());
+        let b = g.param(array![[0.1, 0.1]].into_dyn());
+        linear!(g, x, w, b)
+    });
+
+    let result = graph.execute(out_node)?;
+    if result == array![[1.0, 1.0]].into_dyn() {
+        println!("✅ Original graph execution successful!");
+    }
     
     // 2. Serialize to JSON
     let json = serde_json::to_string_pretty(&graph)?;
@@ -25,10 +31,10 @@ fn main() -> anyhow::Result<()> {
     
     // 4. Execute to verify state was preserved
     println!("\nExecuting Re-loaded Graph...");
-    let result = new_graph.execute(out)?;
+    let result = new_graph.execute(out_node)?;
     println!("Result: {:?}", result);
     
-    if result == array![[1.0, 1.0]] {
+    if result == array![[1.0, 1.0]].into_dyn() {
         println!("✅ SUCCESS: Graph was perfectly preserved through serialization.");
     } else {
         println!("❌ ERROR: Result mismatch after re-load.");

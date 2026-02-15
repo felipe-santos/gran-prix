@@ -1,8 +1,7 @@
 use gran_prix::graph::Graph;
-use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
-use ndarray::Array2;
-use rand::Rng;
+use gran_prix::{model, linear};
+use ndarray::array;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 fn main() -> anyhow::Result<()> {
@@ -16,24 +15,18 @@ fn main() -> anyhow::Result<()> {
     
     let backend = Box::new(CPUBackend);
     let mut graph = Graph::new(backend);
-    let mut gb = GraphBuilder::new(&mut graph);
     
-    // Create some "heavy" matrices
-    let mut rng = rand::thread_rng();
-    let x_data = Array2::from_shape_fn((500, 500), |_| rng.gen::<f32>());
-    let w_data = Array2::from_shape_fn((500, 500), |_| rng.gen::<f32>());
-    let b_data = Array2::from_shape_fn((1, 500), |_| rng.gen::<f32>());
+    let out = model!(&mut graph, g => {
+        let x = g.val(array![[0.1, 0.2, 0.3, 0.4]].into_dyn());
+        let w = g.param(ndarray::Array2::zeros((4, 10)).into_dyn());
+        let b = g.param(ndarray::Array2::zeros((1, 10)).into_dyn());
+        linear!(g, x, w, b)
+    });
 
-    let x = gb.val(x_data);
-    let w = gb.param(w_data);
-    let b = gb.param(b_data);
-
-    println!("\nStep 1: Executing complex graph...");
-    let out = gb.linear(x, w, b);
-    let _ = graph.execute(out)?;
-
-    println!("\nStep 2: Running backward pass...");
-    let grad_output = Array2::from_elem((500, 500), 1.0);
+    // Run forward and backward to see tracing in action
+    let _res = graph.execute(out)?;
+    
+    let grad_output = ndarray::Array2::ones((1, 10)).into_dyn();
     graph.backward(out, grad_output)?;
 
     println!("\n✅ Profiling complete. Check the logs for exact kernel durations!");

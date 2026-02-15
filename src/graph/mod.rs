@@ -5,6 +5,7 @@ pub mod verifier;
 pub mod buffer_pool;
 use crate::backend::Backend;
 use crate::Tensor;
+use crate::tensor::TensorOps;
 use anyhow::Result;
 use serde::{Serialize, Deserialize};
 
@@ -62,11 +63,63 @@ impl Operation for MatMul {
         Ok(vec![grad_a, grad_b])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
-        // [M, K] * [K, N] -> [M, N]
         if input_shapes[0][1] != input_shapes[1][0] {
             return Err(anyhow::anyhow!("Shape mismatch in MatMul: {:?} and {:?}", input_shapes[0], input_shapes[1]));
         }
         Ok(vec![input_shapes[0][0], input_shapes[1][1]])
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Conv2D {
+    pub stride: usize,
+    pub padding: usize,
+}
+
+#[typetag::serde]
+impl Operation for Conv2D {
+    fn name(&self) -> &str { "Conv2D" }
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
+        backend.conv2d(&inputs[0], &inputs[1], self.stride, self.padding)
+    }
+    fn backward(&self, _inputs: &[Tensor], _grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
+        // TODO: Implement Autograd for Conv2D
+        // This is complex and usually involves 'im2col' or specialized kernels.
+        // For now, we return zeroes as we focus on forward and inference first.
+        Ok(vec![Tensor::new_zeros(_inputs[0].shape()), Tensor::new_zeros(_inputs[1].shape())])
+    }
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        let (n, _ci, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
+        let (co, _ci_w, kh, kw) = (input_shapes[1][0], input_shapes[1][1], input_shapes[1][2], input_shapes[1][3]);
+        
+        let oh = (h + 2 * self.padding - kh) / self.stride + 1;
+        let ow = (w + 2 * self.padding - kw) / self.stride + 1;
+        
+        Ok(vec![n, co, oh, ow])
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MaxPool2D {
+    pub kernel_size: usize,
+    pub stride: usize,
+}
+
+#[typetag::serde]
+impl Operation for MaxPool2D {
+    fn name(&self) -> &str { "MaxPool2D" }
+    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor> {
+        backend.max_pool2d(&inputs[0], self.kernel_size, self.stride)
+    }
+    fn backward(&self, _inputs: &[Tensor], _grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
+        // TODO: Implement Autograd for Pooling
+        Ok(vec![Tensor::new_zeros(_inputs[0].shape())])
+    }
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        let (n, c, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
+        let oh = (h - self.kernel_size) / self.stride + 1;
+        let ow = (w - self.kernel_size) / self.stride + 1;
+        Ok(vec![n, c, oh, ow])
     }
 }
 

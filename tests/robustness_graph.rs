@@ -14,7 +14,7 @@ fn test_branching_and_merging_gradients() {
     //      \                      |
     //       --[Path B: ReLU]------+--- y = (x) + ReLU(x)
     
-    let x = gb.param(array![[-1.0, 2.0]]);
+    let x = gb.param(array![[-1.0, 2.0]].into_dyn());
     let path_b = gb.relu(x);
     let y = gb.add(x, path_b);
     
@@ -22,17 +22,17 @@ fn test_branching_and_merging_gradients() {
     // Path A: [-1, 2]
     // Path B: [0, 2]
     // Y: [-1, 4]
-    assert_eq!(result, array![[-1.0, 4.0]]);
+    assert_eq!(result, array![[-1.0, 4.0]].into_dyn());
     
     // Backward (grad_out = [1, 1])
-    graph.backward(y, array![[1.0, 1.0]]).unwrap();
+    graph.backward(y, array![[1.0, 1.0]].into_dyn()).unwrap();
     
     // Gradient computation:
     // dy/dx = d(x + ReLU(x))/dx = 1 + d(ReLU(x))/dx
     // For x = -1: d(ReLU)/dx = 0 -> dy/dx = 1 + 0 = 1
     // For x = 2: d(ReLU)/dx = 1 -> dy/dx = 1 + 1 = 2
     let grad_x = graph.get_gradient(x).unwrap();
-    assert_eq!(*grad_x, array![[1.0, 2.0]]);
+    assert_eq!(*grad_x, array![[1.0, 2.0]].into_dyn());
     println!("Branching gradient accumulation verified.");
 }
 
@@ -49,13 +49,13 @@ fn test_diamond_topology() {
     //    \   /
     //      y
     
-    let x = gb.param(array![[1.0, 1.0]]);
+    let x = gb.param(array![[1.0, 1.0]].into_dyn());
     let a = gb.relu(x);
     let b = gb.sigmoid(x);
     let y = gb.add(a, b);
     
     graph.execute(y).unwrap();
-    graph.backward(y, array![[1.0, 1.0]]).unwrap();
+    graph.backward(y, array![[1.0, 1.0]].into_dyn()).unwrap();
     
     // Grad should be d(ReLU)/dx + d(Sigmoid)/dx
     // For x=1: d(ReLU)/dx = 1.0
@@ -72,16 +72,16 @@ fn test_deep_sequential_chain() {
     let mut gb = GraphBuilder::new(&mut graph);
     
     // Deep chain: 10 ReLU operations
-    let mut curr = gb.param(array![[1.0, -1.0]]);
+    let mut curr = gb.param(array![[1.0, -1.0]].into_dyn());
     let start_node = curr;
     for _ in 0..10 {
         curr = gb.relu(curr);
     }
     
     let res = graph.execute(curr).unwrap();
-    assert_eq!(res, array![[1.0, 0.0]]);
+    assert_eq!(res, array![[1.0, 0.0]].into_dyn());
     
-    graph.backward(curr, array![[1.0, 1.0]]).unwrap();
+    graph.backward(curr, array![[1.0, 1.0]].into_dyn()).unwrap();
     let grad = graph.get_gradient(start_node).unwrap();
-    assert_eq!(*grad, array![[1.0, 0.0]]);
+    assert_eq!(*grad, array![[1.0, 0.0]].into_dyn());
 }

@@ -13,17 +13,17 @@ fn main() -> anyhow::Result<()> {
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
     
-    // Complex model construction
-    let x = gb.val(array![[1.0, 2.0]]);
-    let w1 = gb.val(array![[0.5, 0.1], [0.2, 0.4]]);
-    let b1 = gb.val(array![[0.1, 0.1]]);
-    let l1 = gb.linear(x, w1, b1);
-    let act1 = gb.relu(l1);
+    // Model Nodes
+    let x = gb.val(array![[1.0, 0.0]].into_dyn());
+    let w1 = gb.val(array![[0.5, 0.5], [0.5, 0.5]].into_dyn());
+    let b1 = gb.val(array![[0.0, 0.0]].into_dyn());
+    let h1 = gb.linear(x, w1, b1);
+    let a1 = gb.relu(h1);
     
-    let w2 = gb.val(array![[0.8, -0.2], [0.3, 0.7]]);
-    let b2 = gb.val(array![[0.0, 0.0]]);
-    let l2 = gb.linear(act1, w2, b2);
-    let out = gb.sigmoid(l2);
+    let w2 = gb.val(array![[0.8, -0.2], [0.3, 0.7]].into_dyn());
+    let b2 = gb.val(array![[0.0, 0.0]].into_dyn());
+    let h2 = gb.linear(a1, w2, b2);
+    let out = gb.sigmoid(h2);
 
     println!("\n--- Step 1: Static Verification ---");
     let shapes = Verifier::verify(&graph)?;

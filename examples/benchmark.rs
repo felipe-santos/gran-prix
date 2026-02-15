@@ -7,18 +7,20 @@ fn main() -> anyhow::Result<()> {
     let backend = CPUBackend;
     
     // Large Matrix Multiplication (Professional Scale)
-    let size = 1024;
-    let a = Array2::<f32>::zeros((size, size));
-    let b = Array2::<f32>::zeros((size, size));
+    let size = 500; // Defined size for GFLOPS calculation
+    let a = Array2::from_elem((size, size), 1.0).into_dyn();
+    let b = Array2::from_elem((size, size), 1.0).into_dyn();
     
-    println!("Benchmarking MatMul ({}x{}) on CPU Backend...", size, size);
-    
+    println!("Benchmarking MatMul ({}x{}) x 50 iterations...", size, size);
     let start = Instant::now();
-    let _result = backend.matmul_t(&a, &b, false, false)?;
+    for _ in 0..50 {
+        let _result = backend.matmul_t(&a, &b, false, false)?;
+    }
     let duration = start.elapsed();
     
     println!("Time taken: {:?}", duration);
-    println!("GFLOPS: {:.2}", (2.0 * size as f64 * size as f64 * size as f64) / (duration.as_secs_f64() * 1e9));
+    // GFLOPS calculation adjusted for 50 iterations
+    println!("GFLOPS: {:.2}", (2.0 * size as f64 * size as f64 * size as f64 * 50.0) / (duration.as_secs_f64() * 1e9));
     
     Ok(())
 }
