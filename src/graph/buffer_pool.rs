@@ -17,13 +17,13 @@ impl BufferPool {
     /// Allocates or reuses a buffer for a specific operation.
     pub fn get_buffer(&mut self, idx: usize, shape: Shape) -> Tensor {
         if let Some(existing) = &self.buffers[idx] {
-            if existing.shape() == shape.0.as_slice() {
+            if existing.shape() == shape.as_slice() {
                 return existing.clone();
             }
         }
         
         // Dynamic allocation (fallback or first-time)
-        let new_tensor = Tensor::new_zeros(shape);
+        let new_tensor = Tensor::new_zeros(shape.as_slice());
         self.buffers[idx] = Some(new_tensor.clone());
         new_tensor
     }

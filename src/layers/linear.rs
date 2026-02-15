@@ -1,4 +1,4 @@
-use crate::{Tensor, Layer, NodeId, Shape};
+use crate::{Tensor, Layer, NodeId};
 use crate::tensor::TensorOps;
 use crate::graph::dsl::GraphBuilder;
 use serde::{Serialize, Deserialize};
@@ -12,8 +12,8 @@ pub struct Linear {
 impl Linear {
     pub fn new(input_dim: usize, output_dim: usize) -> Self {
         // Use standard initialization (He or Xavier would be better, but standard normal for now)
-        let weights = Tensor::new_random(Shape::from_slice(&[input_dim, output_dim]));
-        let biases = Tensor::new_zeros(Shape::from_slice(&[1, output_dim]));
+        let weights = Tensor::new_random(&[input_dim, output_dim]);
+        let biases = Tensor::new_zeros(&[1, output_dim]);
 
         Self {
             weights,
