@@ -97,8 +97,9 @@ fn main() {
                 *t = input.clone();
             }
             
-            // 2. Clear Values (for new input)
+            // 2. Clear Values and Gradients
             graph.clear_values();
+            graph.clear_gradients();
 
             // 3. Forward
             let out = graph.execute(prediction).unwrap();
