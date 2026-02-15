@@ -30,6 +30,9 @@ impl Operation for PowerOp {
         grad *= grad_output;
         Ok(vec![grad])
     }
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        Ok(input_shapes[0].clone())
+    }
 }
 
 fn main() -> anyhow::Result<()> {

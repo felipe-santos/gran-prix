@@ -1,5 +1,6 @@
 pub mod dsl;
 pub mod optimizer;
+pub mod memory_planner;
 use crate::backend::Backend;
 use crate::Tensor;
 use anyhow::Result;
@@ -26,6 +27,9 @@ pub trait Operation: Send + Sync {
     fn name(&self) -> &str;
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> Result<Tensor>;
     fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> Result<Vec<Tensor>>;
+    
+    /// Static shape inference: Determines output shape without computing values.
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>>;
 }
 
 // --- Concrete Operations ---
@@ -45,6 +49,13 @@ impl Operation for MatMul {
         let grad_b = backend.matmul_t(&inputs[0], grad_output, true, false)?;
         Ok(vec![grad_a, grad_b])
     }
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        // [M, K] * [K, N] -> [M, N]
+        if input_shapes[0][1] != input_shapes[1][0] {
+            return Err(anyhow::anyhow!("Shape mismatch in MatMul: {:?} and {:?}", input_shapes[0], input_shapes[1]));
+        }
+        Ok(vec![input_shapes[0][0], input_shapes[1][1]])
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -58,6 +69,10 @@ impl Operation for Add {
     fn backward(&self, _inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> Result<Vec<Tensor>> {
         // Identity for both inputs
         Ok(vec![grad_output.clone(), grad_output.clone()])
+    }
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        // Element-wise or broadcast: assuming shapes match for now
+        Ok(input_shapes[0].clone())
     }
 }
 
@@ -76,6 +91,9 @@ impl Operation for ReLUOp {
         });
         Ok(vec![grad])
     }
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        Ok(input_shapes[0].clone())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -93,6 +111,9 @@ impl Operation for SigmoidOp {
             *g *= si * (1.0 - si);
         });
         Ok(vec![grad])
+    }
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        Ok(input_shapes[0].clone())
     }
 }
 
@@ -229,5 +250,9 @@ impl Graph {
 
     pub fn get_gradient(&self, id: NodeId) -> Option<&Tensor> {
         self.gradients.get(id.0).and_then(|g| g.as_ref())
+    }
+
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes
     }
 }

@@ -20,6 +20,9 @@ impl crate::graph::Operation for AddReLUOp {
         });
         Ok(vec![grad.clone(), grad])
     }
+    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+        Ok(input_shapes[0].clone())
+    }
 }
 
 impl GraphOptimizer {
