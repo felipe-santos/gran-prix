@@ -3,6 +3,8 @@ pub mod activations;
 pub mod optim;
 pub mod loss;
 pub mod models;
+pub mod graph;
+pub mod backend;
 pub mod tensor;
 pub mod errors;
 
