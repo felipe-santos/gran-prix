@@ -4,7 +4,6 @@ pub use storage::Storage;
 use ndarray::{ArrayD, IxDyn, ArrayViewD};
 use serde::{Serialize, Deserialize};
 use crate::{GPError, GPResult, types::Shape, Device};
-#[cfg(feature = "cuda")]
 use std::sync::Arc;
 #[cfg(feature = "cuda")]
 use cudarc::driver::{LaunchAsync};
@@ -21,7 +20,7 @@ impl Tensor {
     pub fn new_cpu(data: ArrayD<f32>) -> Self {
         let shape = Shape(data.raw_dim());
         Self {
-            storage: Storage::Cpu(data),
+            storage: Storage::Cpu(Arc::new(data)),
             shape,
         }
     }
@@ -37,7 +36,7 @@ impl Tensor {
     /// Returns a view of the tensor as an ndarray ArrayViewD if it's on the CPU.
     pub fn as_cpu(&self) -> GPResult<&ArrayD<f32>> {
         match &self.storage {
-            Storage::Cpu(data) => Ok(data),
+            Storage::Cpu(data) => Ok(data.as_ref()),
             #[cfg(feature = "cuda")]
             Storage::Cuda(_) => Err(GPError::DeviceMismatch { 
                 required: "CPU".to_string(), 
@@ -48,7 +47,7 @@ impl Tensor {
 
     pub fn as_cpu_mut(&mut self) -> GPResult<&mut ArrayD<f32>> {
         match &mut self.storage {
-            Storage::Cpu(data) => Ok(data),
+            Storage::Cpu(data) => Ok(Arc::make_mut(data)),
             #[cfg(feature = "cuda")]
             Storage::Cuda(_) => Err(GPError::DeviceMismatch { 
                 required: "CPU".to_string(), 
@@ -118,7 +117,7 @@ impl Tensor {
     pub fn into_shape(self, shape: &[usize]) -> GPResult<Self> {
         match self.storage {
             Storage::Cpu(data) => {
-                let reshaped = data.into_shape(IxDyn(shape))
+                let reshaped = (*data).clone().into_shape(IxDyn(shape))
                     .map_err(|_e| GPError::IncompatibleShapes { 
                         expected: shape.to_vec(), 
                         found: self.shape.as_slice().to_vec() 

@@ -11,7 +11,7 @@ impl std::ops::Add for &Tensor {
     type Output = Tensor;
     fn add(self, rhs: Self) -> Self::Output {
         match (&self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => (a + b).into(),
+            (Storage::Cpu(a), Storage::Cpu(b)) => (a.as_ref() + b.as_ref()).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Binary operations on non-CPU tensors not yet implemented or mismatched devices."),
         }
@@ -22,7 +22,7 @@ impl std::ops::Sub for &Tensor {
     type Output = Tensor;
     fn sub(self, rhs: Self) -> Self::Output {
         match (&self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => (a - b).into(),
+            (Storage::Cpu(a), Storage::Cpu(b)) => (a.as_ref() - b.as_ref()).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Binary operations on non-CPU tensors not yet implemented or mismatched devices."),
         }
@@ -40,7 +40,7 @@ impl std::ops::Sub<&Tensor> for f32 {
     type Output = Tensor;
     fn sub(self, rhs: &Tensor) -> Self::Output {
         match &rhs.storage {
-            Storage::Cpu(a) => (self - a).into(),
+            Storage::Cpu(a) => (self - a.as_ref()).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Scalar subtraction on non-CPU tensors not yet implemented."),
         }
@@ -51,7 +51,7 @@ impl std::ops::Mul<f32> for &Tensor {
     type Output = Tensor;
     fn mul(self, rhs: f32) -> Self::Output {
         match &self.storage {
-            Storage::Cpu(a) => (a * rhs).into(),
+            Storage::Cpu(a) => (a.as_ref() * rhs).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Scalar multiplication on non-CPU tensors not yet implemented."),
         }
@@ -69,7 +69,7 @@ impl std::ops::Mul<&Tensor> for &Tensor {
     type Output = Tensor;
     fn mul(self, rhs: &Tensor) -> Self::Output {
         match (&self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => (a * b).into(),
+            (Storage::Cpu(a), Storage::Cpu(b)) => (a.as_ref() * b.as_ref()).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Element-wise multiplication on non-CPU tensors not yet implemented."),
         }
@@ -80,7 +80,7 @@ impl std::ops::Div<f32> for &Tensor {
     type Output = Tensor;
     fn div(self, rhs: f32) -> Self::Output {
         match &self.storage {
-            Storage::Cpu(a) => (a / rhs).into(),
+            Storage::Cpu(a) => (a.as_ref() / rhs).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("Scalar division on non-CPU tensors not yet implemented."),
         }
@@ -90,7 +90,7 @@ impl std::ops::Div<f32> for &Tensor {
 impl std::ops::SubAssign<&Tensor> for Tensor {
     fn sub_assign(&mut self, rhs: &Tensor) {
         match (&mut self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => *a -= b,
+            (Storage::Cpu(a), Storage::Cpu(b)) => *std::sync::Arc::make_mut(a) -= b.as_ref(),
             #[cfg(feature = "cuda")]
             _ => panic!("In-place operations on non-CPU tensors not yet implemented or mismatched devices."),
         }
@@ -100,7 +100,7 @@ impl std::ops::SubAssign<&Tensor> for Tensor {
 impl std::ops::AddAssign<&Tensor> for Tensor {
     fn add_assign(&mut self, rhs: &Tensor) {
         match (&mut self.storage, &rhs.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => *a += b,
+            (Storage::Cpu(a), Storage::Cpu(b)) => *std::sync::Arc::make_mut(a) += b.as_ref(),
             #[cfg(feature = "cuda")]
             _ => panic!("In-place operations on non-CPU tensors not yet implemented or mismatched devices."),
         }
@@ -110,7 +110,7 @@ impl std::ops::AddAssign<&Tensor> for Tensor {
 impl PartialEq for Tensor {
     fn eq(&self, other: &Self) -> bool {
         match (&self.storage, &other.storage) {
-            (Storage::Cpu(a), Storage::Cpu(b)) => a == b,
+            (Storage::Cpu(a), Storage::Cpu(b)) => a.as_ref() == b.as_ref(),
             #[cfg(feature = "cuda")]
             _ => panic!("PartialEq comparison involving CUDA tensors not yet implemented"),
         }
@@ -138,7 +138,7 @@ impl TensorOps for Tensor {
     fn mapv<F>(&self, f: F) -> Self 
     where F: Fn(f32) -> f32 + Sync + Send {
         match &self.storage {
-            Storage::Cpu(data) => data.mapv(f).into(),
+            Storage::Cpu(data) => data.as_ref().mapv(f).into(),
             #[cfg(feature = "cuda")]
             _ => panic!("mapv not implemented for non-CPU tensors"),
         }

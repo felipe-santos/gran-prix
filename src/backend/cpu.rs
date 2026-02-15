@@ -6,7 +6,6 @@ use ndarray::Zip;
 pub struct CPUBackend;
 
 impl Backend for CPUBackend {
-    #[tracing::instrument(skip(self, a, b), name = "kernel_matmul")]
     fn matmul_t(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool) -> GPResult<Tensor> {
         let a_view = a.try_view()?;
         let b_view = b.try_view()?;
@@ -16,10 +15,31 @@ impl Backend for CPUBackend {
         let b2 = b_view.into_dimensionality::<ndarray::Ix2>()
             .map_err(|_| GPError::IncompatibleShapes { expected: vec![0, 0], found: b.shape().to_vec() })?;
         
-        let lhs = if trans_a { a2.t() } else { a2 };
-        let rhs = if trans_b { b2.t() } else { b2 };
+        let lhs = if trans_a { a2.t() } else { a2.view() };
+        let rhs = if trans_b { b2.t() } else { b2.view() };
         
-        let res = lhs.dot(&rhs);
+        let (m, k) = lhs.dim();
+        let (k2, n) = rhs.dim();
+
+        if k != k2 {
+            return Err(GPError::IncompatibleShapes { 
+                expected: vec![m, k], 
+                found: vec![k2, n] 
+            });
+        }
+
+        // Manual MatMul to avoid dlmalloc/alignment issues with ndarray's optimized dot in WASM
+        let mut res = ndarray::Array2::<f32>::zeros((m, n));
+        for i in 0..m {
+            for j in 0..n {
+                let mut sum = 0.0;
+                for l in 0..k {
+                    sum += lhs[[i, l]] * rhs[[l, j]];
+                }
+                res[[i, j]] = sum;
+            }
+        }
+
         Ok(res.into_dyn().into())
     }
 
@@ -315,7 +335,6 @@ impl Backend for CPUBackend {
         Ok(res)
     }
 
-    #[tracing::instrument(skip(self, a, b), name = "kernel_add_relu_fused")]
     fn add_relu(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
         let mut res = a.try_view()?.to_owned() + &b.try_view()?;
         res.map_inplace(|v| if *v < 0.0 { *v = 0.0 });

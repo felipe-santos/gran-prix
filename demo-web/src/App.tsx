@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 // This path assumes the user has built the pkg in the sibling directory
 // In a real monorepo, you'd alias this in vite.config.ts or package.json
-import * as wasm from '../../../gran-prix-wasm/pkg/gran_prix_wasm'
+import * as wasm from '../public/pkg/gran_prix_wasm'
 import { Button } from './components/ui/button'
 
 const GAME_WIDTH = 800;
@@ -28,16 +28,19 @@ function App() {
     generation: 1,
     speed: 5
   });
+  const isComputing = useRef(false);
 
   // Initialize WASM
   useEffect(() => {
     async function init() {
        try {
-         // In a real Vite setup, init() or direct import handles this.
-         // For this demo structure, we assume the user builds the wasm pkg.
-         const brainInstance = new wasm.NeuralBrain();
-         setBrain(brainInstance);
-         console.log("Gran-Prix Brain Online!");
+        // Initialize the WASM module
+        await wasm.default();
+        wasm.init_panic_hook();
+        
+        const brainInstance = new wasm.NeuralBrain();
+        setBrain(brainInstance);
+        console.log("Gran-Prix Brain Online!");
        } catch (e) {
          console.error("Failed to load brain:", e);
        }
@@ -92,8 +95,12 @@ function App() {
         sensors[idx] = dist; // Feed generic data for now
     });
 
+    if (isComputing.current) return;
+    isComputing.current = true;
     try {
-        const steering = brain.compute(sensors); // 0.0 (Left) to 1.0 (Right)
+        // const steering = brain.compute(sensors); // 0.0 (Left) to 1.0 (Right)
+        // Pass individual floats to avoid array allocation crash
+        const steering = brain.compute(sensors[0], sensors[1], sensors[2], sensors[3], sensors[4]);
         // Map 0..1 to -Speed..+Speed
         const move = (steering - 0.5) * 2.0 * 10;
         state.playerX = Math.max(0, Math.min(GAME_WIDTH - PLAYER_SIZE, state.playerX + move));
@@ -103,6 +110,8 @@ function App() {
         // Here we just let it run for the demo visual.
     } catch(e) {
         console.error(e);
+    } finally {
+        isComputing.current = false;
     }
 
     // 3. Collision Detection

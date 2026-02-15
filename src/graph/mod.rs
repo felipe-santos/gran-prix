@@ -15,247 +15,174 @@ pub enum Node {
     Input(Tensor),
     Param(Tensor), // Trainable parameters
     Op {
-        op: Box<dyn Operation>,
+        op: OpType,
         inputs: Vec<NodeId>,
     },
 }
 
-impl Node {
-    pub fn op(&self) -> Option<&dyn Operation> {
-        if let Node::Op { op, .. } = self {
-            Some(op.as_ref())
-        } else {
-            None
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum OpType {
+    MatMul,
+    Conv2D { stride: usize, padding: usize },
+    MaxPool2D { kernel_size: usize, stride: usize },
+    Add,
+    ReLU,
+    Sigmoid,
+    Reshape { target_shape: Vec<usize> },
+    AddReLU, // Fused operation for optimizer
+}
+
+impl OpType {
+    pub fn name(&self) -> &str {
+        match self {
+            OpType::MatMul => "MatMul",
+            OpType::Conv2D { .. } => "Conv2D",
+            OpType::MaxPool2D { .. } => "MaxPool2D",
+            OpType::Add => "Add",
+            OpType::ReLU => "ReLU",
+            OpType::Sigmoid => "Sigmoid",
+            OpType::Reshape { .. } => "Reshape",
+            OpType::AddReLU => "AddReLU",
         }
+    }
+
+    pub fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
+        match self {
+            OpType::MatMul => backend.matmul_t(&inputs[0], &inputs[1], false, false),
+            OpType::Conv2D { stride, padding } => backend.conv2d(&inputs[0], &inputs[1], *stride, *padding),
+            OpType::MaxPool2D { kernel_size, stride } => backend.max_pool2d(&inputs[0], *kernel_size, *stride),
+            OpType::Add => backend.add(&inputs[0], &inputs[1]),
+            OpType::ReLU => backend.relu(&inputs[0]),
+            OpType::Sigmoid => backend.sigmoid(&inputs[0]),
+            OpType::Reshape { target_shape } => {
+                let mut t = inputs[0].clone();
+                t = t.into_shape(target_shape.as_slice())?.into_dyn();
+                Ok(t)
+            }
+            OpType::AddReLU => backend.add_relu(&inputs[0], &inputs[1]),
+        }
+    }
+
+    pub fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+        match self {
+            OpType::MatMul => {
+                let grad_a = backend.matmul_t(grad_output, &inputs[1], false, true)?;
+                let grad_b = backend.matmul_t(&inputs[0], grad_output, true, false)?;
+                Ok(vec![grad_a, grad_b])
+            }
+            OpType::Conv2D { stride, padding } => {
+                let (gi, gw) = backend.conv2d_backward(&inputs[0], &inputs[1], grad_output, *stride, *padding)?;
+                Ok(vec![gi, gw])
+            }
+            OpType::MaxPool2D { kernel_size, stride } => {
+                Ok(vec![backend.max_pool2d_backward(&inputs[0], grad_output, *kernel_size, *stride)?])
+            }
+            OpType::Add => {
+                let shape_a = inputs[0].shape();
+                let shape_b = inputs[1].shape();
+                Ok(vec![
+                    self.resolve_grad(shape_a, grad_output, backend)?,
+                    self.resolve_grad(shape_b, grad_output, backend)?
+                ])
+            }
+            OpType::ReLU => Ok(vec![backend.relu_backward(&inputs[0], grad_output)?]),
+            OpType::Sigmoid => {
+                let y = backend.sigmoid(&inputs[0])?; 
+                Ok(vec![backend.sigmoid_backward(&y, grad_output)?])
+            }
+            OpType::Reshape { .. } => {
+                let original_shape = inputs[0].shape();
+                let mut grad = grad_output.clone();
+                grad = grad.into_shape(original_shape)?.into_dyn();
+                Ok(vec![grad])
+            }
+            OpType::AddReLU => {
+                // ReLU gradient * Add gradient
+                let relu_grad = backend.relu_backward(&backend.add(&inputs[0], &inputs[1])?, grad_output)?;
+                Ok(vec![
+                    self.resolve_grad(inputs[0].shape(), &relu_grad, backend)?,
+                    self.resolve_grad(inputs[1].shape(), &relu_grad, backend)?
+                ])
+            }
+        }
+    }
+
+    pub fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
+        match self {
+            OpType::MatMul => {
+                if input_shapes[0][1] != input_shapes[1][0] {
+                    return Err(GPError::IncompatibleShapes { 
+                        expected: vec![input_shapes[0][0], input_shapes[1][0]], 
+                        found: vec![input_shapes[0][1], input_shapes[1][0]] 
+                    });
+                }
+                Ok(vec![input_shapes[0][0], input_shapes[1][1]])
+            }
+            OpType::Conv2D { stride, padding } => {
+                let (n, _ci, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
+                let (co, _ci_w, kh, kw) = (input_shapes[1][0], input_shapes[1][1], input_shapes[1][2], input_shapes[1][3]);
+                let oh = (h + 2 * padding - kh) / stride + 1;
+                let ow = (w + 2 * padding - kw) / stride + 1;
+                Ok(vec![n, co, oh, ow])
+            }
+            OpType::MaxPool2D { kernel_size, stride } => {
+                let (n, c, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
+                let oh = (h - kernel_size) / stride + 1;
+                let ow = (w - kernel_size) / stride + 1;
+                Ok(vec![n, c, oh, ow])
+            }
+            OpType::Add | OpType::AddReLU => {
+                if input_shapes[0] != input_shapes[1] {
+                    return Err(GPError::IncompatibleShapes { expected: input_shapes[0].clone(), found: input_shapes[1].clone() });
+                }
+                Ok(input_shapes[0].clone())
+            }
+            OpType::ReLU | OpType::Sigmoid => Ok(input_shapes[0].clone()),
+            OpType::Reshape { target_shape } => Ok(target_shape.clone()),
+        }
+    }
+
+    fn resolve_grad(&self, target_shape: &[usize], grad: &Tensor, backend: &dyn Backend) -> GPResult<Tensor> {
+        if target_shape == grad.shape() {
+            return Ok(grad.clone());
+        }
+        let grad_dims = grad.shape().len();
+        let target_dims = target_shape.len();
+        let mut axes_to_reduce = Vec::new();
+        if grad_dims > target_dims {
+            for i in 0..(grad_dims - target_dims) {
+                axes_to_reduce.push(i);
+            }
+        }
+        for i in 0..target_dims {
+            let g_idx = grad_dims - 1 - i;
+            let t_idx = target_dims - 1 - i;
+            if target_shape[t_idx] == 1 && grad.shape()[g_idx] > 1 {
+                axes_to_reduce.push(g_idx);
+            }
+        }
+        if axes_to_reduce.is_empty() {
+             return Ok(grad.clone());
+        }
+        backend.reduce_sum(grad, &axes_to_reduce, true)
+            .and_then(|t| {
+                if t.shape().len() != target_shape.len() {
+                     let val = t.try_view()?.to_owned().into_shape(target_shape)
+                         .map_err(|_e| GPError::IncompatibleShapes { expected: target_shape.to_vec(), found: t.shape().to_vec() })?;
+                     Ok(val.into_dyn().into())
+                } else {
+                     Ok(t)
+                }
+            })
     }
 }
 
-/// A generic operation in the DAG.
-#[typetag::serde]
+// Trait remains for compatibility where needed, though we moved to enum for core WASM stability
 pub trait Operation: Send + Sync {
     fn name(&self) -> &str;
     fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor>;
     fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>>;
-    
-    /// Static shape inference: Determines output shape without computing values.
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>>;
-}
-
-// --- Concrete Operations ---
-
-#[derive(Serialize, Deserialize)]
-pub struct MatMul;
-#[typetag::serde]
-impl Operation for MatMul {
-    fn name(&self) -> &str { "MatMul" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
-        backend.matmul_t(&inputs[0], &inputs[1], false, false)
-    }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        // grad_A = grad_output * B^T
-        let grad_a = backend.matmul_t(grad_output, &inputs[1], false, true)?;
-        // grad_B = A^T * grad_output
-        let grad_b = backend.matmul_t(&inputs[0], grad_output, true, false)?;
-        Ok(vec![grad_a, grad_b])
-    }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
-        if input_shapes[0][1] != input_shapes[1][0] {
-            return Err(GPError::IncompatibleShapes { 
-                expected: vec![input_shapes[0][0], input_shapes[1][0]], 
-                found: vec![input_shapes[0][1], input_shapes[1][0]] 
-            });
-        }
-        Ok(vec![input_shapes[0][0], input_shapes[1][1]])
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Conv2D {
-    pub stride: usize,
-    pub padding: usize,
-}
-
-#[typetag::serde]
-impl Operation for Conv2D {
-    fn name(&self) -> &str { "Conv2D" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
-        backend.conv2d(&inputs[0], &inputs[1], self.stride, self.padding)
-    }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        let (gi, gw) = backend.conv2d_backward(&inputs[0], &inputs[1], grad_output, self.stride, self.padding)?;
-        Ok(vec![gi, gw])
-    }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
-        let (n, _ci, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
-        let (co, _ci_w, kh, kw) = (input_shapes[1][0], input_shapes[1][1], input_shapes[1][2], input_shapes[1][3]);
-        let oh = (h + 2 * self.padding - kh) / self.stride + 1;
-        let ow = (w + 2 * self.padding - kw) / self.stride + 1;
-        Ok(vec![n, co, oh, ow])
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct MaxPool2D {
-    pub kernel_size: usize,
-    pub stride: usize,
-}
-
-#[typetag::serde]
-impl Operation for MaxPool2D {
-    fn name(&self) -> &str { "MaxPool2D" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
-        backend.max_pool2d(&inputs[0], self.kernel_size, self.stride)
-    }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        Ok(vec![backend.max_pool2d_backward(&inputs[0], grad_output, self.kernel_size, self.stride)?])
-    }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
-        let (n, c, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
-        let oh = (h - self.kernel_size) / self.stride + 1;
-        let ow = (w - self.kernel_size) / self.stride + 1;
-        Ok(vec![n, c, oh, ow])
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Add;
-#[typetag::serde]
-impl Operation for Add {
-    fn name(&self) -> &str { "Add" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
-        backend.add(&inputs[0], &inputs[1])
-    }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        let shape_a = inputs[0].shape();
-        let shape_b = inputs[1].shape();
-        let _shape_out = grad_output.shape();
-
-        // Helper to resolve broadcast dimensions
-        let resolve_grad = |target_shape: &[usize], grad: &Tensor| -> GPResult<Tensor> {
-            if target_shape == grad.shape() {
-                return Ok(grad.clone());
-            }
-            // Identify axes to reduce
-            // Broadcasting rules: align from right.
-            // If target has fewer dims, reduce leading dims.
-            // If dim is 1 in target and >1 in grad, reduce that dim.
-            
-            let grad_dims = grad.shape().len();
-            let target_dims = target_shape.len();
-            let mut axes_to_reduce = Vec::new();
-            
-            // Reduce extra leading dims
-            if grad_dims > target_dims {
-                for i in 0..(grad_dims - target_dims) {
-                    axes_to_reduce.push(i);
-                }
-            }
-            
-            // Check matching trailing dims
-            for i in 0..target_dims {
-                let g_idx = grad_dims - 1 - i;
-                let t_idx = target_dims - 1 - i;
-                
-                if target_shape[t_idx] == 1 && grad.shape()[g_idx] > 1 {
-                    axes_to_reduce.push(g_idx);
-                }
-            }
-            
-            if axes_to_reduce.is_empty() {
-                 return Ok(grad.clone());
-            }
-            
-            backend.reduce_sum(grad, &axes_to_reduce, true)
-                .and_then(|t| {
-                    // If we reduced leading dims, we might need to reshape to drop them if keep_dims=true kept them as 1?
-                    // make sure output shape matches target shape exactly.
-                    // Our reduce_sum implementation with keep_dims=true keeps them as 1.
-                    // If target has fewer dims, we need to drop leading 1s.
-                    if t.shape().len() != target_shape.len() {
-                         // Attempt reshape
-                         // Should verify total elements match
-                         // t.values match target.values (broadcasting validation?)
-                         // Just force reshape
-                         let val = t.try_view()?.to_owned().into_shape(target_shape)
-                             .map_err(|_e| GPError::IncompatibleShapes { expected: target_shape.to_vec(), found: t.shape().to_vec() })?;
-                         Ok(val.into_dyn().into())
-                    } else {
-                         Ok(t)
-                    }
-                })
-        };
-
-        Ok(vec![
-            resolve_grad(shape_a, grad_output)?,
-            resolve_grad(shape_b, grad_output)?
-        ])
-    }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
-        if input_shapes[0] != input_shapes[1] {
-            return Err(GPError::IncompatibleShapes { expected: input_shapes[0].clone(), found: input_shapes[1].clone() });
-        }
-        Ok(input_shapes[0].clone())
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ReLUOp;
-#[typetag::serde]
-impl Operation for ReLUOp {
-    fn name(&self) -> &str { "ReLU" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
-        backend.relu(&inputs[0])
-    }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        Ok(vec![backend.relu_backward(&inputs[0], grad_output)?])
-    }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
-        Ok(input_shapes[0].clone())
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SigmoidOp;
-#[typetag::serde]
-impl Operation for SigmoidOp {
-    fn name(&self) -> &str { "Sigmoid" }
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
-        backend.sigmoid(&inputs[0])
-    }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        // inputs[0] is X, but sigmoid_backward needs Y = sigmoid(X)
-        // For efficiency, some backends might prefer the output Y.
-        // Let's assume our backend.sigmoid_backward takes Y.
-        let y = backend.sigmoid(&inputs[0])?; 
-        Ok(vec![backend.sigmoid_backward(&y, grad_output)?])
-    }
-    fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
-        Ok(input_shapes[0].clone())
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct Reshape {
-    pub target_shape: Vec<usize>,
-}
-
-#[typetag::serde]
-impl Operation for Reshape {
-    fn name(&self) -> &str { "Reshape" }
-    fn forward(&self, inputs: &[Tensor], _backend: &dyn Backend) -> GPResult<Tensor> {
-        let mut t = inputs[0].clone();
-        t = t.into_shape(self.target_shape.as_slice())?.into_dyn();
-        Ok(t)
-    }
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
-        let original_shape = inputs[0].shape();
-        let mut grad = grad_output.clone();
-        grad = grad.into_shape(original_shape)?.into_dyn();
-        Ok(vec![grad])
-    }
-    fn output_shape(&self, _input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
-        Ok(self.target_shape.clone())
-    }
 }
 
 
@@ -271,6 +198,12 @@ pub struct Graph {
     /// Accumulated gradients
     #[serde(skip)]
     gradients: Vec<Option<Tensor>>,
+    /// Memory reuse plan
+    #[serde(skip)]
+    pub memory_plan: Option<memory_planner::MemoryPlanner>,
+    /// Pre-allocated buffers
+    #[serde(skip)]
+    pub buffer_pool: Option<buffer_pool::BufferPool>,
 }
 
 impl Graph {
@@ -280,6 +213,8 @@ impl Graph {
             backend: Some(backend),
             values: Vec::new(),
             gradients: Vec::new(),
+            memory_plan: None,
+            buffer_pool: None,
         }
     }
 
@@ -311,7 +246,7 @@ impl Graph {
         id
     }
 
-    pub fn op(&mut self, op: Box<dyn Operation>, inputs: Vec<NodeId>) -> NodeId {
+    pub fn op(&mut self, op: OpType, inputs: Vec<NodeId>) -> NodeId {
         let id = NodeId(self.nodes.len());
         self.nodes.push(Node::Op { op, inputs });
         self.values.push(None);
@@ -319,90 +254,138 @@ impl Graph {
         id
     }
 
-    /// Forward pass: Computes and caches values
+    /// Forward pass: Computes and caches values using iterative execution and memory reuse.
     pub fn execute(&mut self, target: NodeId) -> GPResult<Tensor> {
-        // Check cache with explicit type hint for compiler
-        if let Some(val) = self.values.get(target.0).and_then(|v: &Option<Tensor>| v.as_ref()) {
-            return Ok(val.clone());
+        // Ensure memory is planned and pool is initialized BEFORE borrowing backend immutably
+        if self.memory_plan.is_none() {
+            self.plan_memory()?;
         }
 
-        // Helper to check if node is leaf (Input/Param) and return its value if so
-        let leaf_val = match self.nodes.get(target.0).ok_or_else(|| GPError::InferenceError(format!("Node not found: {:?}", target)))? {
-            Node::Input(t) => Some(t.clone()),
-            Node::Param(t) => Some(t.clone()),
-            Node::Op { .. } => None,
-        };
-
-        if let Some(val) = leaf_val {
-            if self.values.len() <= target.0 {
-                self.values.resize(target.0 + 1, None);
-            }
-            self.values[target.0] = Some(val.clone());
-            return Ok(val);
-        }
-
-        let inputs = match &self.nodes[target.0] {
-            Node::Op { inputs, .. } => inputs.clone(),
-            _ => unreachable!(),
-        };
-
-        let mut input_tensors = Vec::with_capacity(inputs.len());
-        for &input_id in &inputs {
-            input_tensors.push(self.execute(input_id)?);
-        }
-
+        let order = self.topological_sort(target)?;
         let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
-        let val = if let Node::Op { op, .. } = &self.nodes[target.0] {
-            op.forward(&input_tensors, backend)?
-        } else {
-            unreachable!()
-        };
 
-        if self.values.len() <= target.0 {
-            self.values.resize(target.0 + 1, None);
+        for node_id in order {
+            if self.values.get(node_id.0).and_then(|v| v.as_ref()).is_some() {
+                continue;
+            }
+
+            let val = match &self.nodes[node_id.0] {
+                Node::Input(t) => t.clone(),
+                Node::Param(t) => t.clone(),
+                Node::Op { op, inputs } => {
+                    let mut input_tensors = Vec::with_capacity(inputs.len());
+                    for &input_id in inputs {
+                        input_tensors.push(self.values[input_id.0].as_ref()
+                            .ok_or_else(|| GPError::InferenceError(format!("Input value not found for node {:?}", input_id)))?
+                            .clone());
+                    }
+                    
+                    // TODO: In the future, pass a pre-allocated buffer from the pool to the backend
+                    op.forward(&input_tensors, backend)?
+                }
+            };
+
+            if self.values.len() <= node_id.0 {
+                self.values.resize(node_id.0 + 1, None);
+            }
+            self.values[node_id.0] = Some(val);
         }
-        self.values[target.0] = Some(val.clone());
-        Ok(val)
+
+        self.values[target.0].as_ref().cloned()
+            .ok_or_else(|| GPError::InferenceError(format!("Target node {:?} not computed", target)))
     }
 
-    /// Backward pass: Propagates gradients starting from the target node
+    /// Plans memory reuse for the current graph.
+    pub fn plan_memory(&mut self) -> GPResult<()> {
+        let planner = memory_planner::MemoryPlanner::plan(self)?;
+        let pool = buffer_pool::BufferPool::new(planner.buffer_count);
+        self.memory_plan = Some(planner);
+        self.buffer_pool = Some(pool);
+        Ok(())
+    }
+
+    /// Backward pass: Propagates gradients using iterative execution (reverse topological order).
     pub fn backward(&mut self, target: NodeId, grad_output: Tensor) -> GPResult<()> {
-        if self.gradients.len() <= target.0 {
-            self.gradients.resize(target.0 + 1, None);
-        }
-
-        // Accumulate gradient
-        if let Some(existing_grad) = &self.gradients[target.0] {
-            self.gradients[target.0] = Some(existing_grad + &grad_output);
-        } else {
-            self.gradients[target.0] = Some(grad_output.clone());
-        }
-
-        let inputs = match &self.nodes[target.0] {
-            Node::Op { inputs, .. } => inputs.clone(),
-            _ => return Ok(()),
-        };
-
-        let mut input_tensors = Vec::with_capacity(inputs.len());
-        for &input_id in &inputs {
-            input_tensors.push(self.values[input_id.0].as_ref()
-                .ok_or_else(|| GPError::InferenceError(format!("Value not found for node {:?}", input_id)))?.clone());
-        }
-
-        let current_grad = self.gradients[target.0].as_ref().unwrap();
+        let order = self.topological_sort(target)?;
         let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
-        
-        // Re-borrow op here
-        let input_grads = if let Node::Op { op, .. } = &self.nodes[target.0] {
-            op.backward(&input_tensors, current_grad, backend)?
+
+        if self.gradients.len() < self.nodes.len() {
+            self.gradients.resize(self.nodes.len(), None);
+        }
+
+        // Initialize/Accumulate target gradient
+        if let Some(existing) = &self.gradients[target.0] {
+            self.gradients[target.0] = Some(existing + &grad_output);
         } else {
-            unreachable!()
-        };
-        
-        for (i, &input_id) in inputs.iter().enumerate() {
-            self.backward(input_id, input_grads[i].clone())?;
+            self.gradients[target.0] = Some(grad_output);
+        }
+
+        // Process in reverse topological order
+        for &node_id in order.iter().rev() {
+            let grad = match self.gradients[node_id.0].take() {
+                Some(g) => g,
+                None => continue, // No gradient for this node
+            };
+            
+            // Put it back because we might need it for parameter update or further accumulation
+            self.gradients[node_id.0] = Some(grad.clone());
+
+            let (op, inputs) = match &self.nodes[node_id.0] {
+                Node::Op { op, inputs } => (op, inputs),
+                _ => continue, // Leaf nodes don't propagate gradients
+            };
+
+            let mut input_tensors = Vec::with_capacity(inputs.len());
+            for &id in inputs {
+                input_tensors.push(self.values[id.0].as_ref()
+                    .ok_or_else(|| GPError::InferenceError(format!("Value not found for node {:?}", id)))?.clone());
+            }
+
+            let input_grads = op.backward(&input_tensors, &grad, backend)?;
+            for (i, &input_id) in inputs.iter().enumerate() {
+                if let Some(existing) = &self.gradients[input_id.0] {
+                    self.gradients[input_id.0] = Some(existing + &input_grads[i]);
+                } else {
+                    self.gradients[input_id.0] = Some(input_grads[i].clone());
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Computes topological order of nodes required for the target node (Iterative).
+    pub fn topological_sort(&self, target: NodeId) -> GPResult<Vec<NodeId>> {
+        let mut order = Vec::new();
+        let mut visited = vec![false; self.nodes.len()];
+        let mut on_stack = vec![false; self.nodes.len()];
+        let mut stack = vec![(target, false)]; // (node_id, processed_children)
+
+        while let Some((id, processed)) = stack.pop() {
+            if processed {
+                on_stack[id.0] = false;
+                order.push(id);
+                continue;
+            }
+
+            if visited[id.0] {
+                continue;
+            }
+
+            if on_stack[id.0] {
+                return Err(GPError::InferenceError("Cycle detected in graph".to_string()));
+            }
+
+            visited[id.0] = true;
+            on_stack[id.0] = true;
+            stack.push((id, true));
+
+            if let Node::Op { inputs, .. } = &self.nodes[id.0] {
+                for &input_id in inputs.iter().rev() {
+                    stack.push((input_id, false));
+                }
+            }
+        }
+        Ok(order)
     }
 
     pub fn get_gradient(&self, id: NodeId) -> Option<&Tensor> {

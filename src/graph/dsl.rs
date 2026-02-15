@@ -1,4 +1,4 @@
-use crate::graph::{Graph, MatMul, Add, ReLUOp, SigmoidOp, Conv2D, MaxPool2D};
+use crate::graph::{Graph, OpType};
 use crate::{Tensor, NodeId};
 
 pub struct GraphBuilder<'a> {
@@ -19,11 +19,11 @@ impl<'a> GraphBuilder<'a> {
     }
 
     pub fn matmul(&mut self, a: NodeId, b: NodeId) -> NodeId {
-        self.graph.op(Box::new(MatMul), vec![a, b])
+        self.graph.op(OpType::MatMul, vec![a, b])
     }
 
     pub fn add(&mut self, a: NodeId, b: NodeId) -> NodeId {
-        self.graph.op(Box::new(Add), vec![a, b])
+        self.graph.op(OpType::Add, vec![a, b])
     }
     
     /// Professional helper for Linear transformation: XW + B
@@ -33,23 +33,23 @@ impl<'a> GraphBuilder<'a> {
     }
 
     pub fn relu(&mut self, x: NodeId) -> NodeId {
-        self.graph.op(Box::new(ReLUOp), vec![x])
+        self.graph.op(OpType::ReLU, vec![x])
     }
 
     pub fn sigmoid(&mut self, input: NodeId) -> NodeId {
-        self.graph.op(Box::new(SigmoidOp), vec![input])
+        self.graph.op(OpType::Sigmoid, vec![input])
     }
 
     pub fn conv2d(&mut self, input: NodeId, weight: NodeId, stride: usize, padding: usize) -> NodeId {
-        self.graph.op(Box::new(Conv2D { stride, padding }), vec![input, weight])
+        self.graph.op(OpType::Conv2D { stride, padding }, vec![input, weight])
     }
 
     pub fn max_pool2d(&mut self, input: NodeId, kernel_size: usize, stride: usize) -> NodeId {
-        self.graph.op(Box::new(MaxPool2D { kernel_size, stride }), vec![input])
+        self.graph.op(OpType::MaxPool2D { kernel_size, stride }, vec![input])
     }
 
     pub fn reshape(&mut self, input: NodeId, target_shape: Vec<usize>) -> NodeId {
-        self.graph.op(Box::new(crate::graph::Reshape { target_shape }), vec![input])
+        self.graph.op(OpType::Reshape { target_shape }, vec![input])
     }
 
     pub fn flatten(&mut self, input: NodeId) -> NodeId {
