@@ -71,9 +71,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Graph DSL**: `src/graph/dsl.rs` provides a fluent API for building complex topologies (ResNets, CNNs).
 - **Op Plugins**: Extensible Operation trait allowing new layer types without forking the engine.
 
+## Visual Simulation (Web Demo)
+
+Gran-Prix includes a high-performance visual simulation built with **React**, **Vite**, and **WebAssembly (Rust)**. It demonstrates neural networks evolving in real-time to navigate complex environments.
+
+![Gran-Prix Simulation](demo-web/public/game-simulation.png)
+
+### Features:
+- **Rust/WASM Synchronization**: The core physics and neural evolution run in a compiled Rust WASM module for sub-millisecond computation.
+- **Dual Theme Support**: Professional Light and Dark modes with automatic canvas synchronization.
+- **Minimalist UI**: High-contrast, "no-nonsense" design following "Feng-shui" spacing principles.
+- **Real-time Stats**: Track population evolution, fitness peaks, and generational progress.
+
+### Running the Web Demo:
+```bash
+cd demo-web
+npm install
+npm run dev
+```
+
 ## Verified Examples
 Run these to see the engine in action:
 ```bash
+# Web-based visual simulation (Vite + WASM)
+# (See demo-web/ directory)
+
 # Train a CNN on synthetic data
 cargo run --example mnist_tiny
 

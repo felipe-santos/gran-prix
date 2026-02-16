@@ -7,7 +7,7 @@ interface StatsBarProps {
 
 export const StatsBar: React.FC<StatsBarProps> = ({ stats }) => {
     return (
-        <div className="w-full max-w-5xl mb-6 px-10 py-5 bg-foreground border border-foreground flex items-center justify-between">
+        <div className="w-full max-w-5xl mb-6 px-10 py-5 bg-foreground/[0.01] rounded-xl border border-foreground/[0.05] flex items-center justify-between">
             <StatItem label="Generation" value={stats.generation} color="text-amber-500" />
             <Divider />
             <StatItem label="Population" value={`${stats.alive} / ${POPULATION_SIZE}`} color="text-foreground/70" />
