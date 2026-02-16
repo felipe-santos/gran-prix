@@ -90,6 +90,7 @@ impl OpType {
                 Ok(())
             }
             OpType::Sigmoid => {
+                // println!("Sigmoid: Start");
                 let out_shape = out.shape().to_vec();
                 let in_shape = inputs[0].shape().to_vec();
                 let out_len = out.len();
@@ -107,8 +108,11 @@ impl OpType {
                     });
                 }
                 for i in 0..out_slice.len() {
-                    out_slice[i] = 1.0 / (1.0 + (-in_slice[i]).exp());
+                    let val = 1.0 / (1.0 + (-in_slice[i]).exp());
+                    // println!("Sigmoid: idx {} -> {}", i, val);
+                    out_slice[i] = val;
                 }
+                // println!("Sigmoid: End");
                 Ok(())
             }
             OpType::AddReLU => {

@@ -112,8 +112,42 @@ function App() {
     state.obstacles = state.obstacles.filter(o => o.y < GAME_HEIGHT);
 
     // 2. AI Inference
-    const sensors = [1.0, 1.0, 1.0, 1.0, 1.0];
+    const sensors = [];
+    const playerX = state.playerX;
+    const playerY = GAME_HEIGHT - 50; 
+
+    // Raycast logic - simplified for demo
+    // 5 rays: -30, -15, 0, 15, 30 degrees
+    const angles = [-0.5, -0.25, 0, 0.25, 0.5]; 
     
+    for (let angle of angles) {
+        let dist = 1.0; // Max normalized distance
+        // Simple distinct check against obstacles
+        // In a real game, this would be a proper raycast.
+        // For now, let's just detect if an obstacle is "in the lane" of the ray.
+        
+        let rayX = Math.sin(angle);
+        let rayY = -Math.cos(angle);
+        
+        // Find closest obstacle intersection
+        for (let obs of state.obstacles) {
+            // Very rough approx: check if obstacle is in front and close
+            let dx = (obs.x + obs.w/2) - playerX;
+            let dy = obs.y - playerY;
+            let d = Math.sqrt(dx*dx + dy*dy);
+            
+            // Normalize to 0..1 (0 closest, 1 farthest/none)
+            let normD = Math.max(0, Math.min(1, d / GAME_HEIGHT));
+            
+            // Angle check is tricky without real raycast, 
+            // so we just use distance to nearest object generally for now to test stability
+            if (normD < dist) {
+                dist = normD;
+            }
+        }
+        sensors.push(dist);
+    }
+
     if (!isComputing.current) {
         isComputing.current = true;
         try {

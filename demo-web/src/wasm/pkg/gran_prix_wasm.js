@@ -1,5 +1,7 @@
 /* @ts-self-types="./gran_prix_wasm.d.ts" */
 
+//#region exports
+
 export class NeuralBrain {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -20,6 +22,8 @@ export class NeuralBrain {
      * @returns {number}
      */
     compute(s1, s2, s3, s4, s5) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ret = wasm.neuralbrain_compute(this.__wbg_ptr, s1, s2, s3, s4, s5);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
@@ -36,6 +40,8 @@ export class NeuralBrain {
         return this;
     }
     reset() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         wasm.neuralbrain_reset(this.__wbg_ptr);
     }
     /**
@@ -43,6 +49,8 @@ export class NeuralBrain {
      * @param {number} target
      */
     train(sensors, target) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
         const ptr0 = passArrayF32ToWasm0(sensors, wasm.__wbindgen_malloc_command_export);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.neuralbrain_train(this.__wbg_ptr, ptr0, len0, target);
@@ -57,13 +65,17 @@ export function init_panic_hook() {
     wasm.init_panic_hook();
 }
 
+//#endregion
+
+//#region wasm imports
+
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
         __wbg___wbindgen_throw_be289d5034ed271b: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbg_error_7534b8e9a36f1ab4: function(arg0, arg1) {
+        __wbg_error_7534b8e9a36f1ab4: function() { return logError(function (arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
             try {
@@ -73,26 +85,26 @@ function __wbg_get_imports() {
             } finally {
                 wasm.__wbindgen_free_command_export(deferred0_0, deferred0_1, 1);
             }
-        },
-        __wbg_log_4dc15ad953d83857: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_log_4dc15ad953d83857: function() { return logError(function (arg0, arg1) {
             console.log(getStringFromWasm0(arg0, arg1));
-        },
-        __wbg_new_8a6f238a6ece86ea: function() {
+        }, arguments); },
+        __wbg_new_8a6f238a6ece86ea: function() { return logError(function () {
             const ret = new Error();
             return ret;
-        },
-        __wbg_stack_0ed75d68575b0f3c: function(arg0, arg1) {
+        }, arguments); },
+        __wbg_stack_0ed75d68575b0f3c: function() { return logError(function (arg0, arg1) {
             const ret = arg1.stack;
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
             const len1 = WASM_VECTOR_LEN;
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
-        },
-        __wbindgen_cast_0000000000000001: function(arg0, arg1) {
+        }, arguments); },
+        __wbindgen_cast_0000000000000001: function() { return logError(function (arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
             return ret;
-        },
+        }, arguments); },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
             const offset = table.grow(4);
@@ -109,9 +121,17 @@ function __wbg_get_imports() {
     };
 }
 
+
+//#endregion
 const NeuralBrainFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_neuralbrain_free(ptr >>> 0, 1));
+
+
+//#region intrinsics
+function _assertNum(n) {
+    if (typeof(n) !== 'number') throw new Error(`expected a number argument, found ${typeof(n)}`);
+}
 
 let cachedDataViewMemory0 = null;
 function getDataViewMemory0() {
@@ -142,6 +162,22 @@ function getUint8ArrayMemory0() {
     return cachedUint8ArrayMemory0;
 }
 
+function logError(f, args) {
+    try {
+        return f.apply(this, args);
+    } catch (e) {
+        let error = (function () {
+            try {
+                return e instanceof Error ? `${e.message}\n\nStack:\n${e.stack}` : e.toString();
+            } catch(_) {
+                return "<failed to stringify thrown value>";
+            }
+        }());
+        console.error("wasm-bindgen: imported JS function that was not marked as `catch` threw an error:", error);
+        throw e;
+    }
+}
+
 function passArrayF32ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 4, 4) >>> 0;
     getFloat32ArrayMemory0().set(arg, ptr / 4);
@@ -150,6 +186,7 @@ function passArrayF32ToWasm0(arg, malloc) {
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
+    if (typeof(arg) !== 'string') throw new Error(`expected a string argument, found ${typeof(arg)}`);
     if (realloc === undefined) {
         const buf = cachedTextEncoder.encode(arg);
         const ptr = malloc(buf.length, 1) >>> 0;
@@ -177,7 +214,7 @@ function passStringToWasm0(arg, malloc, realloc) {
         ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
         const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
         const ret = cachedTextEncoder.encodeInto(arg, view);
-
+        if (ret.read !== arg.length) throw new Error('failed to pass whole string');
         offset += ret.written;
         ptr = realloc(ptr, len, offset, 1) >>> 0;
     }
@@ -221,6 +258,10 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
+
+//#endregion
+
+//#region wasm loading
 let wasmModule, wasm;
 function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
@@ -314,3 +355,5 @@ async function __wbg_init(module_or_path) {
 }
 
 export { initSync, __wbg_init as default };
+//#endregion
+export { wasm as __wasm }

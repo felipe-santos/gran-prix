@@ -139,7 +139,7 @@ impl NeuralBrain {
             }
             
             // GRANULAR TRACING
-            // console_log!("PRIX: Node {} step...", node_id.0);
+            console_log!("PRIX: Node {} step...", node_id.0);
             
             graph.execute_single_node(node_id)
                 .map_err(|e| {
@@ -147,6 +147,8 @@ impl NeuralBrain {
                     JsValue::from_str(&format!("Node {} execution error: {}", node_id.0, e))
                 })?;
         }
+
+        console_log!("PRIX: Graph execution complete.");
 
         let values = graph.values();
         let result_tensor = values.get(self.output_node)

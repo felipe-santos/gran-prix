@@ -17,11 +17,11 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_neuralbrain_free: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
     readonly neuralbrain_compute: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly neuralbrain_new: () => [number, number, number];
     readonly neuralbrain_reset: (a: number) => void;
     readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly init_panic_hook: () => void;
     readonly __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
