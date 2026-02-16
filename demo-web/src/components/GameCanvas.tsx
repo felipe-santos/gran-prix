@@ -10,12 +10,12 @@ export const GameCanvas = forwardRef<HTMLCanvasElement, GameCanvasProps>(
         return (
             <div className="relative">
                 {/* Canvas Container */}
-                <div className="relative bg-[#0d0d0e] rounded-xl border border-white/[0.05] overflow-hidden">
+                <div className="relative bg-[var(--canvas-bg)] rounded-xl border-8 border-foreground overflow-hidden">
                     <canvas 
                         ref={ref} 
                         width={width} 
                         height={height}
-                        className="block bg-zinc-950/40"
+                        className="block"
                     />
                 </div>
             </div>

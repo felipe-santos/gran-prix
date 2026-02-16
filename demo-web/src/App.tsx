@@ -17,6 +17,7 @@ import { Header } from './components/Header'
 import { GameCanvas } from './components/GameCanvas'
 import { StatsBar } from './components/StatsBar'
 import { GameControls } from './components/GameControls'
+import { ThemeToggle } from './components/ThemeToggle'
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -60,11 +61,13 @@ function App() {
     const state = gameState.current;
 
     // Clear with slight trail effect
-    ctx.fillStyle = 'rgba(10, 10, 11, 0.4)';
+    const trailColor = getComputedStyle(document.documentElement).getPropertyValue('--canvas-trail').trim() || 'rgba(10, 10, 11, 0.4)';
+    ctx.fillStyle = trailColor;
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     // Draw Grid (Feng Shui detail)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+    const gridStyle = getComputedStyle(document.documentElement).getPropertyValue('--canvas-grid').trim() || 'rgba(255, 255, 255, 0.03)';
+    ctx.strokeStyle = gridStyle;
     ctx.lineWidth = 1;
     for(let x=0; x<GAME_WIDTH; x+=40) {
         ctx.beginPath();
@@ -86,7 +89,11 @@ function App() {
     // Cars
     state.cars.forEach(car => {
         if (car.dead) {
+          if (document.documentElement.getAttribute('data-theme') === 'dark') {
             ctx.fillStyle = '#1a1a1c';
+          } else {
+            ctx.fillStyle = '#dac5ccff';
+          }
             ctx.globalAlpha = 0.2;
         } else {
             ctx.fillStyle = car.color;
@@ -135,7 +142,8 @@ function App() {
   }, [isPlaying, gameLoop]);
 
   return (
-    <div className="min-h-screen bg-[#0a0a0b] text-white p-4 md:p-12 flex flex-col items-center selection:bg-emerald-500/30">
+    <div className="min-h-screen bg-background text-foreground p-4 md:p-12 flex flex-col items-center selection:bg-emerald-500/30">
+      <ThemeToggle />
       <Header />
 
       <main className="w-full max-w-5xl flex flex-col items-center">
