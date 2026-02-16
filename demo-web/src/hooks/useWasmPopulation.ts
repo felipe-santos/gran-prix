@@ -51,11 +51,22 @@ export function useWasmPopulation() {
         }
     }, []);
 
+    const getBestBrainSnapshot = useCallback((fitnessScores: Float32Array) => {
+        if (!popRef.current) return null;
+        try {
+            return popRef.current.get_best_brain_snapshot(fitnessScores);
+        } catch (e) {
+            console.error("Failed to get brain snapshot:", e);
+            return null;
+        }
+    }, []);
+
     return {
         population,
         popRef,
         initWasm,
         evolve,
-        computeAll
+        computeAll,
+        getBestBrainSnapshot
     };
 }

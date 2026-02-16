@@ -18,14 +18,16 @@ import { GameCanvas } from './components/GameCanvas'
 import { StatsBar } from './components/StatsBar'
 import { GameControls } from './components/GameControls'
 import { ThemeToggle } from './components/ThemeToggle'
+import { BrainInspector } from './components/BrainInspector'
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [stats, setStats] = useState<GameStats>({ score: 0, generation: 1, best: 0, alive: 0 });
   const [isRestarting, setIsRestarting] = useState(false);
+  const [showInspector, setShowInspector] = useState(false);
   
-  const { population, initWasm, evolve, computeAll } = useWasmPopulation();
+  const { population, initWasm, evolve, computeAll, getBestBrainSnapshot } = useWasmPopulation();
   const { gameState, resetGame, updatePhysics } = useGameLoop({
     computeAll,
     evolve,
@@ -163,6 +165,20 @@ function App() {
             }}
             isRestarting={isRestarting}
         />
+        
+        <button 
+          onClick={() => setShowInspector(!showInspector)}
+          className="mt-4 px-4 py-2 bg-zinc-800 text-zinc-400 hover:text-white rounded-lg border border-zinc-700 text-[10px] uppercase tracking-widest font-bold transition-all hover:bg-zinc-700"
+        >
+          {showInspector ? 'Hide specialist Brain' : 'Inspect Specialist Agent Brain'}
+        </button>
+
+        {showInspector && (
+          <BrainInspector 
+            nodes={getBestBrainSnapshot(Float32Array.from(gameState.current.cars.map(c => c.fitness))) || []} 
+            onClose={() => setShowInspector(false)} 
+          />
+        )}
 
       </main>
 

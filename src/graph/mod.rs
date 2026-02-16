@@ -30,6 +30,7 @@ pub enum OpType {
     Sigmoid,
     Reshape { target_shape: Vec<usize> },
     AddReLU, // Fused operation for optimizer
+    Custom(Box<dyn Operation>),
 }
 
 impl OpType {
@@ -43,6 +44,7 @@ impl OpType {
             OpType::Sigmoid => "Sigmoid",
             OpType::Reshape { .. } => "Reshape",
             OpType::AddReLU => "AddReLU",
+            OpType::Custom(op) => op.name(),
         }
     }
 
@@ -60,6 +62,7 @@ impl OpType {
                 Ok(t)
             }
             OpType::AddReLU => backend.add_relu(inputs[0], inputs[1]),
+            OpType::Custom(op) => op.forward(inputs, backend),
         }
     }
 
@@ -116,10 +119,10 @@ impl OpType {
                 Ok(())
             }
             OpType::AddReLU => {
-                backend.add_into(inputs[0], inputs[1], out)?;
                 backend.relu_inplace(out)?;
                 Ok(())
             }
+            OpType::Custom(op) => op.forward_inplace(inputs, out, backend),
             _ => {
                 // Fallback for complex ops: compute and copy via slice
                 let res = self.forward(inputs, backend)?;
@@ -170,6 +173,7 @@ impl OpType {
                     self.resolve_grad(inputs[1].shape(), &relu_grad, backend)?
                 ])
             }
+            OpType::Custom(op) => op.backward(inputs, grad_output, backend),
         }
     }
 
@@ -214,6 +218,7 @@ impl OpType {
             }
             OpType::ReLU | OpType::Sigmoid => Ok(input_shapes[0].clone()),
             OpType::Reshape { target_shape } => Ok(target_shape.clone()),
+            OpType::Custom(op) => op.output_shape(input_shapes),
         }
     }
 
@@ -258,11 +263,26 @@ impl OpType {
 }
 
 // Trait remains for compatibility where needed, though we moved to enum for core WASM stability
-pub trait Operation: Send + Sync {
+#[typetag::serde(tag = "type")]
+pub trait Operation: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;
-    fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor>;
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>>;
+    fn forward(&self, inputs: &[&Tensor], backend: &dyn Backend) -> GPResult<Tensor>;
+    fn backward(&self, inputs: &[&Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>>;
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>>;
+    
+    // Optional: inplace version for performance
+    fn forward_inplace(&self, inputs: &[&Tensor], out: &mut Tensor, backend: &dyn Backend) -> GPResult<()> {
+        let res = self.forward(inputs, backend)?;
+        out.copy_from(&res)
+    }
+
+    fn clone_box(&self) -> Box<dyn Operation>;
+}
+
+impl Clone for Box<dyn Operation> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
 }
 
 

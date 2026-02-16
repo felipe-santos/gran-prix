@@ -6,20 +6,23 @@ use gran_prix::{Tensor, GPResult};
 use serde::{Serialize, Deserialize};
 use ndarray::array;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct CustomAddOp;
 
 #[typetag::serde]
 impl Operation for CustomAddOp {
     fn name(&self) -> &str { "CustomAdd" }
-    fn forward(&self, inputs: &[Tensor], _backend: &dyn gran_prix::backend::Backend) -> GPResult<Tensor> {
-        Ok(&inputs[0] + &inputs[1])
+    fn forward(&self, inputs: &[&Tensor], _backend: &dyn gran_prix::backend::Backend) -> GPResult<Tensor> {
+        Ok(inputs[0] + inputs[1])
     }
-    fn backward(&self, _inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn gran_prix::backend::Backend) -> GPResult<Vec<Tensor>> {
+    fn backward(&self, _inputs: &[&Tensor], grad_output: &Tensor, _backend: &dyn gran_prix::backend::Backend) -> GPResult<Vec<Tensor>> {
         Ok(vec![grad_output.clone(), grad_output.clone()])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         Ok(input_shapes[0].clone())
+    }
+    fn clone_box(&self) -> Box<dyn Operation> {
+        Box::new(self.clone())
     }
 }
 

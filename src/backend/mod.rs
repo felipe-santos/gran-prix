@@ -11,6 +11,12 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
     /// 2D Convolution: [N, Ci, H, W] * [Co, Ci, Kh, Kw] -> [N, Co, Oh, Ow]
     fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> GPResult<Tensor>;
 
+    /// FFT-based 2D Convolution (Optimized for large kernels)
+    fn fft_conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> GPResult<Tensor> {
+        // Default fallback to naive convolution
+        self.conv2d(input, weight, stride, padding)
+    }
+
     /// 2D Convolution Backward: calculates gradients for input and weight.
     fn conv2d_backward(&self, input: &Tensor, weight: &Tensor, grad_output: &Tensor, stride: usize, padding: usize) -> GPResult<(Tensor, Tensor)>;
 

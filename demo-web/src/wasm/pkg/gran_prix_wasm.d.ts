@@ -6,6 +6,7 @@ export class NeuralBrain {
     [Symbol.dispose](): void;
     compute(s1: number, s2: number, s3: number, s4: number, s5: number): number;
     export_weights(): Float32Array;
+    get_graph_snapshot(): any;
     import_weights(weights: Float32Array): void;
     constructor(seed_offset: number);
     reset(): void;
@@ -18,6 +19,7 @@ export class Population {
     compute_all(inputs: Float32Array): Float32Array;
     count(): number;
     evolve(fitness_scores: Float32Array): void;
+    get_best_brain_snapshot(fitness_scores: Float32Array): any;
     constructor(size: number);
 }
 
@@ -32,6 +34,7 @@ export interface InitOutput {
     readonly init_panic_hook: () => void;
     readonly neuralbrain_compute: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly neuralbrain_export_weights: (a: number) => [number, number, number, number];
+    readonly neuralbrain_get_graph_snapshot: (a: number) => any;
     readonly neuralbrain_import_weights: (a: number, b: number, c: number) => [number, number];
     readonly neuralbrain_new: (a: number) => [number, number, number];
     readonly neuralbrain_reset: (a: number) => void;
@@ -39,10 +42,11 @@ export interface InitOutput {
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
     readonly population_count: (a: number) => number;
     readonly population_evolve: (a: number, b: number, c: number) => [number, number];
+    readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
     readonly population_new: (a: number) => [number, number, number];
-    readonly __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __externref_table_dealloc_command_export: (a: number) => void;
     readonly __wbindgen_start: () => void;

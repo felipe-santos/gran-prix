@@ -9,7 +9,7 @@ use ndarray::array;
 
 /// A Custom Operation: Power(x, n) = x^n
 /// This demonstrates how a "Plugin" would define a new kernel.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PowerOp {
     pub exponent: f32,
 }
@@ -18,13 +18,13 @@ pub struct PowerOp {
 impl Operation for PowerOp {
     fn name(&self) -> &str { "Power" }
     
-    fn forward(&self, inputs: &[Tensor], _backend: &dyn Backend) -> GPResult<Tensor> {
+    fn forward(&self, inputs: &[&Tensor], _backend: &dyn Backend) -> GPResult<Tensor> {
         // Use the TensorOps trait mapv
         use gran_prix::tensor::TensorOps;
         Ok(inputs[0].mapv(|v| v.powf(self.exponent)))
     }
 
-    fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+    fn backward(&self, inputs: &[&Tensor], grad_output: &Tensor, _backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
         // d(x^n)/dx = n * x^(n-1)
         use gran_prix::tensor::TensorOps;
         let mut grad = inputs[0].mapv(|v| self.exponent * v.powf(self.exponent - 1.0));
@@ -33,6 +33,9 @@ impl Operation for PowerOp {
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
         Ok(input_shapes[0].clone())
+    }
+    fn clone_box(&self) -> Box<dyn Operation> {
+        Box::new(self.clone())
     }
 }
 

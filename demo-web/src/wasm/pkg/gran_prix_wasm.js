@@ -45,6 +45,15 @@ export class NeuralBrain {
         return v1;
     }
     /**
+     * @returns {any}
+     */
+    get_graph_snapshot() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ret = wasm.neuralbrain_get_graph_snapshot(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * @param {Float32Array} weights
      */
     import_weights(weights) {
@@ -143,6 +152,18 @@ export class Population {
         }
     }
     /**
+     * @param {Float32Array} fitness_scores
+     * @returns {any}
+     */
+    get_best_brain_snapshot(fitness_scores) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ptr0 = passArrayF32ToWasm0(fitness_scores, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.population_get_best_brain_snapshot(this.__wbg_ptr, ptr0, len0);
+        return ret;
+    }
+    /**
      * @param {number} size
      */
     constructor(size) {
@@ -169,6 +190,17 @@ export function init_panic_hook() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg_Error_8c4e43fe74559d73: function() { return logError(function (arg0, arg1) {
+            const ret = Error(getStringFromWasm0(arg0, arg1));
+            return ret;
+        }, arguments); },
+        __wbg___wbindgen_debug_string_0bc8482c6e3508ae: function(arg0, arg1) {
+            const ret = debugString(arg1);
+            const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
+            const len1 = WASM_VECTOR_LEN;
+            getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
+            getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
+        },
         __wbg___wbindgen_throw_be289d5034ed271b: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
@@ -186,9 +218,23 @@ function __wbg_get_imports() {
         __wbg_log_4dc15ad953d83857: function() { return logError(function (arg0, arg1) {
             console.log(getStringFromWasm0(arg0, arg1));
         }, arguments); },
+        __wbg_new_361308b2356cecd0: function() { return logError(function () {
+            const ret = new Object();
+            return ret;
+        }, arguments); },
+        __wbg_new_3eb36ae241fe6f44: function() { return logError(function () {
+            const ret = new Array();
+            return ret;
+        }, arguments); },
         __wbg_new_8a6f238a6ece86ea: function() { return logError(function () {
             const ret = new Error();
             return ret;
+        }, arguments); },
+        __wbg_set_3fda3bac07393de4: function() { return logError(function (arg0, arg1, arg2) {
+            arg0[arg1] = arg2;
+        }, arguments); },
+        __wbg_set_f43e577aea94465b: function() { return logError(function (arg0, arg1, arg2) {
+            arg0[arg1 >>> 0] = arg2;
         }, arguments); },
         __wbg_stack_0ed75d68575b0f3c: function() { return logError(function (arg0, arg1) {
             const ret = arg1.stack;
@@ -197,9 +243,19 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         }, arguments); },
-        __wbindgen_cast_0000000000000001: function() { return logError(function (arg0, arg1) {
+        __wbindgen_cast_0000000000000001: function() { return logError(function (arg0) {
+            // Cast intrinsic for `F64 -> Externref`.
+            const ret = arg0;
+            return ret;
+        }, arguments); },
+        __wbindgen_cast_0000000000000002: function() { return logError(function (arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
+            return ret;
+        }, arguments); },
+        __wbindgen_cast_0000000000000003: function() { return logError(function (arg0) {
+            // Cast intrinsic for `U64 -> Externref`.
+            const ret = BigInt.asUintN(64, arg0);
             return ret;
         }, arguments); },
         __wbindgen_init_externref_table: function() {
@@ -231,6 +287,71 @@ const PopulationFinalization = (typeof FinalizationRegistry === 'undefined')
 //#region intrinsics
 function _assertNum(n) {
     if (typeof(n) !== 'number') throw new Error(`expected a number argument, found ${typeof(n)}`);
+}
+
+function debugString(val) {
+    // primitive types
+    const type = typeof val;
+    if (type == 'number' || type == 'boolean' || val == null) {
+        return  `${val}`;
+    }
+    if (type == 'string') {
+        return `"${val}"`;
+    }
+    if (type == 'symbol') {
+        const description = val.description;
+        if (description == null) {
+            return 'Symbol';
+        } else {
+            return `Symbol(${description})`;
+        }
+    }
+    if (type == 'function') {
+        const name = val.name;
+        if (typeof name == 'string' && name.length > 0) {
+            return `Function(${name})`;
+        } else {
+            return 'Function';
+        }
+    }
+    // objects
+    if (Array.isArray(val)) {
+        const length = val.length;
+        let debug = '[';
+        if (length > 0) {
+            debug += debugString(val[0]);
+        }
+        for(let i = 1; i < length; i++) {
+            debug += ', ' + debugString(val[i]);
+        }
+        debug += ']';
+        return debug;
+    }
+    // Test for built-in
+    const builtInMatches = /\[object ([^\]]+)\]/.exec(toString.call(val));
+    let className;
+    if (builtInMatches && builtInMatches.length > 1) {
+        className = builtInMatches[1];
+    } else {
+        // Failed to match the standard '[object ClassName]'
+        return toString.call(val);
+    }
+    if (className == 'Object') {
+        // we're a user defined class or Object
+        // JSON.stringify avoids problems with cycles, and is generally much
+        // easier than looping through ownProperties of `val`.
+        try {
+            return 'Object(' + JSON.stringify(val) + ')';
+        } catch (_) {
+            return 'Object';
+        }
+    }
+    // errors
+    if (val instanceof Error) {
+        return `${val.name}: ${val.message}\n${val.stack}`;
+    }
+    // TODO we could test for more things here, like `Set`s and `Map`s.
+    return className;
 }
 
 function getArrayF32FromWasm0(ptr, len) {

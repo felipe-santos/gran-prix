@@ -3,6 +3,7 @@ use gran_prix::{Tensor, GPError};
 use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
 use ndarray::{Array, IxDyn};
+use serde::Serialize;
 
 // Turn on console_error_panic_hook for better error messages in the browser
 #[wasm_bindgen]
@@ -149,7 +150,7 @@ impl NeuralBrain {
                 return Err(JsValue::from_str("Heap corruption detected mid-execution"));
             }
             
-            console_log!("PRIX: Executing Node {}", node_id.0);
+            // console_log!("PRIX: Executing Node {}", node_id.0);
             
             graph.execute_single_node(node_id)
                 .map_err(|e| {
@@ -286,6 +287,43 @@ impl NeuralBrain {
         }
         Ok(())
     }
+
+    pub fn get_graph_snapshot(&self) -> JsValue {
+        let graph = self.graph.borrow();
+        let nodes = graph.nodes();
+        let values = graph.values();
+
+        let mut snapshots = Vec::new();
+        for (i, node) in nodes.iter().enumerate() {
+            let (node_type, name) = match node {
+                gran_prix::graph::Node::Input(_) => ("INPUT", "Input Sensors".to_string()),
+                gran_prix::graph::Node::Param(_) => ("PARAM", "Weights/Bias".to_string()),
+                gran_prix::graph::Node::Op { op, .. } => ("OP", op.name().to_string()),
+            };
+
+            let activation = values.get(i).and_then(|t| t.as_ref()).and_then(|t| {
+                t.as_cpu().ok().map(|v| v.iter().cloned().take(12).collect::<Vec<f32>>())
+            });
+
+            snapshots.push(NodeSnapshot {
+                id: i,
+                node_type,
+                name,
+                value: activation
+            });
+        }
+
+        serde_wasm_bindgen::to_value(&snapshots).unwrap()
+    }
+}
+
+#[derive(Serialize)]
+struct NodeSnapshot {
+    id: usize,
+    #[serde(rename = "type")]
+    node_type: &'static str,
+    name: String,
+    value: Option<Vec<f32>>,
 }
 
 // Simple XorShift PRNG for WASM stability
@@ -328,7 +366,7 @@ impl Population {
         let mut brains = Vec::with_capacity(size);
         for i in 0..size {
             // Create brain with varied weights based on index
-            let mut brain = NeuralBrain::new(i)?; 
+            let brain = NeuralBrain::new(i)?; 
             brains.push(brain);
         }
         
@@ -393,7 +431,7 @@ impl Population {
         let mut new_brains = Vec::with_capacity(self.brains.len());
         
         // 1. ELITE: First brain is explicit copy of best
-        let mut elite = NeuralBrain::new(0)?;
+        let elite = NeuralBrain::new(0)?;
         elite.import_weights(&best_weights)?;
         new_brains.push(elite);
 
@@ -402,7 +440,7 @@ impl Population {
         let rng = &mut self.rng;
         
         for i in 1..self.brains.len() {
-            let mut offspring = NeuralBrain::new(i)?;
+            let offspring = NeuralBrain::new(i)?;
             offspring.import_weights(&best_weights)?;
             offspring.mutate(rng, 0.2, 0.5)?; 
             new_brains.push(offspring);
@@ -413,6 +451,23 @@ impl Population {
         console_log!("PRIX: Generation {} ready. (Self: {:p})", self.generation, self);
 
         Ok(())
+    }
+
+    pub fn get_best_brain_snapshot(&self, fitness_scores: &[f32]) -> JsValue {
+        if fitness_scores.len() != self.brains.len() {
+            return JsValue::NULL;
+        }
+
+        let mut best_idx = 0;
+        let mut best_score = -1.0;
+        for (i, &score) in fitness_scores.iter().enumerate() {
+            if score > best_score {
+                best_score = score;
+                best_idx = i;
+            }
+        }
+
+        self.brains[best_idx].get_graph_snapshot()
     }
 }
 
