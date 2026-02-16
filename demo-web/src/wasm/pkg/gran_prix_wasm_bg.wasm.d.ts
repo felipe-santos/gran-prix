@@ -2,11 +2,18 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_neuralbrain_free: (a: number, b: number) => void;
+export const __wbg_population_free: (a: number, b: number) => void;
 export const init_panic_hook: () => void;
 export const neuralbrain_compute: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
-export const neuralbrain_new: () => [number, number, number];
+export const neuralbrain_export_weights: (a: number) => [number, number, number, number];
+export const neuralbrain_import_weights: (a: number, b: number, c: number) => [number, number];
+export const neuralbrain_new: (a: number) => [number, number, number];
 export const neuralbrain_reset: (a: number) => void;
 export const neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
+export const population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
+export const population_count: (a: number) => number;
+export const population_evolve: (a: number, b: number, c: number) => [number, number];
+export const population_new: (a: number) => [number, number, number];
 export const __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc_command_export: (a: number, b: number) => number;
 export const __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;

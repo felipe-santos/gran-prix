@@ -30,8 +30,39 @@ export class NeuralBrain {
         }
         return ret[0];
     }
-    constructor() {
-        const ret = wasm.neuralbrain_new();
+    /**
+     * @returns {Float32Array}
+     */
+    export_weights() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ret = wasm.neuralbrain_export_weights(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * @param {Float32Array} weights
+     */
+    import_weights(weights) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ptr0 = passArrayF32ToWasm0(weights, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.neuralbrain_import_weights(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} seed_offset
+     */
+    constructor(seed_offset) {
+        _assertNum(seed_offset);
+        const ret = wasm.neuralbrain_new(seed_offset);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -45,21 +76,87 @@ export class NeuralBrain {
         wasm.neuralbrain_reset(this.__wbg_ptr);
     }
     /**
-     * @param {Float32Array} sensors
-     * @param {number} target
+     * @param {Float32Array} _sensors
+     * @param {number} _target
      */
-    train(sensors, target) {
+    train(_sensors, _target) {
         if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
         _assertNum(this.__wbg_ptr);
-        const ptr0 = passArrayF32ToWasm0(sensors, wasm.__wbindgen_malloc_command_export);
+        const ptr0 = passArrayF32ToWasm0(_sensors, wasm.__wbindgen_malloc_command_export);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.neuralbrain_train(this.__wbg_ptr, ptr0, len0, target);
+        const ret = wasm.neuralbrain_train(this.__wbg_ptr, ptr0, len0, _target);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
     }
 }
 if (Symbol.dispose) NeuralBrain.prototype[Symbol.dispose] = NeuralBrain.prototype.free;
+
+export class Population {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PopulationFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_population_free(ptr, 0);
+    }
+    /**
+     * @param {Float32Array} inputs
+     * @returns {Float32Array}
+     */
+    compute_all(inputs) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ptr0 = passArrayF32ToWasm0(inputs, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.population_compute_all(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v2;
+    }
+    /**
+     * @returns {number}
+     */
+    count() {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ret = wasm.population_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {Float32Array} fitness_scores
+     */
+    evolve(fitness_scores) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        const ptr0 = passArrayF32ToWasm0(fitness_scores, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.population_evolve(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {number} size
+     */
+    constructor(size) {
+        _assertNum(size);
+        const ret = wasm.population_new(size);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        PopulationFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) Population.prototype[Symbol.dispose] = Population.prototype.free;
 
 export function init_panic_hook() {
     wasm.init_panic_hook();
@@ -126,11 +223,19 @@ function __wbg_get_imports() {
 const NeuralBrainFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_neuralbrain_free(ptr >>> 0, 1));
+const PopulationFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_population_free(ptr >>> 0, 1));
 
 
 //#region intrinsics
 function _assertNum(n) {
     if (typeof(n) !== 'number') throw new Error(`expected a number argument, found ${typeof(n)}`);
+}
+
+function getArrayF32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
 let cachedDataViewMemory0 = null;
