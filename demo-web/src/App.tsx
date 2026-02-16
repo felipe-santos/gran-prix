@@ -21,6 +21,7 @@ import { GameControls } from './components/GameControls'
 import { ThemeToggle } from './components/ThemeToggle'
 import { BrainInspector } from './components/BrainInspector'
 import { LearningLab } from './components/LearningLab'
+import { PerformanceCharts, PerformanceData } from './components/PerformanceCharts'
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -34,8 +35,25 @@ function App() {
   const [mutationScale, setMutationScale] = useState(0.5);
   const [mutationStrategy, setMutationStrategy] = useState<wasm.MutationStrategy>(wasm.MutationStrategy.Additive);
   const [customKernel, setCustomKernelState] = useState<[number, number, number]>([0, 1, 0]);
+  const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
   
-  const { population, initWasm, evolve, computeAll, getBestBrainSnapshot, setGlobalKernel } = useWasmPopulation();
+  const { population, initWasm, evolve: wasmEvolve, computeAll, getBestBrainSnapshot, setGlobalKernel } = useWasmPopulation();
+
+  const evolve = useCallback((fitnessScores: number[], rate: number, scale: number, strategy: wasm.MutationStrategy) => {
+    // Collect Metrics
+    const max = Math.max(...fitnessScores);
+    const avg = fitnessScores.reduce((a, b) => a + b, 0) / fitnessScores.length;
+    
+    setPerformanceHistory(prev => {
+      const nextGen = prev.length > 0 ? prev[prev.length - 1].generation + 1 : 1;
+      const newHistory = [...prev, { generation: nextGen, avg, max }];
+      return newHistory.slice(-50); // Keep last 50 generations
+    });
+
+    // Original Evolve
+    wasmEvolve(fitnessScores, rate, scale, strategy);
+  }, [wasmEvolve]);
+
   const { gameState, resetGame, updatePhysics } = useGameLoop({
     computeAll,
     evolve,
@@ -195,6 +213,10 @@ function App() {
               }}
               isRestarting={isRestarting}
           />
+          
+          <div className="w-full mt-8">
+            <PerformanceCharts data={performanceHistory} />
+          </div>
           
           {!showInspector && (
             <button 
