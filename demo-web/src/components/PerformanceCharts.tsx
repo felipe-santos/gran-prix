@@ -77,7 +77,7 @@ export const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ data }) =>
             strokeWidth={2} 
             dot={{ r: 2, fill: '#10b981' }} 
             activeDot={{ r: 4, strokeWidth: 0 }}
-            animationDuration={1000}
+            isAnimationActive={false}
           />
           <Line 
             type="monotone" 
@@ -86,7 +86,7 @@ export const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ data }) =>
             strokeWidth={2} 
             dot={{ r: 2, fill: '#3b82f6' }} 
             activeDot={{ r: 4, strokeWidth: 0 }}
-            animationDuration={1000}
+            isAnimationActive={false}
           />
         </LineChart>
       </ResponsiveContainer>
