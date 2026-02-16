@@ -142,14 +142,14 @@ impl NeuralBrain {
         let order = graph.topological_sort(output_id)
             .map_err(|e| JsValue::from_str(&format!("Sort error: {}", e)))?;
 
+        // RESTORED LOOP WITH LOGGING
         for node_id in order {
             if self.magic != BRAIN_MAGIC {
                 console_log!("PRIX CRITICAL: Corruption detected BEFORE node {}", node_id.0);
                 return Err(JsValue::from_str("Heap corruption detected mid-execution"));
             }
             
-            // GRANULAR TRACING
-            // console_log!("PRIX: Node {} step...", node_id.0);
+            console_log!("PRIX: Executing Node {}", node_id.0);
             
             graph.execute_single_node(node_id)
                 .map_err(|e| {
@@ -317,7 +317,7 @@ impl XorShift {
 pub struct Population {
     brains: Vec<NeuralBrain>,
     generation: u32,
-    rng: RefCell<XorShift>,
+    rng: XorShift,
 }
 
 #[wasm_bindgen]
@@ -332,11 +332,13 @@ impl Population {
             brains.push(brain);
         }
         
-        Ok(Population {
+        let pop = Population {
             brains,
             generation: 1,
-            rng: RefCell::new(XorShift::new(12345)),
-        })
+            rng: XorShift::new(12345),
+        };
+        console_log!("PRIX: Population created at {:p}", &pop);
+        Ok(pop)
     }
 
     pub fn count(&self) -> usize {
@@ -344,8 +346,6 @@ impl Population {
     }
 
     pub fn compute_all(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
-        // inputs is a flat array: [car0_s1, car0_s2..., car1_s1, ...]
-        // verifying length
         if inputs.len() != self.brains.len() * 5 {
              return Err(JsValue::from_str("Input array length mismatch"));
         }
@@ -372,7 +372,7 @@ impl Population {
              return Err(JsValue::from_str("Fitness array length mismatch"));
         }
 
-        console_log!("PRIX: Evolving Generation {}...", self.generation);
+        console_log!("PRIX: Evolving Generation {}... (Self: {:p})", self.generation, self);
 
         // Find best brain
         let mut best_idx = 0;
@@ -387,39 +387,32 @@ impl Population {
 
         console_log!("PRIX: Best Brain index: {} with score: {:.2}", best_idx, best_score);
 
-        // Elitism: Keep the best brain exactly as is at index 0
-        // We need to clone the graph/weights. 
-        // For simplicity in this panic-prone environment, we will RE-CREATE brains
-        // using the weights of the winner + mutation.
-        
-        // Extract weights from best brain (this requires accessing the graph params)
-        // Since we don't have easy deep-clone for RefCell<Graph>, we'll use a trick:
-        // We know the structure is fixed. We just need the param tensors.
-        
         let best_brain = &self.brains[best_idx];
         let best_weights = best_brain.export_weights()?;
 
         let mut new_brains = Vec::with_capacity(self.brains.len());
         
-        // 1. ELITE: First brain is explicit copy of best (no mutation)
+        // 1. ELITE: First brain is explicit copy of best
         let mut elite = NeuralBrain::new(0)?;
         elite.import_weights(&best_weights)?;
         new_brains.push(elite);
 
         // 2. OFFSPRING: Rest are mutated copies
-        let mut rng = self.rng.borrow_mut();
+        // No RefCell borrow needed anymore
+        let rng = &mut self.rng;
         
         for i in 1..self.brains.len() {
             let mut offspring = NeuralBrain::new(i)?;
             offspring.import_weights(&best_weights)?;
-            offspring.mutate(&mut *rng, 0.2, 0.5)?; // rate 0.2, scale 0.5
+            offspring.mutate(rng, 0.2, 0.5)?; 
             new_brains.push(offspring);
         }
 
         self.brains = new_brains;
         self.generation += 1;
-        console_log!("PRIX: Generation {} ready.", self.generation);
+        console_log!("PRIX: Generation {} ready. (Self: {:p})", self.generation, self);
 
         Ok(())
     }
 }
+

@@ -5,7 +5,7 @@ import { Button } from './components/ui/button'
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 400;
 const PLAYER_SIZE = 20;
-const POPULATION_SIZE = 50;
+const POPULATION_SIZE = 10;
 
 type Car = {
     id: number;
@@ -51,7 +51,12 @@ function App() {
   }, [population]);
 
   // Initialize WASM and Population
+  const initialized = useRef(false);
+
   const initWasm = useCallback(async () => {
+    if (initialized.current) return; // Prevent double-init
+    initialized.current = true;
+
     try {
       console.log("PRIX: Initializing WASM...");
       await wasm.default();
