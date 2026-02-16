@@ -2,34 +2,39 @@
 
 @layer base {
   :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --color-background: 240 10% 3.9%;
+    --color-foreground: 0 0% 98%;
+    --color-card: 240 10% 3.9%;
+    --color-card-foreground: 0 0% 98%;
+    --color-popover: 240 10% 3.9%;
+    --color-popover-foreground: 0 0% 98%;
+    --color-primary: 0 0% 98%;
+    --color-primary-foreground: 240 5.9% 10%;
+    --color-secondary: 240 3.7% 15.9%;
+    --color-secondary-foreground: 0 0% 98%;
+    --color-muted: 240 3.7% 15.9%;
+    --color-muted-foreground: 240 5% 64.9%;
+    --color-accent: 240 3.7% 15.9%;
+    --color-accent-foreground: 0 0% 98%;
+    --color-destructive: 0 62.8% 30.6%;
+    --color-destructive-foreground: 0 0% 98%;
+    --color-border: 240 3.7% 15.9%;
+    --color-input: 240 3.7% 15.9%;
+    --color-ring: 240 4.9% 83.9%;
+    --color-zinc: 240 3.7% 15.9%;
+    --color-zinc-foreground: 0 0% 98%;
+    --color-emerald: 142 94% 39%;
+    --color-emerald-foreground: 0 0% 98%;
   }
 }
 
 @layer base {
   * {
-    border-color: hsl(var(--border));
+    border-color: hsl(var(--color-border) / 0.1);
   }
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    background-color: hsl(var(--color-background));
+    color: hsl(var(--color-foreground));
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }

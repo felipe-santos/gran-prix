@@ -1,7 +1,4 @@
 import * as React from "react"
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
-
 import { cn } from "../../lib/utils"
 
 /*
@@ -11,15 +8,16 @@ export function cn(...inputs: ClassValue[]) {
 */
 
 
-const buttonVariants = (variant: 'default' | 'secondary' = 'default') => {
+const buttonVariants = (variant: 'default' | 'secondary' | 'ghost' = 'default') => {
     switch (variant) {
         case 'secondary': return "bg-zinc-800 text-zinc-100 hover:bg-zinc-700";
+        case 'ghost': return "bg-transparent text-zinc-400 hover:text-white hover:bg-white/10";
         default: return "bg-green-600 text-white hover:bg-green-700";
     }
 }
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'default' | 'secondary'
+  variant?: 'default' | 'secondary' | 'ghost'
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
