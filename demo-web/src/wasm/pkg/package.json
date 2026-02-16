@@ -1,0 +1,15 @@
+{
+  "name": "gran-prix-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "gran_prix_wasm_bg.wasm",
+    "gran_prix_wasm.js",
+    "gran_prix_wasm.d.ts"
+  ],
+  "main": "gran_prix_wasm.js",
+  "types": "gran_prix_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

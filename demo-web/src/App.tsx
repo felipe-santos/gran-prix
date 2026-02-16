@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 // This path assumes the user has built the pkg in the sibling directory
 // In a real monorepo, you'd alias this in vite.config.ts or package.json
-import * as wasm from '../public/pkg/gran_prix_wasm'
+import * as wasm from './wasm/pkg/gran_prix_wasm'
 import { Button } from './components/ui/button'
 
 const GAME_WIDTH = 800;
@@ -29,24 +29,45 @@ function App() {
     speed: 5
   });
   const isComputing = useRef(false);
+  const brainRef = useRef<wasm.NeuralBrain | null>(null);
+  const rafId = useRef<number | null>(null);
+  const isLoopActive = useRef(false);
+
+  // Sync brain state to ref for loop access
+  useEffect(() => {
+    brainRef.current = brain;
+    return () => { brainRef.current = null; };
+  }, [brain]);
 
   // Initialize WASM
-  useEffect(() => {
-    async function init() {
-       try {
-        // Initialize the WASM module
-        await wasm.default();
-        wasm.init_panic_hook();
-        
-        const brainInstance = new wasm.NeuralBrain();
-        setBrain(brainInstance);
-        console.log("Gran-Prix Brain Online!");
-       } catch (e) {
-         console.error("Failed to load brain:", e);
-       }
+  const initWasm = useCallback(async () => {
+    try {
+      console.log("PRIX: Initializing WASM...");
+      await wasm.default();
+      wasm.init_panic_hook();
+      
+      const brainInstance = new wasm.NeuralBrain();
+      setBrain(brainInstance);
+      console.log("Gran-Prix Brain Online!");
+    } catch (e) {
+      console.error("Failed to load brain:", e);
     }
-    init();
   }, []);
+
+  useEffect(() => {
+    if (!brain) initWasm();
+  }, [initWasm, brain]);
+
+  // Safe cleanup effect
+  useEffect(() => {
+    return () => {
+      console.log("PRIX: Component unmounting...");
+      if (rafId.current) cancelAnimationFrame(rafId.current);
+      // We can't safely .free() if we aren't 100% sure the WASM stack is clear.
+      const b = brain;
+      if (b) setTimeout(() => { try { b.free(); } catch(e) {} }, 50);
+    };
+  }, [brain]);
 
   const resetGame = useCallback(() => {
      gameState.current.playerX = GAME_WIDTH / 2;
@@ -56,7 +77,16 @@ function App() {
   }, []);
 
   const gameLoop = useCallback(() => {
-    if (!isPlaying || !canvasRef.current || !brain) return;
+    if (!isPlaying) {
+      isLoopActive.current = false;
+      return;
+    }
+
+    const currentBrain = brainRef.current;
+    if (!currentBrain || !canvasRef.current) {
+        rafId.current = requestAnimationFrame(gameLoop);
+        return;
+    }
 
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
@@ -64,15 +94,14 @@ function App() {
     // 1. Update State
     const state = gameState.current;
     state.score++;
-    setStats(prev => ({ ...prev, score: state.score }));
+    if (state.score % 10 === 0) setStats(prev => ({ ...prev, score: state.score }));
 
     // Spawn Obstacles
     if (Math.random() < 0.02) {
-       const width = 50 + Math.random() * 100;
        state.obstacles.push({
-         x: Math.random() * (GAME_WIDTH - width),
+         x: Math.random() * (GAME_WIDTH - 100),
          y: -50,
-         w: width,
+         w: 50 + Math.random() * 50,
          h: 20
        });
     }
@@ -82,52 +111,39 @@ function App() {
     state.obstacles = state.obstacles.filter(o => o.y < GAME_HEIGHT);
 
     // 2. AI Inference
-    // Sensors: Raycasts at 5 angles (-60, -30, 0, 30, 60)
-    const sensors = new Float32Array(5);
-    const angles = [-60, -30, 0, 30, 60].map(a => a * Math.PI / 180);
+    const sensors = [1.0, 1.0, 1.0, 1.0, 1.0];
     
-    // Simple mock raycast logic for demo visualization
-    angles.forEach((angle, idx) => {
-        // Find distance to closest obstacle in this direction
-        // (Simplified: just check vertical distance to obstacle in "lane")
-        let dist = 1.0;
-        // ... Raycast math would go here ...
-        sensors[idx] = dist; // Feed generic data for now
-    });
-
-    if (isComputing.current) return;
-    isComputing.current = true;
-    try {
-        // const steering = brain.compute(sensors); // 0.0 (Left) to 1.0 (Right)
-        // Pass individual floats to avoid array allocation crash
-        const steering = brain.compute(sensors[0], sensors[1], sensors[2], sensors[3], sensors[4]);
-        // Map 0..1 to -Speed..+Speed
-        const move = (steering - 0.5) * 2.0 * 10;
-        state.playerX = Math.max(0, Math.min(GAME_WIDTH - PLAYER_SIZE, state.playerX + move));
-        
-        // Train: Target is center of largest gap
-        // Ideally we train on feedback (did we crash?)
-        // Here we just let it run for the demo visual.
-    } catch(e) {
-        console.error(e);
-    } finally {
-        isComputing.current = false;
+    if (!isComputing.current) {
+        isComputing.current = true;
+        try {
+            const steering = currentBrain.compute(sensors[0], sensors[1], sensors[2], sensors[3], sensors[4]);
+            const move = (steering - 0.5) * 2.0 * 10;
+            state.playerX = Math.max(0, Math.min(GAME_WIDTH - PLAYER_SIZE, state.playerX + move));
+        } catch(e) {
+            console.error("PRIX DEBUG: WASM ERROR", e);
+            if (e?.toString().includes("memory access out of bounds") || e?.toString().includes("corrupted")) {
+                console.warn("PRIX: WASM Trap detected. Restarting engine...");
+                setBrain(null); 
+                isLoopActive.current = false;
+                return;
+            }
+        } finally {
+            isComputing.current = false;
+        }
     }
 
     // 3. Collision Detection
-    const crashed = state.obstacles.some(o => 
-       state.playerX < o.x + o.w &&
-       state.playerX + PLAYER_SIZE > o.x &&
-       GAME_HEIGHT - 50 < o.y + o.h &&
-       GAME_HEIGHT - 30 > o.y
+    const playerRect = { x: state.playerX, y: GAME_HEIGHT - 50, w: PLAYER_SIZE, h: PLAYER_SIZE };
+    const hit = state.obstacles.some(o => 
+        playerRect.x < o.x + o.w &&
+        playerRect.x + playerRect.w > o.x &&
+        playerRect.y < o.y + o.h &&
+        playerRect.y + playerRect.h > o.y
     );
 
-    if (crashed) {
+    if (hit) {
        state.generation++;
-       if (state.score > stats.best) setStats(s => ({ ...s, best: state.score }));
-       setStats(s => ({ ...s, generation: state.generation }));
-       // Penalize brain? 
-       // brain.train(sensors, correct_move, 0.1);
+       setStats(s => ({ ...s, generation: state.generation, best: Math.max(s.best, state.score) }));
        resetGame();
     }
 
@@ -137,28 +153,24 @@ function App() {
 
     // Player
     ctx.fillStyle = '#00ff41';
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = '#00ff41';
     ctx.fillRect(state.playerX, GAME_HEIGHT - 50, PLAYER_SIZE, PLAYER_SIZE);
     
     // Obstacles
     ctx.fillStyle = '#ff0055';
-    ctx.shadowColor = '#ff0055';
-    state.obstacles.forEach(o => {
-       ctx.fillRect(o.x, o.y, o.w, o.h);
-    });
-    ctx.shadowBlur = 0;
+    state.obstacles.forEach(o => ctx.fillRect(o.x, o.y, o.w, o.h));
 
-    requestAnimationFrame(gameLoop);
-  }, [isPlaying, brain, resetGame, stats.best]);
+    rafId.current = requestAnimationFrame(gameLoop);
+  }, [isPlaying, resetGame]);
 
-  // Loop trigger
   useEffect(() => {
-    let animId: number;
-    if (isPlaying) {
-      animId = requestAnimationFrame(gameLoop);
+    if (isPlaying && !isLoopActive.current) {
+        isLoopActive.current = true;
+        rafId.current = requestAnimationFrame(gameLoop);
     }
-    return () => cancelAnimationFrame(animId);
+    return () => {
+        if (rafId.current) cancelAnimationFrame(rafId.current);
+        isLoopActive.current = false;
+    };
   }, [isPlaying, gameLoop]);
 
   return (

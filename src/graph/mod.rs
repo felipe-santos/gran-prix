@@ -7,6 +7,7 @@ pub mod buffer_pool;
 use crate::backend::Backend;
 use crate::{GPError, GPResult, Tensor, NodeId};
 use serde::{Serialize, Deserialize};
+use ndarray::Zip;
 
 
 /// A node in the computation graph.
@@ -46,24 +47,64 @@ impl OpType {
         }
     }
 
-    pub fn forward(&self, inputs: &[Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
+    pub fn forward(&self, inputs: &[&Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
         match self {
-            OpType::MatMul => backend.matmul_t(&inputs[0], &inputs[1], false, false),
-            OpType::Conv2D { stride, padding } => backend.conv2d(&inputs[0], &inputs[1], *stride, *padding),
-            OpType::MaxPool2D { kernel_size, stride } => backend.max_pool2d(&inputs[0], *kernel_size, *stride),
-            OpType::Add => backend.add(&inputs[0], &inputs[1]),
-            OpType::ReLU => backend.relu(&inputs[0]),
-            OpType::Sigmoid => backend.sigmoid(&inputs[0]),
+            OpType::MatMul => backend.matmul_t(inputs[0], inputs[1], false, false),
+            OpType::Conv2D { stride, padding } => backend.conv2d(inputs[0], inputs[1], *stride, *padding),
+            OpType::MaxPool2D { kernel_size, stride } => backend.max_pool2d(inputs[0], *kernel_size, *stride),
+            OpType::Add => backend.add(inputs[0], inputs[1]),
+            OpType::ReLU => backend.relu(inputs[0]),
+            OpType::Sigmoid => backend.sigmoid(inputs[0]),
             OpType::Reshape { target_shape } => {
                 let mut t = inputs[0].clone();
                 t = t.into_shape(target_shape.as_slice())?.into_dyn();
                 Ok(t)
             }
-            OpType::AddReLU => backend.add_relu(&inputs[0], &inputs[1]),
+            OpType::AddReLU => backend.add_relu(inputs[0], inputs[1]),
         }
     }
 
-    pub fn backward(&self, inputs: &[Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+    pub fn forward_inplace(&self, inputs: &[&Tensor], out: &mut Tensor, backend: &dyn Backend) -> GPResult<()> {
+        match self {
+            OpType::MatMul => backend.matmul_into(inputs[0], inputs[1], false, false, out),
+            OpType::Add => backend.add_into(inputs[0], inputs[1], out),
+            OpType::ReLU => {
+                let out_slice = out.as_slice_mut()?;
+                let in_slice = inputs[0].as_slice()?;
+                if out_slice.len() != in_slice.len() {
+                    return Err(GPError::IncompatibleShapes { expected: out.shape().to_vec(), found: inputs[0].shape().to_vec() });
+                }
+                for i in 0..out_slice.len() {
+                    out_slice[i] = if in_slice[i] < 0.0 { 0.0 } else { in_slice[i] };
+                }
+                Ok(())
+            }
+            OpType::Sigmoid => {
+                let out_slice = out.as_slice_mut()?;
+                let in_slice = inputs[0].as_slice()?;
+                if out_slice.len() != in_slice.len() {
+                    return Err(GPError::IncompatibleShapes { expected: out.shape().to_vec(), found: inputs[0].shape().to_vec() });
+                }
+                for i in 0..out_slice.len() {
+                    out_slice[i] = 1.0 / (1.0 + (-in_slice[i]).exp());
+                }
+                Ok(())
+            }
+            OpType::AddReLU => {
+                backend.add_into(inputs[0], inputs[1], out)?;
+                backend.relu_inplace(out)?;
+                Ok(())
+            }
+            _ => {
+                // Fallback for complex ops: compute and copy via slice
+                let res = self.forward(inputs, backend)?;
+                out.copy_from(&res)?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn backward(&self, inputs: &[&Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
         match self {
             OpType::MatMul => {
                 let grad_a = backend.matmul_t(grad_output, &inputs[1], false, true)?;
@@ -254,45 +295,120 @@ impl Graph {
         id
     }
 
-    /// Forward pass: Computes and caches values using iterative execution and memory reuse.
+    /// Forward pass: Computes and caches values using iterative execution.
     pub fn execute(&mut self, target: NodeId) -> GPResult<Tensor> {
-        // Ensure memory is planned and pool is initialized BEFORE borrowing backend immutably
-        if self.memory_plan.is_none() {
-            self.plan_memory()?;
-        }
-
         let order = self.topological_sort(target)?;
         let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
 
+        // PARANOID: Ensure values vector is long enough for all nodes before splitting
+        if self.values.len() < self.nodes.len() {
+            self.values.resize(self.nodes.len(), None);
+        }
+
         for node_id in order {
-            if self.values.get(node_id.0).and_then(|v| v.as_ref()).is_some() {
-                continue;
+            // Check index validity to prevent OOB before split_at_mut
+            if node_id.0 >= self.nodes.len() || node_id.0 >= self.values.len() {
+                return Err(GPError::InferenceError(format!("PRIX: Node index {} out of bounds", node_id.0)));
             }
 
-            let val = match &self.nodes[node_id.0] {
-                Node::Input(t) => t.clone(),
-                Node::Param(t) => t.clone(),
+            match &self.nodes[node_id.0] {
+                Node::Input(t) => {
+                    // Always update input, but try to avoid reallocation if shape matches
+                    if let Some(Some(cached)) = self.values.get_mut(node_id.0) {
+                        if cached.shape() == t.shape() {
+                            cached.copy_from(t)?;
+                        } else {
+                            *cached = t.clone();
+                        }
+                    } else {
+                        if self.values.len() <= node_id.0 { self.values.resize(node_id.0 + 1, None); }
+                        self.values[node_id.0] = Some(t.clone());
+                    }
+                }
+                Node::Param(t) => {
+                    if self.values[node_id.0].is_none() {
+                        self.values[node_id.0] = Some(t.clone());
+                    }
+                }
                 Node::Op { op, inputs } => {
-                    let mut input_tensors = Vec::with_capacity(inputs.len());
+                    // Safety: Split the values to borrow inputs (left) and output (right[0])
+                    let (left, right) = self.values.split_at_mut(node_id.0);
+                    let out_opt = &mut right[0];
+
+                    let mut input_refs = Vec::with_capacity(inputs.len());
                     for &input_id in inputs {
-                        input_tensors.push(self.values[input_id.0].as_ref()
-                            .ok_or_else(|| GPError::InferenceError(format!("Input value not found for node {:?}", input_id)))?
-                            .clone());
+                        // All inputs in a topological sort MUST be to the left of the current node
+                        if input_id.0 >= node_id.0 || input_id.0 >= left.len() {
+                            return Err(GPError::InferenceError(format!("Input node {:?} is invalid or not before node {:?}", input_id, node_id)));
+                        }
+                        input_refs.push(left[input_id.0].as_ref()
+                            .ok_or_else(|| GPError::InferenceError(format!("Input value not found for node {:?}", input_id)))?);
                     }
                     
-                    // TODO: In the future, pass a pre-allocated buffer from the pool to the backend
-                    op.forward(&input_tensors, backend)?
+                    if let Some(out) = out_opt {
+                        // REUSE BUFFER
+                        op.forward_inplace(&input_refs, out, backend)?;
+                    } else {
+                        // ALLOCATE (First frame only)
+                        let val = op.forward(&input_refs, backend)?;
+                        *out_opt = Some(val);
+                    }
                 }
             };
-
-            if self.values.len() <= node_id.0 {
-                self.values.resize(node_id.0 + 1, None);
-            }
-            self.values[node_id.0] = Some(val);
         }
 
         self.values[target.0].as_ref().cloned()
             .ok_or_else(|| GPError::InferenceError(format!("Target node {:?} not computed", target)))
+    }
+
+    /// DEBUG ONLY: Executa um único nó para permitir rastreamento de corrupção entre chamadas
+    pub fn execute_single_node(&mut self, node_id: NodeId) -> GPResult<()> {
+        let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
+        
+        if self.values.len() < self.nodes.len() {
+            self.values.resize(self.nodes.len(), None);
+        }
+
+        match &self.nodes[node_id.0] {
+            Node::Input(t) => {
+                if let Some(Some(cached)) = self.values.get_mut(node_id.0) {
+                    if cached.shape() == t.shape() {
+                        cached.copy_from(t)?;
+                    } else {
+                        *cached = t.clone();
+                    }
+                } else {
+                    self.values[node_id.0] = Some(t.clone());
+                }
+            }
+            Node::Param(t) => {
+                if self.values[node_id.0].is_none() {
+                    self.values[node_id.0] = Some(t.clone());
+                }
+            }
+            Node::Op { op, inputs } => {
+                let (left, right) = self.values.split_at_mut(node_id.0);
+                let out_opt = &mut right[0];
+
+                let mut input_refs = Vec::with_capacity(inputs.len());
+                for &input_id in inputs {
+                    input_refs.push(left[input_id.0].as_ref()
+                        .ok_or_else(|| GPError::InferenceError(format!("Value not found for node {:?}", input_id)))?);
+                }
+                
+                if let Some(out) = out_opt {
+                    op.forward_inplace(&input_refs, out, backend)?;
+                } else {
+                    let val = op.forward(&input_refs, backend)?;
+                    *out_opt = Some(val);
+                }
+            }
+        };
+        Ok(())
+    }
+
+    pub fn values(&self) -> &[Option<Tensor>] {
+        &self.values
     }
 
     /// Plans memory reuse for the current graph.
@@ -335,13 +451,13 @@ impl Graph {
                 _ => continue, // Leaf nodes don't propagate gradients
             };
 
-            let mut input_tensors = Vec::with_capacity(inputs.len());
+            let mut input_refs = Vec::with_capacity(inputs.len());
             for &id in inputs {
-                input_tensors.push(self.values[id.0].as_ref()
-                    .ok_or_else(|| GPError::InferenceError(format!("Value not found for node {:?}", id)))?.clone());
+                input_refs.push(self.values[id.0].as_ref()
+                    .ok_or_else(|| GPError::InferenceError(format!("Value not found for node {:?}", id)))?);
             }
 
-            let input_grads = op.backward(&input_tensors, &grad, backend)?;
+            let input_grads = op.backward(&input_refs, &grad, backend)?;
             for (i, &input_id) in inputs.iter().enumerate() {
                 if let Some(existing) = &self.gradients[input_id.0] {
                     self.gradients[input_id.0] = Some(existing + &input_grads[i]);
@@ -401,9 +517,16 @@ impl Graph {
     }
 
     pub fn clear_values(&mut self) {
-        for v in &mut self.values {
-            *v = None;
-        }
+        // Only clear if we really want to force recomputation or if we are training.
+        // For inference stabilization, we might prefer a reset() that keeps buffers.
+    }
+
+    /// Mark all values as needing recomputation while KEEPING the heap buffers.
+    pub fn reset_values(&mut self) {
+        // Currently, we use None as the "needs recomputation" signal.
+        // To reach 0 allocations, we need a separate bitset or just always recompute OPs.
+        // For now, let's just make clear_values NOT set to None if they already exist?
+        // No, that would break the current logic.
     }
 
     pub fn clear_gradients(&mut self) {

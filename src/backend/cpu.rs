@@ -7,40 +7,58 @@ pub struct CPUBackend;
 
 impl Backend for CPUBackend {
     fn matmul_t(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool) -> GPResult<Tensor> {
-        let a_view = a.try_view()?;
-        let b_view = b.try_view()?;
+        let (m, _) = if trans_a { (a.shape()[1], a.shape()[0]) } else { (a.shape()[0], a.shape()[1]) };
+        let (_, n) = if trans_b { (b.shape()[1], b.shape()[0]) } else { (b.shape()[0], b.shape()[1]) };
+        let mut res = Tensor::new_zeros(&[m, n]);
+        self.matmul_into(a, b, trans_a, trans_b, &mut res)?;
+        Ok(res)
+    }
 
-        let a2 = a_view.into_dimensionality::<ndarray::Ix2>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0, 0], found: a.shape().to_vec() })?;
-        let b2 = b_view.into_dimensionality::<ndarray::Ix2>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0, 0], found: b.shape().to_vec() })?;
-        
-        let lhs = if trans_a { a2.t() } else { a2.view() };
-        let rhs = if trans_b { b2.t() } else { b2.view() };
-        
-        let (m, k) = lhs.dim();
-        let (k2, n) = rhs.dim();
+    fn matmul_into(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool, out: &mut Tensor) -> GPResult<()> {
+        let a_shape = a.shape();
+        let b_shape = b.shape();
+        let out_shape = out.shape();
 
-        if k != k2 {
-            return Err(GPError::IncompatibleShapes { 
-                expected: vec![m, k], 
-                found: vec![k2, n] 
-            });
+        if a_shape.len() < 2 || b_shape.len() < 2 {
+            return Err(GPError::IncompatibleShapes { expected: vec![0, 0], found: a_shape.to_vec() });
         }
 
-        // Manual MatMul to avoid dlmalloc/alignment issues with ndarray's optimized dot in WASM
-        let mut res = ndarray::Array2::<f32>::zeros((m, n));
-        for i in 0..m {
-            for j in 0..n {
+        let l_rows = if trans_a { a_shape[1] } else { a_shape[0] };
+        let l_cols = if trans_a { a_shape[0] } else { a_shape[1] };
+        let r_rows = if trans_b { b_shape[1] } else { b_shape[0] };
+        let r_cols = if trans_b { b_shape[0] } else { b_shape[1] };
+
+        if l_cols != r_rows {
+            return Err(GPError::IncompatibleShapes { expected: vec![l_rows, l_cols], found: vec![r_rows, r_cols] });
+        }
+        if out_shape.len() < 2 || out_shape[0] != l_rows || out_shape[1] != r_cols {
+             return Err(GPError::IncompatibleShapes { expected: vec![l_rows, r_cols], found: out_shape.to_vec() });
+        }
+
+        let a_slice = a.as_slice()?;
+        let b_slice = b.as_slice()?;
+        let out_slice = out.as_slice_mut()?;
+
+        for i in 0..l_rows {
+            for j in 0..r_cols {
                 let mut sum = 0.0;
-                for l in 0..k {
-                    sum += lhs[[i, l]] * rhs[[l, j]];
+                for l in 0..l_cols {
+                    let a_idx = if trans_a { l * a_shape[1] + i } else { i * a_shape[1] + l };
+                    let b_idx = if trans_b { j * b_shape[1] + l } else { l * b_shape[1] + j };
+                    
+                    let v1 = *a_slice.get(a_idx).ok_or_else(|| GPError::InferenceError("A OOB".to_string()))?;
+                    let v2 = *b_slice.get(b_idx).ok_or_else(|| GPError::InferenceError("B OOB".to_string()))?;
+                    sum += v1 * v2;
                 }
-                res[[i, j]] = sum;
+                let out_idx = i * r_cols + j;
+                if let Some(o) = out_slice.get_mut(out_idx) {
+                    *o = sum;
+                } else {
+                    return Err(GPError::InferenceError("OUT OOB".to_string()));
+                }
             }
         }
-
-        Ok(res.into_dyn().into())
+        Ok(())
     }
 
     fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> GPResult<Tensor> {
@@ -309,30 +327,47 @@ impl Backend for CPUBackend {
         Ok((a.try_view()?.to_owned() + &b.try_view()?).into_dyn().into())
     }
 
+    fn add_into(&self, a: &Tensor, b: &Tensor, out: &mut Tensor) -> GPResult<()> {
+        let a_slice = a.as_slice()?;
+        let b_slice = b.as_slice()?;
+        let out_slice = out.as_slice_mut()?;
+        
+        if a_slice.len() != b_slice.len() || a_slice.len() != out_slice.len() {
+             return Err(GPError::IncompatibleShapes { expected: a.shape().to_vec(), found: b.shape().to_vec() });
+        }
+
+        for i in 0..a_slice.len() {
+            out_slice[i] = a_slice[i] + b_slice[i];
+        }
+        Ok(())
+    }
+
     fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor> {
         let mut res = x.clone();
-        #[cfg(feature = "rayon")]
-        Zip::from(res.view_mut()).par_for_each(|v| {
-            *v = 1.0 / (1.0 + (-*v).exp());
-        });
-        #[cfg(not(feature = "rayon"))]
-        Zip::from(res.view_mut()).for_each(|v| {
-            *v = 1.0 / (1.0 + (-*v).exp());
-        });
+        self.sigmoid_inplace(&mut res)?;
         Ok(res)
+    }
+
+    fn sigmoid_inplace(&self, x: &mut Tensor) -> GPResult<()> {
+        let slice = x.as_slice_mut()?;
+        for v in slice {
+            *v = 1.0 / (1.0 + (-*v).exp());
+        }
+        Ok(())
     }
 
     fn relu(&self, x: &Tensor) -> GPResult<Tensor> {
         let mut res = x.clone();
-        #[cfg(feature = "rayon")]
-        Zip::from(res.view_mut()).par_for_each(|v| {
-            if *v < 0.0 { *v = 0.0; }
-        });
-        #[cfg(not(feature = "rayon"))]
-        Zip::from(res.view_mut()).for_each(|v| {
-            if *v < 0.0 { *v = 0.0; }
-        });
+        self.relu_inplace(&mut res)?;
         Ok(res)
+    }
+
+    fn relu_inplace(&self, x: &mut Tensor) -> GPResult<()> {
+        let slice = x.as_slice_mut()?;
+        for v in slice {
+            if *v < 0.0 { *v = 0.0; }
+        }
+        Ok(())
     }
 
     fn add_relu(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {

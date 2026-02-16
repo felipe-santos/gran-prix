@@ -1,10 +1,11 @@
+#[cfg(feature = "cuda")]
+use std::sync::Arc;
 use ndarray::ArrayD;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub enum Storage {
-    Cpu(Arc<ArrayD<f32>>),
+    Cpu(ArrayD<f32>),
     #[cfg(feature = "cuda")]
     Cuda(Arc<cudarc::driver::CudaSlice<f32>>),
 }
@@ -20,7 +21,7 @@ impl Serialize for Storage {
             Storage::Cuda(slice) => {
                 let data = slice.device().dtoh_sync_copy(slice.as_ref())
                     .map_err(serde::ser::Error::custom)?;
-                serializer.serialize_newtype_variant("Storage", 0, "Cpu", &data)
+                data.serialize(serializer)
             }
         }
     }
@@ -30,6 +31,6 @@ impl<'de> Deserialize<'de> for Storage {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         let data = ArrayD::<f32>::deserialize(deserializer)?;
-        Ok(Storage::Cpu(Arc::new(data)))
+        Ok(Storage::Cpu(data))
     }
 }

@@ -6,6 +6,7 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
     /// Matrix multiplication: a * b (with transpose options). 
     /// Assumes 2D tensors.
     fn matmul_t(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool) -> GPResult<Tensor>;
+    fn matmul_into(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool, out: &mut Tensor) -> GPResult<()>;
 
     /// 2D Convolution: [N, Ci, H, W] * [Co, Ci, Kh, Kw] -> [N, Co, Oh, Ow]
     fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> GPResult<Tensor>;
@@ -20,8 +21,11 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
     fn max_pool2d_backward(&self, input: &Tensor, grad_output: &Tensor, kernel_size: usize, stride: usize) -> GPResult<Tensor>;
 
     fn add(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor>;
+    fn add_into(&self, a: &Tensor, b: &Tensor, out: &mut Tensor) -> GPResult<()>;
     fn relu(&self, x: &Tensor) -> GPResult<Tensor>;
+    fn relu_inplace(&self, x: &mut Tensor) -> GPResult<()>;
     fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor>;
+    fn sigmoid_inplace(&self, x: &mut Tensor) -> GPResult<()>;
 
     /// ReLU Backward: dL/dX = dL/dY * (Y > 0)
     fn relu_backward(&self, input: &Tensor, grad_output: &Tensor) -> GPResult<Tensor>;
