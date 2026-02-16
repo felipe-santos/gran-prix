@@ -126,8 +126,6 @@ function App() {
         // In a real game, this would be a proper raycast.
         // For now, let's just detect if an obstacle is "in the lane" of the ray.
         
-        let rayX = Math.sin(angle);
-        let rayY = -Math.cos(angle);
         
         // Find closest obstacle intersection
         for (let obs of state.obstacles) {
@@ -181,7 +179,7 @@ function App() {
         playerRect.x + playerRect.w > o.x &&
         playerRect.y < o.y + o.h &&
         playerRect.y + playerRect.h > o.y
-    );
+    ) || state.playerX <= 0 || state.playerX >= GAME_WIDTH - PLAYER_SIZE;
 
     if (hit) {
        state.generation++;

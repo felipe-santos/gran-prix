@@ -58,13 +58,27 @@ impl NeuralBrain {
         let input_tensor = Tensor::new_zeros(&[1, 5]); 
         let input_id = gb.val(input_tensor);
 
-        let w1 = gb.param(Tensor::new_cpu(Array::from_elem(IxDyn(&[5, 8]), 0.1)));
+        // Initialize with pseudo-random weights (deterministic but varied)
+        // using sin() to avoid external dependencies like 'rand' which might cause 
+        // allocator/TLS issues in WASM.
+        
+        let mut pseudo_random_tensor = |rows, cols, seed_offset: usize| {
+            let total = rows * cols;
+            let mut data = Vec::with_capacity(total);
+            for i in 0..total {
+                let v = ((i + seed_offset) as f32).sin() * 0.5;
+                data.push(v);
+            }
+            Tensor::new_cpu(Array::from_shape_vec(IxDyn(&[rows, cols]), data).unwrap())
+        };
+
+        let w1 = gb.param(pseudo_random_tensor(5, 8, 0));
         let b1 = gb.param(Tensor::new_zeros(&[1, 8]));
         let hidden = gb.matmul(input_id, w1);
         let hidden = gb.add(hidden, b1);
         let hidden = gb.relu(hidden);
 
-        let w2 = gb.param(Tensor::new_cpu(Array::from_elem(IxDyn(&[8, 1]), 0.1)));
+        let w2 = gb.param(pseudo_random_tensor(8, 1, 100)); // offset 100 for variety
         let b2 = gb.param(Tensor::new_zeros(&[1, 1]));
         let output = gb.matmul(hidden, w2);
         let output = gb.add(output, b2);
