@@ -148,41 +148,46 @@ function App() {
       <ThemeToggle />
       <Header />
 
-      <main className="w-full max-w-5xl flex flex-col items-center">
-        <StatsBar stats={stats} />
-        <GameCanvas 
-            ref={canvasRef} 
-            width={GAME_WIDTH} 
-            height={GAME_HEIGHT}
-        />
+      <main className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 transition-all duration-500">
+        <div className="flex flex-col items-center flex-shrink-0">
+          <StatsBar stats={stats} />
+          <GameCanvas 
+              ref={canvasRef} 
+              width={GAME_WIDTH} 
+              height={GAME_HEIGHT}
+          />
 
-        <GameControls 
-            isPlaying={isPlaying}
-            onTogglePlay={() => setIsPlaying(!isPlaying)}
-            onReset={() => {
-                resetGame();
-                setStats({ score: 0, generation: 1, best: 0, alive: POPULATION_SIZE});
-            }}
-            isRestarting={isRestarting}
-        />
-        
-        <button 
-          onClick={() => setShowInspector(!showInspector)}
-          className="mt-4 px-4 py-2 bg-zinc-800 text-zinc-400 hover:text-white rounded-lg border border-zinc-700 text-[10px] uppercase tracking-widest font-bold transition-all hover:bg-zinc-700"
-        >
-          {showInspector ? 'Hide specialist Brain' : 'Inspect Specialist Agent Brain'}
-        </button>
+          <GameControls 
+              isPlaying={isPlaying}
+              onTogglePlay={() => setIsPlaying(!isPlaying)}
+              onReset={() => {
+                  resetGame();
+                  setStats({ score: 0, generation: 1, best: 0, alive: POPULATION_SIZE});
+              }}
+              isRestarting={isRestarting}
+          />
+          
+          {!showInspector && (
+            <button 
+              onClick={() => setShowInspector(true)}
+              className="mt-6 px-4 py-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-lg border border-emerald-500/20 text-[10px] uppercase tracking-widest font-bold transition-all"
+            >
+              Inspect Specialist Agent Brain
+            </button>
+          )}
+        </div>
 
         {showInspector && (
-          <BrainInspector 
-            nodes={getBestBrainSnapshot(Float32Array.from(gameState.current.cars.map(c => c.fitness))) || []} 
-            onClose={() => setShowInspector(false)} 
-          />
+          <div className="flex-shrink-0">
+            <BrainInspector 
+              nodes={getBestBrainSnapshot(Float32Array.from(gameState.current.cars.map(c => c.fitness))) || []} 
+              onClose={() => setShowInspector(false)} 
+            />
+          </div>
         )}
-
       </main>
 
-      <footer className="pt-12 text-zinc-700 text-[8px] uppercase tracking-[0.4em] font-medium pb-12 w-full text-center">
+      <footer className="pt-12 text-muted-foreground text-[8px] uppercase tracking-[0.4em] font-medium pb-12 w-full text-center">
         Gran-Prix Simulation Protocol • 2026
       </footer>
     </div>
