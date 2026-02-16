@@ -7,7 +7,6 @@ pub mod buffer_pool;
 use crate::backend::Backend;
 use crate::{GPError, GPResult, Tensor, NodeId};
 use serde::{Serialize, Deserialize};
-use ndarray::Zip;
 
 
 /// A node in the computation graph.
@@ -69,10 +68,21 @@ impl OpType {
             OpType::MatMul => backend.matmul_into(inputs[0], inputs[1], false, false, out),
             OpType::Add => backend.add_into(inputs[0], inputs[1], out),
             OpType::ReLU => {
+                let out_shape = out.shape().to_vec();
+                let in_shape = inputs[0].shape().to_vec();
+                let out_len = out.len();
+                let in_len = inputs[0].len();
+                
                 let out_slice = out.as_slice_mut()?;
                 let in_slice = inputs[0].as_slice()?;
-                if out_slice.len() != in_slice.len() {
-                    return Err(GPError::IncompatibleShapes { expected: out.shape().to_vec(), found: inputs[0].shape().to_vec() });
+                
+                if out_len != in_len {
+                    return Err(GPError::IncompatibleShapes { 
+                        expected: out_shape, 
+                        found: in_shape,
+                        exp_len: out_len,
+                        found_len: in_len,
+                    });
                 }
                 for i in 0..out_slice.len() {
                     out_slice[i] = if in_slice[i] < 0.0 { 0.0 } else { in_slice[i] };
@@ -80,10 +90,21 @@ impl OpType {
                 Ok(())
             }
             OpType::Sigmoid => {
+                let out_shape = out.shape().to_vec();
+                let in_shape = inputs[0].shape().to_vec();
+                let out_len = out.len();
+                let in_len = inputs[0].len();
+
                 let out_slice = out.as_slice_mut()?;
                 let in_slice = inputs[0].as_slice()?;
-                if out_slice.len() != in_slice.len() {
-                    return Err(GPError::IncompatibleShapes { expected: out.shape().to_vec(), found: inputs[0].shape().to_vec() });
+
+                if out_len != in_len {
+                    return Err(GPError::IncompatibleShapes { 
+                        expected: out_shape, 
+                        found: in_shape,
+                        exp_len: out_len,
+                        found_len: in_len,
+                    });
                 }
                 for i in 0..out_slice.len() {
                     out_slice[i] = 1.0 / (1.0 + (-in_slice[i]).exp());
@@ -154,7 +175,9 @@ impl OpType {
                 if input_shapes[0][1] != input_shapes[1][0] {
                     return Err(GPError::IncompatibleShapes { 
                         expected: vec![input_shapes[0][0], input_shapes[1][0]], 
-                        found: vec![input_shapes[0][1], input_shapes[1][0]] 
+                        found: vec![input_shapes[0][1], input_shapes[1][0]],
+                        exp_len: input_shapes[0][1],
+                        found_len: input_shapes[1][0],
                     });
                 }
                 Ok(vec![input_shapes[0][0], input_shapes[1][1]])
@@ -174,7 +197,14 @@ impl OpType {
             }
             OpType::Add | OpType::AddReLU => {
                 if input_shapes[0] != input_shapes[1] {
-                    return Err(GPError::IncompatibleShapes { expected: input_shapes[0].clone(), found: input_shapes[1].clone() });
+                     let exp_total: usize = input_shapes[0].iter().product();
+                     let found_total: usize = input_shapes[1].iter().product();
+                    return Err(GPError::IncompatibleShapes { 
+                        expected: input_shapes[0].clone(), 
+                        found: input_shapes[1].clone(),
+                        exp_len: exp_total,
+                        found_len: found_total,
+                    });
                 }
                 Ok(input_shapes[0].clone())
             }
@@ -209,7 +239,12 @@ impl OpType {
             .and_then(|t| {
                 if t.shape().len() != target_shape.len() {
                      let val = t.try_view()?.to_owned().into_shape(target_shape)
-                         .map_err(|_e| GPError::IncompatibleShapes { expected: target_shape.to_vec(), found: t.shape().to_vec() })?;
+                         .map_err(|_e| GPError::IncompatibleShapes { 
+                             expected: target_shape.to_vec(), 
+                             found: t.shape().to_vec(),
+                             exp_len: target_shape.iter().product(),
+                             found_len: t.len(),
+                         })?;
                      Ok(val.into_dyn().into())
                 } else {
                      Ok(t)

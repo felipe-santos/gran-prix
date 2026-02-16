@@ -2,8 +2,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum GPError {
-    #[error("Incompatible shapes: expected {expected:?}, found {found:?}")]
-    IncompatibleShapes { expected: Vec<usize>, found: Vec<usize> },
+    #[error("Incompatible shapes: expected {expected:?} (len={exp_len}), found {found:?} (len={found_len})")]
+    IncompatibleShapes { expected: Vec<usize>, found: Vec<usize>, exp_len: usize, found_len: usize },
     #[error("Device mismatch: tensor is on {0:?} but operation requires another device")]
     DeviceMismatch(String),
     #[error("Tensor error: {0}")]

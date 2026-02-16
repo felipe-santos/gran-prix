@@ -1,5 +1,4 @@
 use crate::{Tensor, Shape};
-use crate::tensor::TensorOps;
 
 /// A pool of pre-allocated buffers for zero-allocation execution.
 pub struct BufferPool {

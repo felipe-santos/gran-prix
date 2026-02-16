@@ -35,6 +35,13 @@ pub struct NeuralBrain {
     computing: RefCell<bool>,
 }
 
+struct ComputingGuard<'a>(&'a RefCell<bool>);
+impl<'a> Drop for ComputingGuard<'a> {
+    fn drop(&mut self) {
+        *self.0.borrow_mut() = false;
+    }
+}
+
 const BRAIN_MAGIC: u32 = 0xDEADC0DE;
 
 #[wasm_bindgen]
@@ -81,20 +88,16 @@ impl NeuralBrain {
             return Err(JsValue::from_str("Corrupted before compute"));
         }
 
-        {
+        let _guard = {
             let mut computing = self.computing.borrow_mut();
             if *computing {
                 return Err(JsValue::from_str("Re-entrant call detected"));
             }
             *computing = true;
-        }
+            ComputingGuard(&self.computing)
+        };
 
         let result = self.compute_internal(s1, s2, s3, s4, s5);
-
-        {
-            let mut computing = self.computing.borrow_mut();
-            *computing = false;
-        }
 
         if self.magic != BRAIN_MAGIC {
             console_log!("PRIX CRITICAL: Brain corrupted AFTER compute! Magic: 0x{:08X}", self.magic);
@@ -135,8 +138,14 @@ impl NeuralBrain {
                 return Err(JsValue::from_str("Heap corruption detected mid-execution"));
             }
             
+            // GRANULAR TRACING
+            // console_log!("PRIX: Node {} step...", node_id.0);
+            
             graph.execute_single_node(node_id)
-                .map_err(|e| JsValue::from_str(&format!("Node {} execution error: {}", node_id.0, e)))?;
+                .map_err(|e| {
+                    console_log!("PRIX: Node {} error: {}", node_id.0, e);
+                    JsValue::from_str(&format!("Node {} execution error: {}", node_id.0, e))
+                })?;
         }
 
         let values = graph.values();

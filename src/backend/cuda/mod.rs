@@ -125,7 +125,12 @@ impl Backend for CUDABackend {
         let (k_b, n) = if trans_b { (b_shape[1], b_shape[0]) } else { (b_shape[0], b_shape[1]) };
         
         if k != k_b {
-            return Err(GPError::IncompatibleShapes { expected: vec![m, k_b], found: vec![m, k] });
+            return Err(GPError::IncompatibleShapes { 
+                expected: vec![m, k_b], 
+                found: vec![m, k],
+                exp_len: m * k_b,
+                found_len: m * k,
+            });
         }
 
         let mut out_slice = self.device.alloc_zeros::<f32>(m * n)

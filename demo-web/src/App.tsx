@@ -21,6 +21,7 @@ function App() {
   const [brain, setBrain] = useState<wasm.NeuralBrain | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [stats, setStats] = useState({ score: 0, generation: 1, best: 0 });
+  const [isRestarting, setIsRestarting] = useState(false);
   const gameState = useRef<GameState>({
     playerX: GAME_WIDTH / 2,
     obstacles: [],
@@ -121,10 +122,17 @@ function App() {
             state.playerX = Math.max(0, Math.min(GAME_WIDTH - PLAYER_SIZE, state.playerX + move));
         } catch(e) {
             console.error("PRIX DEBUG: WASM ERROR", e);
-            if (e?.toString().includes("memory access out of bounds") || e?.toString().includes("corrupted")) {
-                console.warn("PRIX: WASM Trap detected. Restarting engine...");
+            if (e?.toString().includes("memory access out of bounds") || e?.toString().includes("corrupted") || e?.toString().includes("unreachable")) {
+                console.warn("PRIX: WASM Trap/Error detected. Cooling down before restart...");
+                setIsPlaying(false);
+                setIsRestarting(true);
                 setBrain(null); 
                 isLoopActive.current = false;
+                
+                setTimeout(() => {
+                    console.log("PRIX: Cooldown finished. Ready for restart.");
+                    setIsRestarting(false);
+                }, 2000);
                 return;
             }
         } finally {
@@ -195,8 +203,8 @@ function App() {
       </div>
 
       <div className="mt-8 flex gap-4">
-        <Button onClick={() => setIsPlaying(!isPlaying)}>
-           {isPlaying ? 'PAUSE SIMULATION' : 'START ENGINE'}
+        <Button onClick={() => setIsPlaying(!isPlaying)} disabled={isRestarting}>
+           {isRestarting ? 'RESTARTING ENGINE...' : (isPlaying ? 'PAUSE SIMULATION' : 'START ENGINE')}
         </Button>
         <Button variant="secondary" onClick={() => {
             brain?.reset();

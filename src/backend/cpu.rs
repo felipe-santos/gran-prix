@@ -20,7 +20,12 @@ impl Backend for CPUBackend {
         let out_shape = out.shape();
 
         if a_shape.len() < 2 || b_shape.len() < 2 {
-            return Err(GPError::IncompatibleShapes { expected: vec![0, 0], found: a_shape.to_vec() });
+            return Err(GPError::IncompatibleShapes { 
+                expected: vec![0, 0], 
+                found: a_shape.to_vec(),
+                exp_len: 0,
+                found_len: a.len(),
+            });
         }
 
         let l_rows = if trans_a { a_shape[1] } else { a_shape[0] };
@@ -29,33 +34,39 @@ impl Backend for CPUBackend {
         let r_cols = if trans_b { b_shape[0] } else { b_shape[1] };
 
         if l_cols != r_rows {
-            return Err(GPError::IncompatibleShapes { expected: vec![l_rows, l_cols], found: vec![r_rows, r_cols] });
+            return Err(GPError::IncompatibleShapes { 
+                expected: vec![l_rows, l_cols], 
+                found: vec![r_rows, r_cols],
+                exp_len: l_cols,
+                found_len: r_rows,
+            });
         }
         if out_shape.len() < 2 || out_shape[0] != l_rows || out_shape[1] != r_cols {
-             return Err(GPError::IncompatibleShapes { expected: vec![l_rows, r_cols], found: out_shape.to_vec() });
+             return Err(GPError::IncompatibleShapes { 
+                expected: vec![l_rows, r_cols], 
+                found: out_shape.to_vec(),
+                exp_len: l_rows * r_cols,
+                found_len: out.len(),
+            });
         }
 
         let a_slice = a.as_slice()?;
         let b_slice = b.as_slice()?;
         let out_slice = out.as_slice_mut()?;
 
+        // MANUAL MATMUL - Purely safe Rust, no library calls
         for i in 0..l_rows {
+            let i_n = i * r_cols;
             for j in 0..r_cols {
                 let mut sum = 0.0;
                 for l in 0..l_cols {
                     let a_idx = if trans_a { l * a_shape[1] + i } else { i * a_shape[1] + l };
                     let b_idx = if trans_b { j * b_shape[1] + l } else { l * b_shape[1] + j };
                     
-                    let v1 = *a_slice.get(a_idx).ok_or_else(|| GPError::InferenceError("A OOB".to_string()))?;
-                    let v2 = *b_slice.get(b_idx).ok_or_else(|| GPError::InferenceError("B OOB".to_string()))?;
-                    sum += v1 * v2;
+                    // Boundary check via slice indexing is safe in Rust
+                    sum += a_slice[a_idx] * b_slice[b_idx];
                 }
-                let out_idx = i * r_cols + j;
-                if let Some(o) = out_slice.get_mut(out_idx) {
-                    *o = sum;
-                } else {
-                    return Err(GPError::InferenceError("OUT OOB".to_string()));
-                }
+                out_slice[i_n + j] = sum;
             }
         }
         Ok(())
@@ -66,9 +77,19 @@ impl Backend for CPUBackend {
         let weight_view = weight.try_view()?;
 
         let input4 = input_view.into_dimensionality::<ndarray::Ix4>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: input.shape().to_vec() })?;
+            .map_err(|_| GPError::IncompatibleShapes { 
+                expected: vec![0,0,0,0], 
+                found: input.shape().to_vec(),
+                exp_len: 0,
+                found_len: input.len(),
+            })?;
         let weight4 = weight_view.into_dimensionality::<ndarray::Ix4>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: weight.shape().to_vec() })?;
+            .map_err(|_| GPError::IncompatibleShapes { 
+                expected: vec![0,0,0,0], 
+                found: weight.shape().to_vec(),
+                exp_len: 0,
+                found_len: weight.len(),
+            })?;
         
         let (n, ci, h, w) = input4.dim();
         let (co, _ci, kh, kw) = weight4.dim();
@@ -127,11 +148,26 @@ impl Backend for CPUBackend {
         let grad_out_view = grad_output.try_view()?;
 
         let input4 = input_view.into_dimensionality::<ndarray::Ix4>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: input.shape().to_vec() })?;
+            .map_err(|_| GPError::IncompatibleShapes { 
+                expected: vec![0,0,0,0], 
+                found: input.shape().to_vec(),
+                exp_len: 0,
+                found_len: input.len()
+            })?;
         let weight4 = weight_view.into_dimensionality::<ndarray::Ix4>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: weight.shape().to_vec() })?;
+            .map_err(|_| GPError::IncompatibleShapes { 
+                expected: vec![0,0,0,0], 
+                found: weight.shape().to_vec(),
+                exp_len: 0,
+                found_len: weight.len()
+            })?;
         let grad_out4 = grad_out_view.into_dimensionality::<ndarray::Ix4>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: grad_output.shape().to_vec() })?;
+            .map_err(|_| GPError::IncompatibleShapes { 
+                expected: vec![0,0,0,0], 
+                found: grad_output.shape().to_vec(),
+                exp_len: 0,
+                found_len: grad_output.len()
+            })?;
         
         let (n, ci, h, w) = input4.dim();
         let (co, _ci, kh, kw) = weight4.dim();
@@ -220,7 +256,12 @@ impl Backend for CPUBackend {
     fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> GPResult<Tensor> {
         let input_view = input.try_view()?;
         let input4 = input_view.into_dimensionality::<ndarray::Ix4>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: input.shape().to_vec() })?;
+            .map_err(|_| GPError::IncompatibleShapes { 
+                expected: vec![0,0,0,0], 
+                found: input.shape().to_vec(),
+                exp_len: 0,
+                found_len: input.len(),
+            })?;
         let (n, c, h, w) = input4.dim();
         
         let oh = (h - kernel_size) / stride + 1;
@@ -268,9 +309,19 @@ impl Backend for CPUBackend {
         let grad_out_view = grad_output.try_view()?;
 
         let input4 = input_view.into_dimensionality::<ndarray::Ix4>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: input.shape().to_vec() })?;
+            .map_err(|_| GPError::IncompatibleShapes { 
+                expected: vec![0,0,0,0], 
+                found: input.shape().to_vec(),
+                exp_len: 0,
+                found_len: input.len()
+            })?;
         let grad_out4 = grad_out_view.into_dimensionality::<ndarray::Ix4>()
-            .map_err(|_| GPError::IncompatibleShapes { expected: vec![0,0,0,0], found: grad_output.shape().to_vec() })?;
+            .map_err(|_| GPError::IncompatibleShapes { 
+                expected: vec![0,0,0,0], 
+                found: grad_output.shape().to_vec(),
+                exp_len: 0,
+                found_len: grad_output.len()
+            })?;
         
         let (n, c, h, w) = input4.dim();
         let (_n, _c, oh, ow) = grad_out4.dim();
@@ -328,17 +379,23 @@ impl Backend for CPUBackend {
     }
 
     fn add_into(&self, a: &Tensor, b: &Tensor, out: &mut Tensor) -> GPResult<()> {
-        let a_slice = a.as_slice()?;
-        let b_slice = b.as_slice()?;
-        let out_slice = out.as_slice_mut()?;
+        let a_view = a.try_view()?;
+        let b_view = b.try_view()?;
+        let mut out_view = out.try_view_mut()?;
         
-        if a_slice.len() != b_slice.len() || a_slice.len() != out_slice.len() {
-             return Err(GPError::IncompatibleShapes { expected: a.shape().to_vec(), found: b.shape().to_vec() });
+        if a_view.shape() != b_view.shape() || a_view.shape() != out_view.shape() {
+             return Err(GPError::IncompatibleShapes { 
+                expected: a.shape().to_vec(), 
+                found: b.shape().to_vec(),
+                exp_len: a.len(),
+                found_len: b.len(),
+            });
         }
 
-        for i in 0..a_slice.len() {
-            out_slice[i] = a_slice[i] + b_slice[i];
-        }
+        Zip::from(&mut out_view).and(&a_view).and(&b_view).for_each(|o, &av, &bv| {
+            *o = av + bv;
+        });
+
         Ok(())
     }
 
@@ -424,7 +481,12 @@ impl Backend for CPUBackend {
                  new_shape[axis] = 1;
              }
              curr = curr.into_shape(new_shape)
-                 .map_err(|_e| GPError::IncompatibleShapes { expected: vec![], found: vec![] })?; 
+                 .map_err(|_e| GPError::IncompatibleShapes { 
+                     expected: vec![], 
+                     found: vec![],
+                     exp_len: 0,
+                     found_len: 0,
+                 })?; 
         }
 
         Ok(curr.into_dyn().into())

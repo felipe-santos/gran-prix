@@ -17,15 +17,17 @@ pub struct Tensor {
 
 impl Tensor {
     pub fn copy_from(&mut self, other: &Self) -> GPResult<()> {
-        let dest = self.as_slice_mut()?;
-        let src = other.as_slice()?;
-        if dest.len() != src.len() {
+        if self.shape() != other.shape() {
             return Err(GPError::IncompatibleShapes { 
                 expected: self.shape().to_vec(), 
-                found: other.shape().to_vec() 
+                found: other.shape().to_vec(),
+                exp_len: self.len(),
+                found_len: other.len(),
             });
         }
-        dest.copy_from_slice(src);
+        let mut dest = self.try_view_mut()?;
+        let src = other.try_view()?;
+        dest.assign(&src);
         Ok(())
     }
 
@@ -80,7 +82,7 @@ impl Tensor {
 
     /// Helper to get ndarray view, with expectation it is on CPU.
     pub fn view(&self) -> ArrayViewD<'_, f32> {
-        self.as_cpu().expect("Attempted to view a non-CPU tensor. Move to CPU first.").view()
+        self.try_view().unwrap_or_else(|e| panic!("PRIX ERROR: Failed to get view: {}", e))
     }
 
     pub fn try_view(&self) -> GPResult<ArrayViewD<'_, f32>> {
@@ -92,7 +94,7 @@ impl Tensor {
     }
 
     pub fn view_mut(&mut self) -> ndarray::ArrayViewMutD<'_, f32> {
-        self.as_cpu_mut().expect("Attempted to view_mut a non-CPU tensor. Move to CPU first.").view_mut()
+        self.try_view_mut().unwrap_or_else(|e| panic!("PRIX ERROR: Failed to get view_mut: {}", e))
     }
 
     #[cfg(feature = "cuda")]
@@ -142,7 +144,9 @@ impl Tensor {
                 let reshaped = data.into_shape(IxDyn(shape))
                     .map_err(|_e| GPError::IncompatibleShapes { 
                         expected: shape.to_vec(), 
-                        found: self.shape.as_slice().to_vec() 
+                        found: self.shape.as_slice().to_vec(),
+                        exp_len: shape.iter().product(),
+                        found_len: self.shape.size(),
                     })?;
                 Ok(Self::new_cpu(reshaped))
             }
@@ -153,7 +157,9 @@ impl Tensor {
                 if new_size != old_size {
                     return Err(GPError::IncompatibleShapes { 
                         expected: shape.to_vec(), 
-                        found: self.shape.as_slice().to_vec() 
+                        found: self.shape.as_slice().to_vec(),
+                        exp_len: new_size,
+                        found_len: old_size,
                     });
                 }
                 Ok(Self {
@@ -169,10 +175,10 @@ impl Tensor {
     }
     
     pub fn iter(&self) -> ndarray::iter::Iter<'_, f32, IxDyn> {
-        self.as_cpu().expect("iter() only supported on CPU tensors").iter()
+        self.as_cpu().map(|a| a.iter()).unwrap_or_else(|_| panic!("iter() only supported on CPU tensors"))
     }
     pub fn iter_mut(&mut self) -> ndarray::iter::IterMut<'_, f32, IxDyn> {
-        self.as_cpu_mut().expect("iter_mut() only supported on CPU tensors").iter_mut()
+        self.as_cpu_mut().map(|a| a.iter_mut()).unwrap_or_else(|_| panic!("iter_mut() only supported on CPU tensors"))
     }
 }
 

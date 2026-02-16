@@ -58,7 +58,12 @@ impl Operation for MatMul {
         // Simplified: assumes 2D for now, or handles broadcasting? Backend handles it.
         // MatMul: [M, K] x [K, N] -> [M, N]
         if a[a.len()-1] != b[b.len()-2] {
-             return Err(GPError::IncompatibleShapes { expected: vec![a[a.len()-1]], found: vec![b[b.len()-2]] });
+             return Err(GPError::IncompatibleShapes { 
+                expected: vec![a[a.len()-1]], 
+                found: vec![b[b.len()-2]],
+                exp_len: a[a.len()-1],
+                found_len: b[b.len()-2],
+            });
         }
         let mut out = a.clone();
         out[a.len()-1] = b[b.len()-1];
@@ -187,7 +192,12 @@ impl Operation for Add {
                 .and_then(|t| {
                     if t.shape().len() != target_shape.len() {
                          let val = t.try_view()?.to_owned().into_shape(target_shape)
-                             .map_err(|_e| GPError::IncompatibleShapes { expected: target_shape.to_vec(), found: t.shape().to_vec() })?;
+                         .map_err(|_e| GPError::IncompatibleShapes { 
+                             expected: target_shape.to_vec(), 
+                             found: t.shape().to_vec(),
+                             exp_len: target_shape.iter().product(),
+                             found_len: t.len(),
+                         })?;
                          Ok(val.into_dyn().into())
                     } else {
                          Ok(t)
