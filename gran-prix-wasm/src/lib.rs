@@ -62,23 +62,25 @@ impl NeuralBrain {
         // using sin() to avoid external dependencies like 'rand' which might cause 
         // allocator/TLS issues in WASM.
         
-        let mut pseudo_random_tensor = |rows, cols, seed_offset: usize| {
+        // Deterministic alternating weights to GUARANTEE steering variance.
+        // Reduced magnitude to 0.1 to prevent "hard left/right" locking.
+        let mut alternating_tensor = |rows, cols, offset| {
             let total = rows * cols;
             let mut data = Vec::with_capacity(total);
             for i in 0..total {
-                let v = ((i + seed_offset) as f32).sin() * 0.5;
-                data.push(v);
+                let sign = if (i + offset) % 2 == 0 { 1.0 } else { -1.0 };
+                data.push(sign * 0.1); 
             }
             Tensor::new_cpu(Array::from_shape_vec(IxDyn(&[rows, cols]), data).unwrap())
         };
 
-        let w1 = gb.param(pseudo_random_tensor(5, 8, 0));
+        let w1 = gb.param(alternating_tensor(5, 8, 0));
         let b1 = gb.param(Tensor::new_zeros(&[1, 8]));
         let hidden = gb.matmul(input_id, w1);
         let hidden = gb.add(hidden, b1);
         let hidden = gb.relu(hidden);
 
-        let w2 = gb.param(pseudo_random_tensor(8, 1, 100)); // offset 100 for variety
+        let w2 = gb.param(alternating_tensor(8, 1, 10)); // Offset 1 to flip signs
         let b2 = gb.param(Tensor::new_zeros(&[1, 1]));
         let output = gb.matmul(hidden, w2);
         let output = gb.add(output, b2);

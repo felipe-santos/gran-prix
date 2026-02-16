@@ -96,6 +96,11 @@ function App() {
     const state = gameState.current;
     state.score++;
     if (state.score % 10 === 0) setStats(prev => ({ ...prev, score: state.score }));
+    
+    // Slowly increase speed over time
+    if (state.score % 60 === 0) {
+        state.speed += 0.25;
+    }
 
     // Spawn Obstacles
     if (Math.random() < 0.02) {
@@ -125,7 +130,7 @@ function App() {
         // Simple distinct check against obstacles
         // In a real game, this would be a proper raycast.
         // For now, let's just detect if an obstacle is "in the lane" of the ray.
-        
+        console.log("PRIX DEBUG: Ray angle", angle);
         
         // Find closest obstacle intersection
         for (let obs of state.obstacles) {
@@ -146,27 +151,36 @@ function App() {
         sensors.push(dist);
     }
 
-    if (!isComputing.current) {
+    if (!isComputing.current && brainRef.current) {
         isComputing.current = true;
         try {
-            const steering = currentBrain.compute(sensors[0], sensors[1], sensors[2], sensors[3], sensors[4]);
-            const move = (steering - 0.5) * 2.0 * 10;
-            state.playerX = Math.max(0, Math.min(GAME_WIDTH - PLAYER_SIZE, state.playerX + move));
+            // Paranoid check: ensure brain is still there
+            if (!brainRef.current) throw new Error("Brain vanished");
+            
+            const steering = brainRef.current.compute(sensors[0], sensors[1], sensors[2], sensors[3], sensors[4]);
+            
+            // Map output 0..1 to -1..1 for steering
+            // (0 = left, 0.5 = straight, 1 = right)
+            // Reduced sensitivity from 10 to 4 to avoid "teleporting"
+            const move = (steering - 0.5) * 2.0 * 4.0; 
+            
+            if (!isNaN(move)) {
+                 state.playerX = Math.max(0, Math.min(GAME_WIDTH - PLAYER_SIZE, state.playerX + move));
+            }
         } catch(e) {
             console.error("PRIX DEBUG: WASM ERROR", e);
-            if (e?.toString().includes("memory access out of bounds") || e?.toString().includes("corrupted") || e?.toString().includes("unreachable")) {
-                console.warn("PRIX: WASM Trap/Error detected. Cooling down before restart...");
-                setIsPlaying(false);
+            // CRITICAL: Stop loop immediately on ANY error
+            isLoopActive.current = false;
+            setIsPlaying(false);
+            setBrain(null); 
+            
+            // Only restart if it's a known WASM trap
+            if (e?.toString().includes("memory") || e?.toString().includes("unreachable") || e?.toString().includes("ptr")) {
+                console.warn("PRIX: WASM Panic caught. Restarting...");
                 setIsRestarting(true);
-                setBrain(null); 
-                isLoopActive.current = false;
-                
-                setTimeout(() => {
-                    console.log("PRIX: Cooldown finished. Ready for restart.");
-                    setIsRestarting(false);
-                }, 2000);
-                return;
+                setTimeout(() => setIsRestarting(false), 2000);
             }
+            return;
         } finally {
             isComputing.current = false;
         }
