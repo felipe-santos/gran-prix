@@ -41,6 +41,8 @@ pub struct NeuralBrain {
     magic: u32,
     // Re-entrancy protection
     computing: RefCell<bool>,
+    // Manual convolution kernel (1x3)
+    custom_kernel: RefCell<Vec<f32>>,
 }
 
 struct ComputingGuard<'a>(&'a RefCell<bool>);
@@ -97,6 +99,7 @@ impl NeuralBrain {
             input_tensor: RefCell::new(Tensor::new_zeros(&[1, 5])),
             magic: BRAIN_MAGIC,
             computing: RefCell::new(false),
+            custom_kernel: RefCell::new(vec![0.0, 1.0, 0.0]), // Default identity kernel
         })
     }
 
@@ -129,11 +132,26 @@ impl NeuralBrain {
         {
             let mut view = input_buffer.try_view_mut()
                 .map_err(|e| JsValue::from_str(&format!("PRIX: Buffer view error: {}", e)))?;
-            if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, 0])) { *v = s1; }
-            if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, 1])) { *v = s2; }
-            if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, 2])) { *v = s3; }
-            if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, 3])) { *v = s4; }
-            if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, 4])) { *v = s5; }
+            
+            // Apply Manual 1D Convolution
+            let raw_inputs = [s1, s2, s3, s4, s5];
+            let kernel = self.custom_kernel.borrow();
+            let mut processed = vec![0.0; 5];
+            
+            for i in 0..5 {
+                for k in 0..3 {
+                    let idx = (i as i32 + k as i32 - 1);
+                    if idx >= 0 && idx < 5 {
+                        processed[i] += raw_inputs[idx as usize] * kernel[k];
+                    }
+                }
+            }
+
+            for i in 0..5 {
+                if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, i])) { 
+                    *v = processed[i]; 
+                }
+            }
         }
 
         let mut graph = self.graph.borrow_mut();
@@ -332,6 +350,11 @@ impl NeuralBrain {
 
         serde_wasm_bindgen::to_value(&snapshots).unwrap()
     }
+
+    pub fn set_kernel(&self, k1: f32, k2: f32, k3: f32) {
+        let mut kernel = self.custom_kernel.borrow_mut();
+        *kernel = vec![k1, k2, k3];
+    }
 }
 
 #[derive(Serialize)]
@@ -373,6 +396,7 @@ pub struct Population {
     brains: Vec<NeuralBrain>,
     generation: u32,
     rng: XorShift,
+    global_kernel: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -391,6 +415,7 @@ impl Population {
             brains,
             generation: 1,
             rng: XorShift::new(12345),
+            global_kernel: vec![0.0, 1.0, 0.0],
         };
         console_log!("PRIX: Population created at {:p}", &pop);
         Ok(pop)
@@ -427,7 +452,12 @@ impl Population {
              return Err(JsValue::from_str("Fitness array length mismatch"));
         }
 
-        console_log!("PRIX: Evolving Generation {}... (Self: {:p})", self.generation, self);
+        let strat_name = match strategy {
+            MutationStrategy::Additive => "ADDITIVE",
+            MutationStrategy::Multiplicative => "MULTIPLICATIVE",
+            MutationStrategy::Reset => "RESET",
+        };
+        console_log!("PRIX: Evolution Strategy: {} | Rate: {} | Scale: {}", strat_name, mutation_rate, mutation_scale);
 
         // Find best brain
         let mut best_idx = 0;
@@ -458,6 +488,10 @@ impl Population {
         for i in 1..self.brains.len() {
             let offspring = NeuralBrain::new(i + (self.generation as usize * 1000))?;
             offspring.import_weights(&best_weights)?;
+            
+            // Propagate global kernel
+            offspring.set_kernel(self.global_kernel[0], self.global_kernel[1], self.global_kernel[2]);
+            
             offspring.mutate(rng, mutation_rate, mutation_scale, strategy)?; 
             new_brains.push(offspring);
         }
@@ -484,6 +518,14 @@ impl Population {
         }
 
         self.brains[best_idx].get_graph_snapshot()
+    }
+
+    pub fn set_global_kernel(&mut self, k1: f32, k2: f32, k3: f32) {
+        self.global_kernel = vec![k1, k2, k3];
+        // Apply to current population as well
+        for brain in self.brains.iter() {
+            brain.set_kernel(k1, k2, k3);
+        }
     }
 }
 

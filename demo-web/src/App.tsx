@@ -33,8 +33,9 @@ function App() {
   const [mutationRate, setMutationRate] = useState(0.2);
   const [mutationScale, setMutationScale] = useState(0.5);
   const [mutationStrategy, setMutationStrategy] = useState<wasm.MutationStrategy>(wasm.MutationStrategy.Additive);
+  const [customKernel, setCustomKernelState] = useState<[number, number, number]>([0, 1, 0]);
   
-  const { population, initWasm, evolve, computeAll, getBestBrainSnapshot } = useWasmPopulation();
+  const { population, initWasm, evolve, computeAll, getBestBrainSnapshot, setGlobalKernel } = useWasmPopulation();
   const { gameState, resetGame, updatePhysics } = useGameLoop({
     computeAll,
     evolve,
@@ -104,12 +105,12 @@ function App() {
           if (document.documentElement.getAttribute('data-theme') === 'dark') {
             ctx.fillStyle = '#1a1a1c';
           } else {
-            ctx.fillStyle = '#dac5ccff';
+            ctx.fillStyle = '#ece4e7ff';
           }
-            ctx.globalAlpha = 0.2;
+          ctx.globalAlpha = 0.2;
         } else {
-            ctx.fillStyle = car.color;
-            ctx.globalAlpha = 1.0;
+          ctx.fillStyle = car.color;
+          ctx.globalAlpha = 1.0;
         }
         
         ctx.beginPath();
@@ -168,6 +169,11 @@ function App() {
               setMutationScale={setMutationScale}
               mutationStrategy={mutationStrategy}
               setMutationStrategy={setMutationStrategy}
+              customKernel={customKernel}
+              setCustomKernel={(k: [number, number, number]) => {
+                setCustomKernelState(k);
+                setGlobalKernel(k[0], k[1], k[2]);
+              }}
             />
           </div>
         </div>

@@ -8,6 +8,8 @@ interface LearningLabProps {
   setMutationScale: (val: number) => void;
   mutationStrategy: wasm.MutationStrategy;
   setMutationStrategy: (val: wasm.MutationStrategy) => void;
+  customKernel: [number, number, number];
+  setCustomKernel: (kernel: [number, number, number]) => void;
 }
 
 export const LearningLab: React.FC<LearningLabProps> = ({ 
@@ -16,7 +18,9 @@ export const LearningLab: React.FC<LearningLabProps> = ({
   mutationScale, 
   setMutationScale,
   mutationStrategy,
-  setMutationStrategy
+  setMutationStrategy,
+  customKernel,
+  setCustomKernel
 }) => {
   const getFormula = () => {
     switch (mutationStrategy) {
@@ -42,6 +46,13 @@ export const LearningLab: React.FC<LearningLabProps> = ({
     }
   };
 
+  const handleKernelChange = (index: number, value: string) => {
+    const val = parseFloat(value) || 0;
+    const newKernel = [...customKernel] as [number, number, number];
+    newKernel[index] = val;
+    setCustomKernel(newKernel);
+  };
+
   return (
     <div className="w-96 flex flex-col bg-card/50 border border-border rounded-2xl overflow-hidden backdrop-blur-md animate-in slide-in-from-right duration-500 delay-150">
       <div className="p-4 border-b border-border bg-card/80">
@@ -49,10 +60,38 @@ export const LearningLab: React.FC<LearningLabProps> = ({
         <p className="text-[10px] text-muted-foreground font-mono">NEURAL_CALCULUS_MODIFIER</p>
       </div>
 
-      <div className="p-6 space-y-8">
+      <div className="p-6 space-y-8 max-h-[70vh] overflow-y-auto">
+        {/* Neural Architect - Custom Kernel */}
+        <div className="space-y-4">
+          <label className="text-[10px] font-bold text-foreground/70 uppercase tracking-widest block">Neural Architect (Convolução 1D)</label>
+          <p className="text-[9px] text-muted-foreground leading-tight">Define como os sensores processam o ambiente antes de pensar.</p>
+          
+          <div className="flex gap-2 justify-between">
+            {customKernel.map((val, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <input 
+                  type="number" 
+                  step="0.1"
+                  value={val}
+                  onChange={(e) => handleKernelChange(i, e.target.value)}
+                  className="w-full bg-muted/50 border border-border/50 rounded-lg p-2 text-center text-xs font-mono font-bold text-emerald-500 focus:outline-none focus:border-emerald-500/50"
+                />
+                <span className="text-[8px] text-muted-foreground font-mono uppercase tracking-tighter">k{i+1}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-lg">
+             <p className="text-[10px] font-mono text-emerald-500/80 mb-1">
+               S'_i = S_i-1*{customKernel[0].toFixed(1)} + S_i*{customKernel[1].toFixed(1)} + S_i+1*{customKernel[2].toFixed(1)}
+             </p>
+             <p className="text-[9px] text-muted-foreground italic font-medium">Filtro de pré-processamento sensorial manual.</p>
+          </div>
+        </div>
+
         {/* Mutation Strategy */}
         <div className="space-y-4">
-          <label className="text-[10px] font-bold text-foreground/70 uppercase tracking-widest block">Cálculo de Peso (Mutação)</label>
+          <label className="text-[10px] font-bold text-foreground/70 uppercase tracking-widest block">Lógica de Mutação</label>
           <div className="flex flex-col gap-2">
             {[
               { id: wasm.MutationStrategy.Additive, label: "Aditivo" },
@@ -84,7 +123,7 @@ export const LearningLab: React.FC<LearningLabProps> = ({
           <div className="flex justify-between items-end">
             <div>
               <label className="text-[10px] font-bold text-foreground/70 uppercase tracking-widest">Mutation Rate</label>
-              <p className="text-[9px] text-muted-foreground leading-tight">Probabilidade de alteração por peso</p>
+              <p className="text-[9px] text-muted-foreground leading-tight">Probabilidade de alteração</p>
             </div>
             <span className="text-sm font-mono font-bold text-emerald-500">{(mutationRate * 100).toFixed(0)}%</span>
           </div>
@@ -104,7 +143,7 @@ export const LearningLab: React.FC<LearningLabProps> = ({
           <div className="flex justify-between items-end">
             <div>
               <label className="text-[10px] font-bold text-foreground/70 uppercase tracking-widest">Mutation Scale (s)</label>
-              <p className="text-[9px] text-muted-foreground leading-tight">Intensidade do ruído aleatório</p>
+              <p className="text-[9px] text-muted-foreground leading-tight">Intensidade do ruído</p>
             </div>
             <span className="text-sm font-mono font-bold text-emerald-500">{mutationScale.toFixed(2)}</span>
           </div>

@@ -61,12 +61,22 @@ export function useWasmPopulation() {
         }
     }, []);
 
+    const setGlobalKernel = useCallback((k1: number, k2: number, k3: number) => {
+        if (!popRef.current) return;
+        try {
+            popRef.current.set_global_kernel(k1, k2, k3);
+        } catch (e) {
+            console.error("Failed to set kernel:", e);
+        }
+    }, []);
+
     return {
         population,
         popRef,
         initWasm,
         evolve,
         computeAll,
-        getBestBrainSnapshot
+        getBestBrainSnapshot,
+        setGlobalKernel
     };
 }

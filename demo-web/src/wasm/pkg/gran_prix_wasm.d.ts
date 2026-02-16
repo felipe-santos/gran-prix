@@ -16,6 +16,7 @@ export class NeuralBrain {
     import_weights(weights: Float32Array): void;
     constructor(seed_offset: number);
     reset(): void;
+    set_kernel(k1: number, k2: number, k3: number): void;
     train(_sensors: Float32Array, _target: number): void;
 }
 
@@ -27,6 +28,7 @@ export class Population {
     evolve(fitness_scores: Float32Array, mutation_rate: number, mutation_scale: number, strategy: MutationStrategy): void;
     get_best_brain_snapshot(fitness_scores: Float32Array): any;
     constructor(size: number);
+    set_global_kernel(k1: number, k2: number, k3: number): void;
 }
 
 export function init_panic_hook(): void;
@@ -44,12 +46,14 @@ export interface InitOutput {
     readonly neuralbrain_import_weights: (a: number, b: number, c: number) => [number, number];
     readonly neuralbrain_new: (a: number) => [number, number, number];
     readonly neuralbrain_reset: (a: number) => void;
+    readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
     readonly population_count: (a: number) => number;
     readonly population_evolve: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
     readonly population_new: (a: number) => [number, number, number];
+    readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_free_command_export: (a: number, b: number, c: number) => void;

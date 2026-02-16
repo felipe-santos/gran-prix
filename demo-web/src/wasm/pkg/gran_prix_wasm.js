@@ -94,6 +94,16 @@ export class NeuralBrain {
         wasm.neuralbrain_reset(this.__wbg_ptr);
     }
     /**
+     * @param {number} k1
+     * @param {number} k2
+     * @param {number} k3
+     */
+    set_kernel(k1, k2, k3) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        wasm.neuralbrain_set_kernel(this.__wbg_ptr, k1, k2, k3);
+    }
+    /**
      * @param {Float32Array} _sensors
      * @param {number} _target
      */
@@ -188,6 +198,16 @@ export class Population {
         this.__wbg_ptr = ret[0] >>> 0;
         PopulationFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * @param {number} k1
+     * @param {number} k2
+     * @param {number} k3
+     */
+    set_global_kernel(k1, k2, k3) {
+        if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
+        _assertNum(this.__wbg_ptr);
+        wasm.population_set_global_kernel(this.__wbg_ptr, k1, k2, k3);
     }
 }
 if (Symbol.dispose) Population.prototype[Symbol.dispose] = Population.prototype.free;

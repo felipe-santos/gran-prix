@@ -10,7 +10,7 @@ import {
 
 interface UseGameLoopProps {
     computeAll: (inputs: Float32Array) => any;
-    evolve: (fitnessScores: number[], mutationRate: number, mutationScale: number) => void;
+    evolve: (fitnessScores: number[], mutationRate: number, mutationScale: number, mutationStrategy: any) => void;
     setStats: React.Dispatch<React.SetStateAction<GameStats>>;
     mutationRate: number;
     mutationScale: number;
