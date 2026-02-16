@@ -1,30 +1,34 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
 
 @layer base {
   :root {
-    --color-background: 0 0% 100%;
-    --color-foreground: 240 10% 3.9%;
-    --color-card: 0 0% 98%;
-    --color-card-foreground: 240 10% 3.9%;
-    --color-popover: 0 0% 100%;
-    --color-popover-foreground: 240 10% 3.9%;
-    --color-primary: 240 5.9% 10%;
-    --color-primary-foreground: 0 0% 98%;
-    --color-secondary: 240 4.8% 95.9%;
-    --color-secondary-foreground: 240 5.9% 10%;
-    --color-muted: 240 4.8% 95.9%;
-    --color-muted-foreground: 240 3.8% 46.1%;
-    --color-accent: 240 4.8% 95.9%;
-    --color-accent-foreground: 240 5.9% 10%;
-    --color-destructive: 0 84.2% 60.2%;
-    --color-destructive-foreground: 0 0% 98%;
-    --color-border: 240 5.9% 90%;
-    --color-input: 240 5.9% 90%;
-    --color-ring: 240 5% 64.9%;
-    --color-zinc: 240 4.8% 95.9%;
-    --color-zinc-foreground: 240 5.9% 10%;
-    --color-emerald: 142 76% 36%;
-    --color-emerald-foreground: 0 0% 98%;
+    /* Default Theme (Light) */
+    --color-background: hsl(0 0% 100%);
+    --color-foreground: hsl(240 10% 3.9%);
+    --color-card: hsl(0 0% 98%);
+    --color-card-foreground: hsl(240 10% 3.9%);
+    --color-popover: hsl(0 0% 100%);
+    --color-popover-foreground: hsl(240 10% 3.9%);
+    --color-primary: hsl(240 5.9% 10%);
+    --color-primary-foreground: hsl(0 0% 98%);
+    --color-secondary: hsl(240 4.8% 95.9%);
+    --color-secondary-foreground: hsl(240 5.9% 10%);
+    --color-muted: hsl(240 4.8% 95.9%);
+    --color-muted-foreground: hsl(240 3.8% 46.1%);
+    --color-accent: hsl(240 4.8% 95.9%);
+    --color-accent-foreground: hsl(240 5.9% 10%);
+    --color-destructive: hsl(0 84.2% 60.2%);
+    --color-destructive-foreground: hsl(0 0% 98%);
+    --color-border: hsl(240 5.9% 90%);
+    --color-input: hsl(240 5.9% 90%);
+    --color-ring: hsl(240 5% 64.9%);
+    --color-zinc: hsl(240 4.8% 95.9%);
+    --color-zinc-foreground: hsl(240 5.9% 10%);
+    --color-emerald: hsl(142 76% 36%);
+    --color-emerald-foreground: hsl(0 0% 98%);
     
     /* Canvas specific */
     --canvas-bg: #f8f8f9;
@@ -32,32 +36,31 @@
     --canvas-trail: rgba(255, 255, 255, 0.4);
   }
 
+  /* Dark Theme Overrides */
   [data-theme='dark'] {
-    
-    /* Dark Theme (Default) */
-    --color-background: 240 10% 3.9%;
-    --color-foreground: 0 0% 98%;
-    --color-card: 240 10% 3.9%;
-    --color-card-foreground: 0 0% 98%;
-    --color-popover: 240 10% 3.9%;
-    --color-popover-foreground: 0 0% 98%;
-    --color-primary: 0 0% 98%;
-    --color-primary-foreground: 240 5.9% 10%;
-    --color-secondary: 240 3.7% 15.9%;
-    --color-secondary-foreground: 0 0% 98%;
-    --color-muted: 240 3.7% 15.9%;
-    --color-muted-foreground: 240 5% 64.9%;
-    --color-accent: 240 3.7% 15.9%;
-    --color-accent-foreground: 0 0% 98%;
-    --color-destructive: 0 62.8% 30.6%;
-    --color-destructive-foreground: 0 0% 98%;
-    --color-border: 240 3.7% 15.9%;
-    --color-input: 240 3.7% 15.9%;
-    --color-ring: 240 4.9% 83.9%;
-    --color-zinc: 240 3.7% 15.9%;
-    --color-zinc-foreground: 0 0% 98%;
-    --color-emerald: 142 94% 39%;
-    --color-emerald-foreground: 0 0% 98%;
+    --color-background: hsl(240 10% 3.9%);
+    --color-foreground: hsl(0 0% 98%);
+    --color-card: hsl(240 10% 3.9%);
+    --color-card-foreground: hsl(0 0% 98%);
+    --color-popover: hsl(240 10% 3.9%);
+    --color-popover-foreground: hsl(0 0% 98%);
+    --color-primary: hsl(0 0% 98%);
+    --color-primary-foreground: hsl(240 5.9% 10%);
+    --color-secondary: hsl(240 3.7% 15.9%);
+    --color-secondary-foreground: hsl(0 0% 98%);
+    --color-muted: hsl(240 3.7% 15.9%);
+    --color-muted-foreground: hsl(240 5% 64.9%);
+    --color-accent: hsl(240 3.7% 15.9%);
+    --color-accent-foreground: hsl(0 0% 98%);
+    --color-destructive: hsl(0 62.8% 30.6%);
+    --color-destructive-foreground: hsl(0 0% 98%);
+    --color-border: hsl(240 3.7% 15.9%);
+    --color-input: hsl(240 3.7% 15.9%);
+    --color-ring: hsl(240 4.9% 83.9%);
+    --color-zinc: hsl(240 3.7% 15.9%);
+    --color-zinc-foreground: hsl(0 0% 98%);
+    --color-emerald: hsl(142 94% 39%);
+    --color-emerald-foreground: hsl(0 0% 98%);
     
     /* Canvas specific */
     --canvas-bg: #0d0d0e;
