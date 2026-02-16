@@ -18,7 +18,7 @@ export class Population {
     [Symbol.dispose](): void;
     compute_all(inputs: Float32Array): Float32Array;
     count(): number;
-    evolve(fitness_scores: Float32Array): void;
+    evolve(fitness_scores: Float32Array, mutation_rate: number, mutation_scale: number): void;
     get_best_brain_snapshot(fitness_scores: Float32Array): any;
     constructor(size: number);
 }
@@ -41,7 +41,7 @@ export interface InitOutput {
     readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
     readonly population_count: (a: number) => number;
-    readonly population_evolve: (a: number, b: number, c: number) => [number, number];
+    readonly population_evolve: (a: number, b: number, c: number, d: number, e: number) => [number, number];
     readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
     readonly population_new: (a: number) => [number, number, number];
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;

@@ -19,6 +19,7 @@ import { StatsBar } from './components/StatsBar'
 import { GameControls } from './components/GameControls'
 import { ThemeToggle } from './components/ThemeToggle'
 import { BrainInspector } from './components/BrainInspector'
+import { LearningLab } from './components/LearningLab'
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -27,11 +28,17 @@ function App() {
   const [isRestarting, setIsRestarting] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
   
+  // Learning Lab State
+  const [mutationRate, setMutationRate] = useState(0.2);
+  const [mutationScale, setMutationScale] = useState(0.5);
+  
   const { population, initWasm, evolve, computeAll, getBestBrainSnapshot } = useWasmPopulation();
   const { gameState, resetGame, updatePhysics } = useGameLoop({
     computeAll,
     evolve,
-    setStats
+    setStats,
+    mutationRate,
+    mutationScale
   });
 
   const rafId = useRef<number | null>(null);
@@ -178,10 +185,19 @@ function App() {
         </div>
 
         {showInspector && (
-          <div className="flex-shrink-0">
-            <BrainInspector 
-              nodes={getBestBrainSnapshot(Float32Array.from(gameState.current.cars.map(c => c.fitness))) || []} 
-              onClose={() => setShowInspector(false)} 
+          <div className="flex flex-col gap-6 flex-shrink-0">
+            <div className="pt-0">
+              <BrainInspector 
+                nodes={getBestBrainSnapshot(Float32Array.from(gameState.current.cars.map(c => c.fitness))) || []} 
+                onClose={() => setShowInspector(false)} 
+              />
+            </div>
+            
+            <LearningLab 
+              mutationRate={mutationRate}
+              setMutationRate={setMutationRate}
+              mutationScale={mutationScale}
+              setMutationScale={setMutationScale}
             />
           </div>
         )}

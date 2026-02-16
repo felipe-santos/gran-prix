@@ -5,12 +5,6 @@ use gran_prix::backend::cpu::CPUBackend;
 use ndarray::{Array, IxDyn};
 use serde::Serialize;
 
-// Turn on console_error_panic_hook for better error messages in the browser
-#[wasm_bindgen]
-pub fn init_panic_hook() {
-    console_error_panic_hook::set_once();
-}
-
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console)]
@@ -19,6 +13,11 @@ extern "C" {
 
 macro_rules! console_log {
     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+}
+
+#[wasm_bindgen]
+pub fn init_panic_hook() {
+    console_error_panic_hook::set_once();
 }
 
 use std::cell::RefCell;
@@ -405,7 +404,7 @@ impl Population {
         Ok(outputs)
     }
 
-    pub fn evolve(&mut self, fitness_scores: &[f32]) -> Result<(), JsValue> {
+    pub fn evolve(&mut self, fitness_scores: &[f32], mutation_rate: f32, mutation_scale: f32) -> Result<(), JsValue> {
         if fitness_scores.len() != self.brains.len() {
              return Err(JsValue::from_str("Fitness array length mismatch"));
         }
@@ -436,13 +435,12 @@ impl Population {
         new_brains.push(elite);
 
         // 2. OFFSPRING: Rest are mutated copies
-        // No RefCell borrow needed anymore
         let rng = &mut self.rng;
         
         for i in 1..self.brains.len() {
-            let offspring = NeuralBrain::new(i)?;
+            let offspring = NeuralBrain::new(i + (self.generation as usize * 1000))?;
             offspring.import_weights(&best_weights)?;
-            offspring.mutate(rng, 0.2, 0.5)?; 
+            offspring.mutate(rng, mutation_rate, mutation_scale)?; 
             new_brains.push(offspring);
         }
 

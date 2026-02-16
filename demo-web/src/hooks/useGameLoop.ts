@@ -10,11 +10,13 @@ import {
 
 interface UseGameLoopProps {
     computeAll: (inputs: Float32Array) => any;
-    evolve: (fitnessScores: number[]) => void;
+    evolve: (fitnessScores: number[], mutationRate: number, mutationScale: number) => void;
     setStats: React.Dispatch<React.SetStateAction<GameStats>>;
+    mutationRate: number;
+    mutationScale: number;
 }
 
-export function useGameLoop({ computeAll, evolve, setStats }: UseGameLoopProps) {
+export function useGameLoop({ computeAll, evolve, setStats, mutationRate, mutationScale }: UseGameLoopProps) {
     const gameState = useRef<GameState>({
         cars: [],
         obstacles: [],
@@ -39,7 +41,7 @@ export function useGameLoop({ computeAll, evolve, setStats }: UseGameLoopProps) 
     const evolveParams = useCallback(() => {
         const validScores = gameState.current.cars.map(c => c.fitness);
         try {
-            evolve(validScores);
+            evolve(validScores, mutationRate, mutationScale);
             gameState.current.generation++;
             setStats(s => ({ 
                 ...s, 

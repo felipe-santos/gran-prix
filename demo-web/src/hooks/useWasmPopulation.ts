@@ -31,10 +31,10 @@ export function useWasmPopulation() {
         }
     }, []);
 
-    const evolve = useCallback((fitnessScores: number[]) => {
+    const evolve = useCallback((fitnessScores: number[], mutationRate: number, mutationScale: number) => {
         if (!popRef.current) return;
         try {
-            popRef.current.evolve(Float32Array.from(fitnessScores));
+            popRef.current.evolve(Float32Array.from(fitnessScores), mutationRate, mutationScale);
         } catch (e) {
             console.error("Evolution failed:", e);
             throw e;

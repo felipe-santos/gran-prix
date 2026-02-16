@@ -140,13 +140,15 @@ export class Population {
     }
     /**
      * @param {Float32Array} fitness_scores
+     * @param {number} mutation_rate
+     * @param {number} mutation_scale
      */
-    evolve(fitness_scores) {
+    evolve(fitness_scores, mutation_rate, mutation_scale) {
         if (this.__wbg_ptr == 0) throw new Error('Attempt to use a moved value');
         _assertNum(this.__wbg_ptr);
         const ptr0 = passArrayF32ToWasm0(fitness_scores, wasm.__wbindgen_malloc_command_export);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.population_evolve(this.__wbg_ptr, ptr0, len0);
+        const ret = wasm.population_evolve(this.__wbg_ptr, ptr0, len0, mutation_rate, mutation_scale);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
