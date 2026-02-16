@@ -20,6 +20,14 @@ pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
+#[wasm_bindgen]
+#[derive(Copy, Clone)]
+pub enum MutationStrategy {
+    Additive,
+    Multiplicative,
+    Reset,
+}
+
 use std::cell::RefCell;
 
 #[wasm_bindgen]
@@ -264,7 +272,7 @@ impl NeuralBrain {
         Ok(())
     }
 
-    fn mutate(&self, rng: &mut XorShift, rate: f32, scale: f32) -> Result<(), JsValue> {
+    fn mutate(&self, rng: &mut XorShift, rate: f32, scale: f32, strategy: MutationStrategy) -> Result<(), JsValue> {
          let mut graph = self.graph.borrow_mut();
          let nodes = graph.nodes_mut();
          
@@ -276,7 +284,17 @@ impl NeuralBrain {
                  
                  for val in valid_data.iter_mut() {
                      if rng.next_f32() < rate {
-                         *val += rng.range(-scale, scale);
+                         match strategy {
+                             MutationStrategy::Additive => {
+                                 *val += rng.range(-scale, scale);
+                             }
+                             MutationStrategy::Multiplicative => {
+                                 *val *= 1.0 + rng.range(-scale, scale);
+                             }
+                             MutationStrategy::Reset => {
+                                 *val = rng.range(-scale, scale);
+                             }
+                         }
                      }
                  }
                  
@@ -404,7 +422,7 @@ impl Population {
         Ok(outputs)
     }
 
-    pub fn evolve(&mut self, fitness_scores: &[f32], mutation_rate: f32, mutation_scale: f32) -> Result<(), JsValue> {
+    pub fn evolve(&mut self, fitness_scores: &[f32], mutation_rate: f32, mutation_scale: f32, strategy: MutationStrategy) -> Result<(), JsValue> {
         if fitness_scores.len() != self.brains.len() {
              return Err(JsValue::from_str("Fitness array length mismatch"));
         }
@@ -440,7 +458,7 @@ impl Population {
         for i in 1..self.brains.len() {
             let offspring = NeuralBrain::new(i + (self.generation as usize * 1000))?;
             offspring.import_weights(&best_weights)?;
-            offspring.mutate(rng, mutation_rate, mutation_scale)?; 
+            offspring.mutate(rng, mutation_rate, mutation_scale, strategy)?; 
             new_brains.push(offspring);
         }
 

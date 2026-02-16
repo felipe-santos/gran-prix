@@ -1,3 +1,4 @@
+import * as wasm from './wasm/pkg/gran_prix_wasm';
 import { useEffect, useRef, useState, useCallback } from 'react'
 
 // Types & Hooks
@@ -31,6 +32,7 @@ function App() {
   // Learning Lab State
   const [mutationRate, setMutationRate] = useState(0.2);
   const [mutationScale, setMutationScale] = useState(0.5);
+  const [mutationStrategy, setMutationStrategy] = useState<wasm.MutationStrategy>(wasm.MutationStrategy.Additive);
   
   const { population, initWasm, evolve, computeAll, getBestBrainSnapshot } = useWasmPopulation();
   const { gameState, resetGame, updatePhysics } = useGameLoop({
@@ -38,7 +40,8 @@ function App() {
     evolve,
     setStats,
     mutationRate,
-    mutationScale
+    mutationScale,
+    mutationStrategy
   });
 
   const rafId = useRef<number | null>(null);
@@ -156,6 +159,19 @@ function App() {
       <Header />
 
       <main className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 transition-all duration-500">
+        <div className="flex flex-col gap-6 flex-shrink-0">
+          <div className="pt-0">
+            <LearningLab 
+              mutationRate={mutationRate}
+              setMutationRate={setMutationRate}
+              mutationScale={mutationScale}
+              setMutationScale={setMutationScale}
+              mutationStrategy={mutationStrategy}
+              setMutationStrategy={setMutationStrategy}
+            />
+          </div>
+        </div>
+        
         <div className="flex flex-col items-center flex-shrink-0">
           <StatsBar stats={stats} />
           <GameCanvas 
@@ -193,12 +209,6 @@ function App() {
               />
             </div>
             
-            <LearningLab 
-              mutationRate={mutationRate}
-              setMutationRate={setMutationRate}
-              mutationScale={mutationScale}
-              setMutationScale={setMutationScale}
-            />
           </div>
         )}
       </main>

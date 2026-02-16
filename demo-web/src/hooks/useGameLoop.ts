@@ -14,9 +14,10 @@ interface UseGameLoopProps {
     setStats: React.Dispatch<React.SetStateAction<GameStats>>;
     mutationRate: number;
     mutationScale: number;
+    mutationStrategy: any; // wasm.MutationStrategy
 }
 
-export function useGameLoop({ computeAll, evolve, setStats, mutationRate, mutationScale }: UseGameLoopProps) {
+export function useGameLoop({ computeAll, evolve, setStats, mutationRate, mutationScale, mutationStrategy }: UseGameLoopProps) {
     const gameState = useRef<GameState>({
         cars: [],
         obstacles: [],
@@ -41,7 +42,7 @@ export function useGameLoop({ computeAll, evolve, setStats, mutationRate, mutati
     const evolveParams = useCallback(() => {
         const validScores = gameState.current.cars.map(c => c.fitness);
         try {
-            evolve(validScores, mutationRate, mutationScale);
+            evolve(validScores, mutationRate, mutationScale, mutationStrategy);
             gameState.current.generation++;
             setStats(s => ({ 
                 ...s, 
