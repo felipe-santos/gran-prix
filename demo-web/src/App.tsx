@@ -27,7 +27,7 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [stats, setStats] = useState<GameStats>({ score: 0, generation: 1, best: 0, alive: 0 });
-  const [isRestarting, setIsRestarting] = useState(false);
+  const [isRestarting] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
   
   // Learning Lab State
