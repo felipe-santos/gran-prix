@@ -8,7 +8,7 @@ interface Point {
 }
 
 const RESOLUTION = 40;
-const DATA_SIZE = 2;
+const DATA_SIZE = 100;
 
 const NetworkVisualization: React.FC<{ trainer: wasm.Trainer | null, hiddenSize: number }> = ({ trainer, hiddenSize }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
