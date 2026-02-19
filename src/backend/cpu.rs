@@ -1,5 +1,6 @@
 use crate::backend::Backend;
 use crate::{Tensor, GPResult, GPError};
+use crate::tensor::ops::TensorOps;
 use ndarray::Zip;
 
 #[derive(Debug)]
@@ -427,14 +428,33 @@ impl Backend for CPUBackend {
         Ok(())
     }
 
+    fn tanh(&self, x: &Tensor) -> GPResult<Tensor> {
+        Ok(x.mapv(|v: f32| v.tanh()))
+    }
+
+    fn tanh_inplace(&self, x: &mut Tensor) -> GPResult<()> {
+        x.as_cpu_mut()?.map_inplace(|v| *v = v.tanh());
+        Ok(())
+    }
+
     fn add_relu(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
         let mut res = a.try_view()?.to_owned() + &b.try_view()?;
         res.map_inplace(|v| if *v < 0.0 { *v = 0.0 });
         Ok(res.into_dyn().into())
     }
 
-    fn update_parameter(&self, param: &mut Tensor, grad: &Tensor, learning_rate: f32) -> GPResult<()> {
-        *param -= &(grad * learning_rate);
+    fn update_parameter(&self, param: &mut Tensor, grad: &Tensor, lr: f32) -> GPResult<()> {
+        let mut p_view = param.try_view_mut()?;
+        let g_view = grad.try_view()?;
+
+        #[cfg(feature = "rayon")]
+        Zip::from(&mut p_view).and(&g_view).par_for_each(|p, &g| {
+            *p -= lr * g;
+        });
+        #[cfg(not(feature = "rayon"))]
+        Zip::from(&mut p_view).and(&g_view).for_each(|p, &g| {
+             *p -= lr * g;
+        });
         Ok(())
     }
 
@@ -460,6 +480,19 @@ impl Backend for CPUBackend {
         #[cfg(not(feature = "rayon"))]
         Zip::from(grad.view_mut()).and(output.try_view()?).for_each(|g, &si| {
             *g *= si * (1.0 - si);
+        });
+        Ok(grad.into_dyn().into())
+    }
+
+    fn tanh_backward(&self, output: &Tensor, grad_output: &Tensor) -> GPResult<Tensor> {
+        let mut grad = grad_output.try_view()?.to_owned();
+        #[cfg(feature = "rayon")]
+        Zip::from(grad.view_mut()).and(output.try_view()?).par_for_each(|g, &y| {
+            *g *= 1.0 - y * y;
+        });
+        #[cfg(not(feature = "rayon"))]
+        Zip::from(grad.view_mut()).and(output.try_view()?).for_each(|g, &y| {
+            *g *= 1.0 - y * y;
         });
         Ok(grad.into_dyn().into())
     }
@@ -491,4 +524,5 @@ impl Backend for CPUBackend {
 
         Ok(curr.into_dyn().into())
     }
+
 }

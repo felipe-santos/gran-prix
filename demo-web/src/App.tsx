@@ -22,6 +22,7 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { BrainInspector } from './components/BrainInspector'
 import { LearningLab } from './components/LearningLab'
 import { PerformanceCharts, PerformanceData } from './components/PerformanceCharts'
+import { ClassifierDemo } from './components/ClassifierDemo'
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -29,6 +30,7 @@ function App() {
   const [stats, setStats] = useState<GameStats>({ score: 0, generation: 1, best: 0, alive: 0 });
   const [isRestarting] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
+  const [activeTab, setActiveTab] = useState<'evolution' | 'training'>('evolution');
   
   // Learning Lab State
   const [mutationRate, setMutationRate] = useState(0.2);
@@ -177,8 +179,30 @@ function App() {
       <ThemeToggle />
       <Header />
 
+      <div className="flex gap-4 mb-8 p-1 bg-white/5 border border-white/10 rounded-xl">
+        {(['evolution', 'training'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-6 py-2 rounded-lg text-[10px] font-bold uppercase tracking-[0.2em] transition-all ${
+              activeTab === tab 
+              ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20' 
+              : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+            }`}
+          >
+            {tab === 'evolution' ? 'Genetic Evolution' : 'Backprop Training'}
+          </button>
+        ))}
+      </div>
+
       <main className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 transition-all duration-500">
-        <div className="flex flex-col gap-6 flex-shrink-0">
+        {activeTab === 'training' ? (
+          <div className="w-full flex justify-center py-12">
+            <ClassifierDemo isWasmReady={!!population} />
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-6 flex-shrink-0">
           <div className="pt-0">
             <LearningLab 
               mutationRate={mutationRate}
@@ -238,6 +262,8 @@ function App() {
             </div>
             
           </div>
+        )}
+          </>
         )}
       </main>
 

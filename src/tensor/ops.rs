@@ -144,3 +144,27 @@ impl TensorOps for Tensor {
         }
     }
 }
+
+// Implement T + &T
+impl std::ops::Add<&Tensor> for Tensor {
+    type Output = Tensor;
+    fn add(self, rhs: &Tensor) -> Self::Output {
+        &self + rhs
+    }
+}
+
+// Implement T - &T
+impl std::ops::Sub<&Tensor> for Tensor {
+    type Output = Tensor;
+    fn sub(self, rhs: &Tensor) -> Self::Output {
+        &self - rhs
+    }
+}
+
+// Implement T * &T
+impl std::ops::Mul<&Tensor> for Tensor {
+    type Output = Tensor;
+    fn mul(self, rhs: &Tensor) -> Self::Output {
+        &self * rhs
+    }
+}

@@ -8,6 +8,19 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
     fn matmul_t(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool) -> GPResult<Tensor>;
     fn matmul_into(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool, out: &mut Tensor) -> GPResult<()>;
 
+    fn matmul(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
+        self.matmul_t(a, b, false, false)
+    }
+
+    /// MatMul backward: returns (grad_a, grad_b)
+    fn matmul_backward(&self, a: &Tensor, b: &Tensor, grad_output: &Tensor) -> GPResult<Vec<Tensor>> {
+        // dL/dA = dL/dY * B^T
+        // dL/dB = A^T * dL/dY
+        let grad_a = self.matmul_t(grad_output, b, false, true)?;
+        let grad_b = self.matmul_t(a, grad_output, true, false)?;
+        Ok(vec![grad_a, grad_b])
+    }
+
     /// 2D Convolution: [N, Ci, H, W] * [Co, Ci, Kh, Kw] -> [N, Co, Oh, Ow]
     fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> GPResult<Tensor>;
 
@@ -32,12 +45,17 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
     fn relu_inplace(&self, x: &mut Tensor) -> GPResult<()>;
     fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor>;
     fn sigmoid_inplace(&self, x: &mut Tensor) -> GPResult<()>;
+    fn tanh(&self, x: &Tensor) -> GPResult<Tensor>;
+    fn tanh_inplace(&self, x: &mut Tensor) -> GPResult<()>;
 
     /// ReLU Backward: dL/dX = dL/dY * (Y > 0)
     fn relu_backward(&self, input: &Tensor, grad_output: &Tensor) -> GPResult<Tensor>;
     
     /// Sigmoid Backward: dL/dX = dL/dY * Y * (1 - Y)
     fn sigmoid_backward(&self, output: &Tensor, grad_output: &Tensor) -> GPResult<Tensor>;
+
+    /// Tanh Backward: dL/dX = dL/dY * (1 - Y^2)
+    fn tanh_backward(&self, output: &Tensor, grad_output: &Tensor) -> GPResult<Tensor>;
 
     /// Fused kernel: ReLU(A + B)
     /// Goal: Minimize memory bandwidth by doing addition and activation in one sweep.

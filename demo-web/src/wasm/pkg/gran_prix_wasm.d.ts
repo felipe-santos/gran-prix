@@ -31,6 +31,17 @@ export class Population {
     set_global_kernel(k1: number, k2: number, k3: number): void;
 }
 
+export class Trainer {
+    free(): void;
+    [Symbol.dispose](): void;
+    get_decision_boundary(resolution: number): Float32Array;
+    get_weights(): Float32Array;
+    constructor(hidden_size: number);
+    predict(x: number, y: number): number;
+    train_batch(inputs_x: Float32Array, inputs_y: Float32Array, targets: Float32Array, lr: number): number;
+    train_step(x: number, y: number, target_val: number, lr: number): number;
+}
+
 export function init_panic_hook(): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
@@ -39,6 +50,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_neuralbrain_free: (a: number, b: number) => void;
     readonly __wbg_population_free: (a: number, b: number) => void;
+    readonly __wbg_trainer_free: (a: number, b: number) => void;
     readonly init_panic_hook: () => void;
     readonly neuralbrain_compute: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly neuralbrain_export_weights: (a: number) => [number, number, number, number];
@@ -54,10 +66,18 @@ export interface InitOutput {
     readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
     readonly population_new: (a: number) => [number, number, number];
     readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
+    readonly trainer_get_decision_boundary: (a: number, b: number) => [number, number, number, number];
+    readonly trainer_get_weights: (a: number) => [number, number, number, number];
+    readonly trainer_new: (a: number) => [number, number, number];
+    readonly trainer_predict: (a: number, b: number, c: number) => [number, number, number];
+    readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+    readonly trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
-    readonly __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_exn_store_command_export: (a: number) => void;
+    readonly __externref_table_alloc_command_export: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc_command_export: (a: number) => void;
     readonly __wbindgen_start: () => void;
 }

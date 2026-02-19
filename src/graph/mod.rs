@@ -27,6 +27,7 @@ pub enum OpType {
     MaxPool2D { kernel_size: usize, stride: usize },
     Add,
     ReLU,
+    Tanh,
     Sigmoid,
     Reshape { target_shape: Vec<usize> },
     AddReLU, // Fused operation for optimizer
@@ -41,6 +42,7 @@ impl OpType {
             OpType::MaxPool2D { .. } => "MaxPool2D",
             OpType::Add => "Add",
             OpType::ReLU => "ReLU",
+            OpType::Tanh => "Tanh",
             OpType::Sigmoid => "Sigmoid",
             OpType::Reshape { .. } => "Reshape",
             OpType::AddReLU => "AddReLU",
@@ -55,6 +57,7 @@ impl OpType {
             OpType::MaxPool2D { kernel_size, stride } => backend.max_pool2d(inputs[0], *kernel_size, *stride),
             OpType::Add => backend.add(inputs[0], inputs[1]),
             OpType::ReLU => backend.relu(inputs[0]),
+            OpType::Tanh => backend.tanh(inputs[0]),
             OpType::Sigmoid => backend.sigmoid(inputs[0]),
             OpType::Reshape { target_shape } => {
                 let mut t = inputs[0].clone();
@@ -89,6 +92,28 @@ impl OpType {
                 }
                 for i in 0..out_slice.len() {
                     out_slice[i] = if in_slice[i] < 0.0 { 0.0 } else { in_slice[i] };
+                }
+                Ok(())
+            }
+            OpType::Tanh => {
+                let out_shape = out.shape().to_vec();
+                let in_shape = inputs[0].shape().to_vec();
+                let out_len = out.len();
+                let in_len = inputs[0].len();
+                
+                let out_slice = out.as_slice_mut()?;
+                let in_slice = inputs[0].as_slice()?;
+                
+                if out_len != in_len {
+                    return Err(GPError::IncompatibleShapes { 
+                        expected: out_shape, 
+                        found: in_shape,
+                        exp_len: out_len,
+                        found_len: in_len,
+                    });
+                }
+                for i in 0..out_slice.len() {
+                    out_slice[i] = in_slice[i].tanh();
                 }
                 Ok(())
             }
@@ -155,6 +180,10 @@ impl OpType {
                 ])
             }
             OpType::ReLU => Ok(vec![backend.relu_backward(&inputs[0], grad_output)?]),
+            OpType::Tanh => {
+                let y = backend.tanh(&inputs[0])?;
+                Ok(vec![backend.tanh_backward(&y, grad_output)?])
+            },
             OpType::Sigmoid => {
                 let y = backend.sigmoid(&inputs[0])?; 
                 Ok(vec![backend.sigmoid_backward(&y, grad_output)?])
@@ -216,7 +245,7 @@ impl OpType {
                 }
                 Ok(input_shapes[0].clone())
             }
-            OpType::ReLU | OpType::Sigmoid => Ok(input_shapes[0].clone()),
+            OpType::ReLU | OpType::Sigmoid | OpType::Tanh => Ok(input_shapes[0].clone()),
             OpType::Reshape { target_shape } => Ok(target_shape.clone()),
             OpType::Custom(op) => op.output_shape(input_shapes),
         }
@@ -357,6 +386,15 @@ impl Graph {
     /// Forward pass: Computes and caches values using iterative execution.
     pub fn execute(&mut self, target: NodeId) -> GPResult<Tensor> {
         let order = self.topological_sort(target)?;
+        self.execute_with_order(&order, target)
+    }
+
+    /// Executa o grafo usando uma ordem pré-calculada (Otimização para visualização)
+    pub fn execute_with_order(&mut self, order: &[NodeId], target: NodeId) -> GPResult<Tensor> {
+        // CRITICAL: Sync parameters from Nodes to Values cache before execution
+        // Otherwise we are using stale weights!
+        self.sync_params()?;
+
         let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
 
         // PARANOID: Ensure values vector is long enough for all nodes before splitting
@@ -364,7 +402,7 @@ impl Graph {
             self.values.resize(self.nodes.len(), None);
         }
 
-        for node_id in order {
+        for &node_id in order {
             // Check index validity to prevent OOB before split_at_mut
             if node_id.0 >= self.nodes.len() || node_id.0 >= self.values.len() {
                 return Err(GPError::InferenceError(format!("PRIX: Node index {} out of bounds", node_id.0)));
@@ -384,10 +422,8 @@ impl Graph {
                         self.values[node_id.0] = Some(t.clone());
                     }
                 }
-                Node::Param(t) => {
-                    if self.values[node_id.0].is_none() {
-                        self.values[node_id.0] = Some(t.clone());
-                    }
+                Node::Param(_) => {
+                    // Optimized: Params are now synced via sync_params() before the loop
                 }
                 Node::Op { op, inputs } => {
                     // Safety: Split the values to borrow inputs (left) and output (right[0])
@@ -592,6 +628,23 @@ impl Graph {
         for g in &mut self.gradients {
             *g = None;
         }
+    }
+
+    /// Sincroniza os parâmetros mutáveis com o buffer de execução (Otimização)
+    pub fn sync_params(&mut self) -> GPResult<()> {
+        if self.values.len() < self.nodes.len() {
+            self.values.resize(self.nodes.len(), None);
+        }
+        for i in 0..self.nodes.len() {
+            if let Node::Param(t) = &self.nodes[i] {
+                if let Some(Some(cached)) = self.values.get_mut(i) {
+                    cached.copy_from(t)?;
+                } else {
+                    self.values[i] = Some(t.clone());
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Mutates parameters based on gradients and a learning rate.

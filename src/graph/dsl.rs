@@ -36,6 +36,10 @@ impl<'a> GraphBuilder<'a> {
         self.graph.op(OpType::ReLU, vec![x])
     }
 
+    pub fn tanh(&mut self, x: NodeId) -> NodeId {
+        self.graph.op(OpType::Tanh, vec![x])
+    }
+
     pub fn sigmoid(&mut self, input: NodeId) -> NodeId {
         self.graph.op(OpType::Sigmoid, vec![input])
     }

@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const __wbg_neuralbrain_free: (a: number, b: number) => void;
 export const __wbg_population_free: (a: number, b: number) => void;
+export const __wbg_trainer_free: (a: number, b: number) => void;
 export const init_panic_hook: () => void;
 export const neuralbrain_compute: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
 export const neuralbrain_export_weights: (a: number) => [number, number, number, number];
@@ -18,9 +19,17 @@ export const population_evolve: (a: number, b: number, c: number, d: number, e: 
 export const population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
 export const population_new: (a: number) => [number, number, number];
 export const population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
+export const trainer_get_decision_boundary: (a: number, b: number) => [number, number, number, number];
+export const trainer_get_weights: (a: number) => [number, number, number, number];
+export const trainer_new: (a: number) => [number, number, number];
+export const trainer_predict: (a: number, b: number, c: number) => [number, number, number];
+export const trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+export const trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const __wbindgen_malloc_command_export: (a: number, b: number) => number;
 export const __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
-export const __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
+export const __wbindgen_exn_store_command_export: (a: number) => void;
+export const __externref_table_alloc_command_export: () => number;
 export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
 export const __externref_table_dealloc_command_export: (a: number) => void;
 export const __wbindgen_start: () => void;
