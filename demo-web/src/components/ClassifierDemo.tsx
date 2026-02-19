@@ -92,7 +92,6 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [trainer, setTrainer] = useState<wasm.Trainer | null>(null);
     const trainerRef = useRef<wasm.Trainer | null>(null);
-    const [points, setPoints] = useState<Point[]>([]);
     const pointsRef = useRef<Point[]>([]);
     const [isPlaying, setIsPlaying] = useState(true);
     const isPlayingRef = useRef(true);
@@ -152,7 +151,7 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
 
     // Keep refs in sync with state so trainLoop never needs to be recreated
     const setTrainerSynced = (t: wasm.Trainer | null) => { trainerRef.current = t; setTrainer(t); };
-    const setPointsSynced = (p: Point[]) => { pointsRef.current = p; setPoints(p); };
+    const setPointsSynced = (p: Point[]) => { pointsRef.current = p; };
     const setIsPlayingSynced = (v: boolean) => { isPlayingRef.current = v; setIsPlaying(v); };
     const setLrSynced = (v: number) => { lrRef.current = v; setLr(v); };
 
