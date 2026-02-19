@@ -23,6 +23,7 @@ import { BrainInspector } from './components/BrainInspector'
 import { LearningLab } from './components/LearningLab'
 import { PerformanceCharts, PerformanceData } from './components/PerformanceCharts'
 import { ClassifierDemo } from './components/ClassifierDemo'
+import GoogleTagManager from './components/GoogleTagManager';
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -176,6 +177,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground p-4 md:p-12 flex flex-col items-center selection:bg-emerald-500/30">
+      <GoogleTagManager />
       <ThemeToggle />
       <Header />
 
