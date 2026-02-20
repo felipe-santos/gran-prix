@@ -5,20 +5,17 @@ import { GTM_ID, pageview } from '../config/gtm'
 
 const GoogleTagManager = () => {
   useEffect(() => {
-    // Injeta script do GTM
     const script = document.createElement('script')
     script.async = true
     script.src = `https://www.googletagmanager.com/gtm.js?id=${GTM_ID}`
     document.head.appendChild(script)
 
-    // Inicializa dataLayer
     window.dataLayer = window.dataLayer || []
     window.dataLayer.push({
       'gtm.start': new Date().getTime(),
       event: 'gtm.js'
     })
 
-    // Dispara pageview inicial
     pageview(window.location.pathname)
 
     return () => {
