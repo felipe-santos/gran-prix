@@ -59,14 +59,14 @@ const BRAIN_MAGIC: u32 = 0xDEADC0DE;
 #[wasm_bindgen]
 impl NeuralBrain {
     #[wasm_bindgen(constructor)]
-    pub fn new(seed_offset: usize) -> Result<NeuralBrain, JsValue> {
+    pub fn new(seed_offset: usize, num_inputs: usize, hidden_size: usize, num_outputs: usize) -> Result<NeuralBrain, JsValue> {
         // init_panic_hook(); 
         // console_log!("PRIX: Initializing NeuralBrain...");
         let backend = Box::new(CPUBackend);
         let mut graph = Graph::new(backend);
         let mut gb = GraphBuilder::new(&mut graph);
 
-        let input_tensor = Tensor::new_zeros(&[1, 5]); 
+        let input_tensor = Tensor::new_zeros(&[1, num_inputs]); 
         let input_id = gb.val(input_tensor);
 
         // Deterministic alternating weights to GUARANTEE steering variance.
@@ -80,14 +80,14 @@ impl NeuralBrain {
             Tensor::new_cpu(Array::from_shape_vec(IxDyn(&[rows, cols]), data).unwrap())
         };
 
-        let w1 = gb.param(alternating_tensor(5, 8, seed_offset));
-        let b1 = gb.param(Tensor::new_zeros(&[1, 8]));
+        let w1 = gb.param(alternating_tensor(num_inputs, hidden_size, seed_offset));
+        let b1 = gb.param(Tensor::new_zeros(&[1, hidden_size]));
         let hidden = gb.matmul(input_id, w1);
         let hidden = gb.add(hidden, b1);
         let hidden = gb.relu(hidden);
 
-        let w2 = gb.param(alternating_tensor(8, 1, seed_offset + 10)); 
-        let b2 = gb.param(Tensor::new_zeros(&[1, 1]));
+        let w2 = gb.param(alternating_tensor(hidden_size, num_outputs, seed_offset + 10)); 
+        let b2 = gb.param(Tensor::new_zeros(&[1, num_outputs]));
         let output = gb.matmul(hidden, w2);
         let output = gb.add(output, b2);
         let final_output = gb.sigmoid(output); 
@@ -98,14 +98,14 @@ impl NeuralBrain {
             graph: RefCell::new(graph),
             input_node: input_id.0,
             output_node: final_output.0,
-            input_tensor: RefCell::new(Tensor::new_zeros(&[1, 5])),
+            input_tensor: RefCell::new(Tensor::new_zeros(&[1, num_inputs])),
             magic: BRAIN_MAGIC,
             computing: RefCell::new(false),
             custom_kernel: RefCell::new(vec![0.0, 1.0, 0.0]), // Default identity kernel
         })
     }
 
-    pub fn compute(&self, s1: f32, s2: f32, s3: f32, s4: f32, s5: f32) -> Result<f32, JsValue> {
+    pub fn compute(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
         if self.magic != BRAIN_MAGIC {
             console_log!("PRIX CRITICAL: Brain corrupted BEFORE compute! Magic: 0x{:08X}", self.magic);
             return Err(JsValue::from_str("Corrupted before compute"));
@@ -120,7 +120,7 @@ impl NeuralBrain {
             ComputingGuard(&self.computing)
         };
 
-        let result = self.compute_internal(s1, s2, s3, s4, s5);
+        let result = self.compute_internal(inputs);
 
         if self.magic != BRAIN_MAGIC {
             console_log!("PRIX CRITICAL: Brain corrupted AFTER compute! Magic: 0x{:08X}", self.magic);
@@ -129,27 +129,27 @@ impl NeuralBrain {
         result
     }
 
-    fn compute_internal(&self, s1: f32, s2: f32, s3: f32, s4: f32, s5: f32) -> Result<f32, JsValue> {
+    fn compute_internal(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
+        let num_inputs = inputs.len();
         let mut input_buffer = self.input_tensor.borrow_mut();
         {
             let mut view = input_buffer.try_view_mut()
                 .map_err(|e| JsValue::from_str(&format!("PRIX: Buffer view error: {}", e)))?;
             
             // Apply Manual 1D Convolution
-            let raw_inputs = [s1, s2, s3, s4, s5];
             let kernel = self.custom_kernel.borrow();
-            let mut processed = vec![0.0; 5];
+            let mut processed = vec![0.0; num_inputs];
             
-            for i in 0..5 {
+            for i in 0..num_inputs {
                 for k in 0..3 {
                     let idx = i as i32 + k as i32 - 1;
-                    if idx >= 0 && idx < 5 {
-                        processed[i] += raw_inputs[idx as usize] * kernel[k];
+                    if idx >= 0 && idx < num_inputs as i32 {
+                        processed[i] += inputs[idx as usize] * kernel[k];
                     }
                 }
             }
 
-            for i in 0..5 {
+            for i in 0..num_inputs {
                 if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, i])) { 
                     *v = processed[i]; 
                 }
@@ -196,10 +196,16 @@ impl NeuralBrain {
         let cpu_view = result_tensor.as_cpu()
              .map_err(|e| JsValue::from_str(&format!("Failed to get CPU view: {}", e)))?;
         
-        let val = *cpu_view.get(ndarray::IxDyn(&[0, 0]))
-             .ok_or_else(|| JsValue::from_str("Failed to get result value"))?;
+        // Return a Vec with all outputs
+        let num_outputs = cpu_view.shape()[1]; // The output shape is [1, num_outputs]
+        let mut outputs = Vec::with_capacity(num_outputs);
+        for i in 0..num_outputs {
+            let val = *cpu_view.get(ndarray::IxDyn(&[0, i]))
+                 .ok_or_else(|| JsValue::from_str("Failed to get result value"))?;
+            outputs.push(val);
+        }
         
-        Ok(val)
+        Ok(outputs)
     }
 
     pub fn reset(&self) {
@@ -399,17 +405,20 @@ pub struct Population {
     generation: u32,
     rng: XorShift,
     global_kernel: Vec<f32>,
+    num_inputs: usize,
+    hidden_size: usize,
+    num_outputs: usize,
 }
 
 #[wasm_bindgen]
 impl Population {
     #[wasm_bindgen(constructor)]
-    pub fn new(size: usize) -> Result<Population, JsValue> {
+    pub fn new(size: usize, num_inputs: usize, hidden_size: usize, num_outputs: usize) -> Result<Population, JsValue> {
         console_log!("PRIX: Initializing Population of size {}", size);
         let mut brains = Vec::with_capacity(size);
         for i in 0..size {
             // Create brain with varied weights based on index
-            let brain = NeuralBrain::new(i)?; 
+            let brain = NeuralBrain::new(i, num_inputs, hidden_size, num_outputs)?; 
             brains.push(brain);
         }
         
@@ -418,6 +427,9 @@ impl Population {
             generation: 1,
             rng: XorShift::new(12345),
             global_kernel: vec![0.0, 1.0, 0.0],
+            num_inputs,
+            hidden_size,
+            num_outputs,
         };
         console_log!("PRIX: Population created at {:p}", &pop);
         Ok(pop)
@@ -428,22 +440,16 @@ impl Population {
     }
 
     pub fn compute_all(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
-        if inputs.len() != self.brains.len() * 5 {
-             return Err(JsValue::from_str("Input array length mismatch"));
+        if inputs.len() != self.brains.len() * self.num_inputs {
+             return Err(JsValue::from_str(&format!("Input array length mismatch. Expected {}, got {}", self.brains.len() * self.num_inputs, inputs.len())));
         }
 
-        let mut outputs = Vec::with_capacity(self.brains.len());
+        let mut outputs = Vec::with_capacity(self.brains.len() * self.num_outputs);
 
         for (i, brain) in self.brains.iter().enumerate() {
-            let offset = i * 5;
-            let val = brain.compute_internal(
-                inputs[offset], 
-                inputs[offset+1], 
-                inputs[offset+2], 
-                inputs[offset+3], 
-                inputs[offset+4]
-            )?;
-            outputs.push(val);
+            let offset = i * self.num_inputs;
+            let vals = brain.compute_internal(&inputs[offset..offset + self.num_inputs])?;
+            outputs.extend(vals);
         }
 
         Ok(outputs)
@@ -480,7 +486,7 @@ impl Population {
         let mut new_brains = Vec::with_capacity(self.brains.len());
         
         // 1. ELITE: First brain is explicit copy of best
-        let elite = NeuralBrain::new(0)?;
+        let elite = NeuralBrain::new(0, self.num_inputs, self.hidden_size, self.num_outputs)?;
         elite.import_weights(&best_weights)?;
         new_brains.push(elite);
 
@@ -488,7 +494,7 @@ impl Population {
         let rng = &mut self.rng;
         
         for i in 1..self.brains.len() {
-            let offspring = NeuralBrain::new(i + (self.generation as usize * 1000))?;
+            let offspring = NeuralBrain::new(i + (self.generation as usize * 1000), self.num_inputs, self.hidden_size, self.num_outputs)?;
             offspring.import_weights(&best_weights)?;
             
             // Propagate global kernel

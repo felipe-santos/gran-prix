@@ -35,7 +35,7 @@ export function useFlappyWasm() {
             await wasm.default();
             wasm.init_panic_hook();
 
-            const pop = new wasm.Population(FLAPPY_POPULATION_SIZE);
+            const pop = new wasm.Population(FLAPPY_POPULATION_SIZE, FLAPPY_INPUTS, 8, 1);
             setPopulation(pop);
             console.log(`FLAPPY: Population Online — size=${pop.count()}, inputs=${FLAPPY_INPUTS}`);
             return pop;

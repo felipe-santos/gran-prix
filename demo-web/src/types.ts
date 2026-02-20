@@ -80,7 +80,7 @@ export const FLAPPY_BIRD_SIZE = 18;
 export const FLAPPY_PIPE_WIDTH = 60;
 /** Vertical gap between top and bottom pipes */
 export const FLAPPY_GAP_SIZE = 130;
-/** Number of WASM inputs per bird: [dy_top, dy_bottom, bird_y_norm, vy_norm, unused_dummy] */
-export const FLAPPY_INPUTS = 5;
+/** Number of WASM inputs per bird: [dy_top, dy_bottom, bird_y_norm, vy_norm] */
+export const FLAPPY_INPUTS = 4;
 export const FLAPPY_POPULATION_SIZE = 200;
 

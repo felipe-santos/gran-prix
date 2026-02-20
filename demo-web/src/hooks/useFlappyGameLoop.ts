@@ -163,7 +163,6 @@ export function useFlappyGameLoop({
         //   [1] dy_bot   = (pipe.gapBottom - bird.y) / FLAPPY_HEIGHT (negative = above gap bot)
         //   [2] bird_y   = bird.y / FLAPPY_HEIGHT
         //   [3] vy_norm  = bird.vy / 15.0  (approx max velocity)
-        //   [4] unused_dummy = 0.0 (WASM backend requires exactly 5 sensors)
 
         const inputs = new Float32Array(FLAPPY_POPULATION_SIZE * FLAPPY_INPUTS);
         const nextPipe = state.pipes.find(p => p.x + FLAPPY_PIPE_WIDTH > 0) || null;
@@ -182,7 +181,6 @@ export function useFlappyGameLoop({
             inputs[idx * FLAPPY_INPUTS + 1] = dyBot;
             inputs[idx * FLAPPY_INPUTS + 2] = bird.y / FLAPPY_HEIGHT;
             inputs[idx * FLAPPY_INPUTS + 3] = bird.vy / 15.0;
-            inputs[idx * FLAPPY_INPUTS + 4] = 0.0;
         });
 
         // ── WASM forward pass ─────────────────────────────────────────────────

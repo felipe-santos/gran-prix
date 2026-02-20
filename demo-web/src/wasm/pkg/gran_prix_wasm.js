@@ -21,19 +21,19 @@ export class NeuralBrain {
         wasm.__wbg_neuralbrain_free(ptr, 0);
     }
     /**
-     * @param {number} s1
-     * @param {number} s2
-     * @param {number} s3
-     * @param {number} s4
-     * @param {number} s5
-     * @returns {number}
+     * @param {Float32Array} inputs
+     * @returns {Float32Array}
      */
-    compute(s1, s2, s3, s4, s5) {
-        const ret = wasm.neuralbrain_compute(this.__wbg_ptr, s1, s2, s3, s4, s5);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
+    compute(inputs) {
+        const ptr0 = passArrayF32ToWasm0(inputs, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.neuralbrain_compute(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
         }
-        return ret[0];
+        var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v2;
     }
     /**
      * @returns {Float32Array}
@@ -67,9 +67,12 @@ export class NeuralBrain {
     }
     /**
      * @param {number} seed_offset
+     * @param {number} num_inputs
+     * @param {number} hidden_size
+     * @param {number} num_outputs
      */
-    constructor(seed_offset) {
-        const ret = wasm.neuralbrain_new(seed_offset);
+    constructor(seed_offset, num_inputs, hidden_size, num_outputs) {
+        const ret = wasm.neuralbrain_new(seed_offset, num_inputs, hidden_size, num_outputs);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -162,9 +165,12 @@ export class Population {
     }
     /**
      * @param {number} size
+     * @param {number} num_inputs
+     * @param {number} hidden_size
+     * @param {number} num_outputs
      */
-    constructor(size) {
-        const ret = wasm.population_new(size);
+    constructor(size, num_inputs, hidden_size, num_outputs) {
+        const ret = wasm.population_new(size, num_inputs, hidden_size, num_outputs);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }

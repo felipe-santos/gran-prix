@@ -10,11 +10,11 @@ export enum MutationStrategy {
 export class NeuralBrain {
     free(): void;
     [Symbol.dispose](): void;
-    compute(s1: number, s2: number, s3: number, s4: number, s5: number): number;
+    compute(inputs: Float32Array): Float32Array;
     export_weights(): Float32Array;
     get_graph_snapshot(): any;
     import_weights(weights: Float32Array): void;
-    constructor(seed_offset: number);
+    constructor(seed_offset: number, num_inputs: number, hidden_size: number, num_outputs: number);
     reset(): void;
     set_kernel(k1: number, k2: number, k3: number): void;
     train(_sensors: Float32Array, _target: number): void;
@@ -27,7 +27,7 @@ export class Population {
     count(): number;
     evolve(fitness_scores: Float32Array, mutation_rate: number, mutation_scale: number, strategy: MutationStrategy): void;
     get_best_brain_snapshot(fitness_scores: Float32Array): any;
-    constructor(size: number);
+    constructor(size: number, num_inputs: number, hidden_size: number, num_outputs: number);
     set_global_kernel(k1: number, k2: number, k3: number): void;
 }
 
@@ -52,11 +52,11 @@ export interface InitOutput {
     readonly __wbg_population_free: (a: number, b: number) => void;
     readonly __wbg_trainer_free: (a: number, b: number) => void;
     readonly init_panic_hook: () => void;
-    readonly neuralbrain_compute: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly neuralbrain_compute: (a: number, b: number, c: number) => [number, number, number, number];
     readonly neuralbrain_export_weights: (a: number) => [number, number, number, number];
     readonly neuralbrain_get_graph_snapshot: (a: number) => any;
     readonly neuralbrain_import_weights: (a: number, b: number, c: number) => [number, number];
-    readonly neuralbrain_new: (a: number) => [number, number, number];
+    readonly neuralbrain_new: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly neuralbrain_reset: (a: number) => void;
     readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
@@ -64,7 +64,7 @@ export interface InitOutput {
     readonly population_count: (a: number) => number;
     readonly population_evolve: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
-    readonly population_new: (a: number) => [number, number, number];
+    readonly population_new: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly trainer_get_decision_boundary: (a: number, b: number) => [number, number, number, number];
     readonly trainer_get_weights: (a: number) => [number, number, number, number];

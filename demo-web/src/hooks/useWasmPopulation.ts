@@ -21,7 +21,7 @@ export function useWasmPopulation() {
             await wasm.default();
             wasm.init_panic_hook();
             
-            const pop = new wasm.Population(POPULATION_SIZE);
+            const pop = new wasm.Population(POPULATION_SIZE, 5, 8, 1);
             setPopulation(pop);
             console.log(`Gran-Prix Population Online! Size: ${pop.count()}`);
             return pop;
