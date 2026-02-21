@@ -31,9 +31,10 @@ import {
     drawHUD,
     type BestAgentStats,
 } from './renderers';
-
-const DEFAULT_MUTATION_RATE = 0.15;
-const DEFAULT_MUTATION_SCALE = 0.5;
+import {
+    VACUUM_EVOLUTION_CONFIG,
+    VACUUM_SIMULATION_CONFIG,
+} from '../../config/vacuum.config';
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 // NOTE: All rendering helpers have been extracted to ./renderers/ for better
@@ -65,9 +66,9 @@ export function VacuumDemo() {
 
     const { gameState, resetVacuum, updatePhysics } = useVacuumGameLoop({
         computeVacuum, evolve, setStats,
-        mutationRate: DEFAULT_MUTATION_RATE,
-        mutationScale: DEFAULT_MUTATION_SCALE,
-        mutationStrategy: wasm.MutationStrategy.Additive,
+        mutationRate: VACUUM_EVOLUTION_CONFIG.mutationRate,
+        mutationScale: VACUUM_EVOLUTION_CONFIG.mutationScale,
+        mutationStrategy: VACUUM_EVOLUTION_CONFIG.mutationStrategy,
         onGenerationEnd,
     });
 
@@ -120,7 +121,7 @@ export function VacuumDemo() {
         if (!canvasRef.current) { rafId.current = requestAnimationFrame(gameLoop); return; }
         const ctx = canvasRef.current.getContext('2d');
         if (!ctx) return;
-        for (let i = 0; i < 4; i++) updatePhysics();
+        for (let i = 0; i < VACUUM_SIMULATION_CONFIG.physicsSpeed; i++) updatePhysics();
         render(ctx);
         rafId.current = requestAnimationFrame(gameLoop);
     }, [isPlaying, updatePhysics, render]);
@@ -281,8 +282,8 @@ export function VacuumDemo() {
                             {/* Rates */}
                             <div className="space-y-3 pt-2 border-t border-border">
                                 {[
-                                    ['Mutation Rate', `${(DEFAULT_MUTATION_RATE * 100).toFixed(0)}%`, true],
-                                    ['Mutation Scale', DEFAULT_MUTATION_SCALE.toFixed(2), true],
+                                    ['Mutation Rate', `${(VACUUM_EVOLUTION_CONFIG.mutationRate * 100).toFixed(0)}%`, true],
+                                    ['Mutation Scale', VACUUM_EVOLUTION_CONFIG.mutationScale.toFixed(2), true],
                                     ['Population', `${VACUUM_POPULATION_SIZE}`, false],
                                     ['Network', `${VACUUM_INPUTS} → ${VACUUM_HIDDEN} → ${VACUUM_OUTPUTS}`, false],
                                     ['Gen Length', `${VACUUM_MAX_FRAMES} frames`, false],
