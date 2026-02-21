@@ -5,7 +5,6 @@ import {
     VACUUM_WIDTH,
     VACUUM_HEIGHT,
     VACUUM_SIZE,
-    VACUUM_CELL_SIZE,
     VACUUM_POPULATION_SIZE,
     VACUUM_INPUTS,
     VACUUM_HIDDEN,
@@ -22,208 +21,23 @@ import { VacuumCanvas } from './VacuumCanvas';
 import { VacuumStatsBar } from './VacuumStatsBar';
 import { VacuumNetworkViz } from './VacuumNetworkViz';
 import { GameControls } from '../GameControls';
+import {
+    drawFloor,
+    drawDust,
+    drawObstacles,
+    drawCharger,
+    drawVacuumAgent,
+    drawMiniDustMap,
+    drawHUD,
+    type BestAgentStats,
+} from './renderers';
 
 const DEFAULT_MUTATION_RATE = 0.15;
 const DEFAULT_MUTATION_SCALE = 0.5;
 
-// ─── Drawing helpers ─────────────────────────────────────────────────────────
-
-function drawFloor(ctx: CanvasRenderingContext2D) {
-    const grad = ctx.createLinearGradient(0, 0, 0, VACUUM_HEIGHT);
-    grad.addColorStop(0, '#2a2218');
-    grad.addColorStop(1, '#1e1a14');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, VACUUM_WIDTH, VACUUM_HEIGHT);
-
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < VACUUM_WIDTH; x += VACUUM_CELL_SIZE) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, VACUUM_HEIGHT);
-        ctx.stroke();
-    }
-    for (let y = 0; y < VACUUM_HEIGHT; y += VACUUM_CELL_SIZE) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(VACUUM_WIDTH, y);
-        ctx.stroke();
-    }
-
-    ctx.strokeStyle = '#5a4a3a';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, VACUUM_WIDTH - 4, VACUUM_HEIGHT - 4);
-}
-
-function drawDust(ctx: CanvasRenderingContext2D, dustMap: boolean[], cols: number, rows: number) {
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            if (dustMap[row * cols + col]) {
-                const x = col * VACUUM_CELL_SIZE;
-                const y = row * VACUUM_CELL_SIZE;
-                ctx.fillStyle = 'rgba(180, 160, 130, 0.35)';
-                ctx.beginPath();
-                ctx.arc(x + VACUUM_CELL_SIZE * 0.5, y + VACUUM_CELL_SIZE * 0.5, VACUUM_CELL_SIZE * 0.3, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.fillStyle = 'rgba(160, 140, 110, 0.25)';
-                ctx.beginPath();
-                ctx.arc(x + VACUUM_CELL_SIZE * 0.3, y + VACUUM_CELL_SIZE * 0.35, 2, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(x + VACUUM_CELL_SIZE * 0.7, y + VACUUM_CELL_SIZE * 0.65, 1.5, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
-    }
-}
-
-function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: { x: number; y: number; w: number; h: number; label: string }[]) {
-    for (const o of obstacles) {
-        ctx.fillStyle = '#3a3028';
-        ctx.fillRect(o.x, o.y, o.w, o.h);
-        ctx.strokeStyle = '#5a4a38';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(o.x, o.y, o.w, o.h);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(o.x + 4, o.y + 4, o.w - 8, o.h - 8);
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.font = 'bold 8px monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(o.label, o.x + o.w / 2, o.y + o.h / 2);
-    }
-    ctx.textBaseline = 'alphabetic';
-}
-
-function drawCharger(ctx: CanvasRenderingContext2D, x: number, y: number, frame: number) {
-    const pulseAlpha = 0.3 + Math.sin(frame * 0.08) * 0.15;
-    const glowGrad = ctx.createRadialGradient(x, y, 0, x, y, 35);
-    glowGrad.addColorStop(0, `rgba(16, 185, 129, ${pulseAlpha})`);
-    glowGrad.addColorStop(1, 'rgba(16, 185, 129, 0)');
-    ctx.fillStyle = glowGrad;
-    ctx.beginPath();
-    ctx.arc(x, y, 35, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#1a3a2a';
-    ctx.beginPath();
-    ctx.arc(x, y, 18, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#10b981';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, 18, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = '#10b981';
-    ctx.font = 'bold 14px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('⚡', x, y);
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#10b98188';
-    ctx.font = 'bold 7px monospace';
-    ctx.fillText('CHARGER', x, y + 28);
-}
-
-function drawVacuumAgent(
-    ctx: CanvasRenderingContext2D, x: number, y: number,
-    heading: number, battery: number, color: string,
-    isTop: boolean, showSensors: boolean,
-) {
-    ctx.save();
-    ctx.translate(x, y);
-
-    ctx.globalAlpha = isTop ? 0.9 : 0.5;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(0, 0, VACUUM_SIZE, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = isTop ? 0.8 : 0.3;
-    const tipX = Math.cos(heading) * VACUUM_SIZE;
-    const tipY = Math.sin(heading) * VACUUM_SIZE;
-    ctx.beginPath();
-    ctx.moveTo(tipX, tipY);
-    ctx.lineTo(Math.cos(heading + 2.5) * VACUUM_SIZE * 0.5, Math.sin(heading + 2.5) * VACUUM_SIZE * 0.5);
-    ctx.lineTo(Math.cos(heading - 2.5) * VACUUM_SIZE * 0.5, Math.sin(heading - 2.5) * VACUUM_SIZE * 0.5);
-    ctx.closePath();
-    ctx.fill();
-
-    if (isTop) {
-        ctx.globalAlpha = 0.8;
-        const barW = VACUUM_SIZE * 2;
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        ctx.fillRect(-VACUUM_SIZE, VACUUM_SIZE + 4, barW, 3);
-        ctx.fillStyle = battery > 0.5 ? '#10b981' : battery > 0.2 ? '#f59e0b' : '#ef4444';
-        ctx.fillRect(-VACUUM_SIZE, VACUUM_SIZE + 4, barW * battery, 3);
-    }
-
-    if (showSensors) {
-        ctx.globalAlpha = 0.25;
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        const sensorLen = VACUUM_CELL_SIZE * 4;
-        for (const angle of [heading, heading - Math.PI / 3, heading + Math.PI / 3]) {
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(Math.cos(angle) * sensorLen, Math.sin(angle) * sensorLen);
-            ctx.stroke();
-        }
-        ctx.setLineDash([]);
-    }
-
-    ctx.restore();
-    ctx.globalAlpha = 1.0;
-}
-
-function drawMiniDustMap(ctx: CanvasRenderingContext2D, dustMap: boolean[], cols: number, rows: number, mapX: number, mapY: number, mapW: number, mapH: number) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(mapX, mapY, mapW, mapH);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.strokeRect(mapX, mapY, mapW, mapH);
-    ctx.fillStyle = '#ffffff88';
-    ctx.font = '8px monospace';
-    ctx.textAlign = 'left';
-    ctx.fillText('DUST MAP', mapX + 4, mapY + 10);
-
-    const cellW = (mapW - 8) / cols;
-    const cellH = (mapH - 18) / rows;
-    for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-            ctx.fillStyle = dustMap[row * cols + col] ? 'rgba(180, 140, 80, 0.6)' : 'rgba(16, 185, 129, 0.15)';
-            ctx.fillRect(mapX + 4 + col * cellW, mapY + 14 + row * cellH, cellW - 0.5, cellH - 0.5);
-        }
-    }
-}
-
-function drawHUD(
-    ctx: CanvasRenderingContext2D, generation: number, frame: number,
-    alive: number, bestAgent: { dustCleaned: number; battery: number; wallHits: number } | null,
-    totalDust: number,
-) {
-    ctx.font = 'bold 11px Inter, system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.85)';
-    ctx.textAlign = 'left';
-    ctx.fillText(`GEN ${generation}`, 12, 20);
-    ctx.fillStyle = 'rgba(200, 200, 220, 0.5)';
-    ctx.fillText(`FRAME ${frame} / ${VACUUM_MAX_FRAMES}`, 12, 36);
-    ctx.fillText(`ALIVE ${alive}`, 12, 52);
-
-    if (bestAgent) {
-        const pct = totalDust > 0 ? ((bestAgent.dustCleaned / totalDust) * 100).toFixed(1) : '0';
-        ctx.fillStyle = 'rgba(16, 185, 129, 0.7)';
-        ctx.textAlign = 'right';
-        ctx.fillText(`BEST: ${pct}% cleaned`, VACUUM_WIDTH - 12, 20);
-        ctx.fillStyle = bestAgent.battery > 0.3 ? 'rgba(16, 185, 129, 0.6)' : 'rgba(239, 68, 68, 0.7)';
-        ctx.fillText(`🔋 ${(bestAgent.battery * 100).toFixed(0)}%`, VACUUM_WIDTH - 12, 36);
-    }
-}
-
 // ─── Main Component ────────────────────────────────────────────────────────────
+// NOTE: All rendering helpers have been extracted to ./renderers/ for better
+// modularity and reusability. See ./renderers/index.ts for the full list.
 
 export function VacuumDemo() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
