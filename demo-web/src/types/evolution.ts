@@ -5,7 +5,7 @@
  * with cars avoiding obstacles.
  */
 
-import { BaseAgent, GameStats, Obstacle } from './common';
+import { BaseAgent, Obstacle } from './common';
 
 /**
  * Car agent in the evolution demo

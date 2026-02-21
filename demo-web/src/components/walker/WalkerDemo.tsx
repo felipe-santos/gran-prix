@@ -14,7 +14,7 @@ import {
     WALKER_HIDDEN,
     WALKER_OUTPUTS,
     WalkerStats,
-} from '../../types';
+} from '../../types/walker';
 import { PerformanceData } from '../PerformanceCharts';
 import { useWalkerWasm } from '../../hooks/useWalkerWasm';
 import { useWalkerGameLoop } from '../../hooks/useWalkerGameLoop';
@@ -23,65 +23,14 @@ import {
     drawGround,
     PX_PER_METER,
 } from '../../lib/walkerPhysics';
+import { WALKER_EVOLUTION_CONFIG } from '../../config/walker.config';
 
 import { WalkerCanvas } from './WalkerCanvas';
 import { WalkerStatsBar } from './WalkerStatsBar';
 import { WalkerControls } from './WalkerControls';
 import { WalkerNetworkViz } from './WalkerNetworkViz';
 import { WalkerFitnessChart } from './WalkerFitnessChart';
-
-// ── Mutation defaults (tuned for continuous motor control) ─────────────────
-const DEFAULT_MUTATION_RATE = 0.2;
-const DEFAULT_MUTATION_SCALE = 0.5;
-
-// ── Canvas render helpers ─────────────────────────────────────────────────────
-
-/** Draw the dark/light background grid (Feng-Shui grid matches other demos). */
-function drawBackground(ctx: CanvasRenderingContext2D, isDark: boolean): void {
-    const trailColor = isDark
-        ? 'rgba(8, 8, 12, 0.85)'
-        : 'rgba(248, 248, 249, 0.85)';
-    ctx.fillStyle = trailColor;
-    ctx.fillRect(0, 0, WALKER_WIDTH, WALKER_HEIGHT);
-
-    const gridColor = isDark
-        ? 'rgba(255,255,255,0.02)'
-        : 'rgba(0,0,0,0.02)';
-    ctx.strokeStyle = gridColor;
-    ctx.lineWidth = 1;
-
-    for (let x = 0; x < WALKER_WIDTH; x += 40) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, WALKER_HEIGHT);
-        ctx.stroke();
-    }
-    for (let y = 0; y < WALKER_HEIGHT; y += 40) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(WALKER_WIDTH, y);
-        ctx.stroke();
-    }
-}
-
-/** Minimal HUD: generation + frame + alive printed on canvas. */
-function drawHUD(
-    ctx: CanvasRenderingContext2D,
-    generation: number,
-    frame: number,
-    alive: number,
-): void {
-    ctx.font = 'bold 11px Inter, system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.85)';
-    ctx.textAlign = 'left';
-    ctx.fillText(`GEN ${generation}`, 12, 20);
-
-    ctx.fillStyle = 'rgba(200, 200, 220, 0.5)';
-    ctx.fillText(`FRAME ${frame}`, 12, 36);
-    ctx.fillText(`ALIVE ${alive}`, 12, 52);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
+import { drawBackground, drawHUD } from './renderers';
 
 /**
  * WalkerDemo — main orchestrator for the Bipedal Walker neuro-evolution frame.
@@ -146,9 +95,9 @@ export const WalkerDemo: React.FC = () => {
         computeWalker,
         evolve: evolveWithTracking,
         setStats,
-        mutationRate: DEFAULT_MUTATION_RATE,
-        mutationScale: DEFAULT_MUTATION_SCALE,
-        mutationStrategy: wasm.MutationStrategy.Additive,
+        mutationRate: WALKER_EVOLUTION_CONFIG.mutationRate,
+        mutationScale: WALKER_EVOLUTION_CONFIG.mutationScale,
+        mutationStrategy: WALKER_EVOLUTION_CONFIG.mutationStrategy,
         onGenerationEnd: handleGenerationEnd,
     });
 
@@ -401,7 +350,7 @@ export const WalkerDemo: React.FC = () => {
                                         Mutation Rate
                                     </span>
                                     <span className="text-sm font-mono font-bold text-orange-400">
-                                        {(DEFAULT_MUTATION_RATE * 100).toFixed(0)}%
+                                        {(WALKER_EVOLUTION_CONFIG.mutationRate * 100).toFixed(0)}%
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center">
@@ -409,7 +358,7 @@ export const WalkerDemo: React.FC = () => {
                                         Mutation Scale
                                     </span>
                                     <span className="text-sm font-mono font-bold text-orange-400">
-                                        {DEFAULT_MUTATION_SCALE.toFixed(2)}
+                                        {WALKER_EVOLUTION_CONFIG.mutationScale.toFixed(2)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center">

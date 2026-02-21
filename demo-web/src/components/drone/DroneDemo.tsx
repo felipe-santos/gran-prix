@@ -4,132 +4,25 @@ import * as wasm from '../../wasm/pkg/gran_prix_wasm';
 import {
     DRONE_WIDTH,
     DRONE_HEIGHT,
-    DRONE_SIZE,
     DRONE_POPULATION_SIZE,
-    TARGET_RADIUS,
     DroneStats,
-} from '../../types';
+} from '../../types/drone';
 import { PerformanceData, PerformanceCharts } from '../PerformanceCharts';
 import { useDroneWasm } from '../../hooks/useDroneWasm';
 import { useDroneGameLoop } from '../../hooks/useDroneGameLoop';
+import { DRONE_EVOLUTION_CONFIG } from '../../config/drone.config';
 
 import { DroneCanvas } from './DroneCanvas';
 import { DroneStatsBar } from './DroneStatsBar';
 import { GameControls } from '../GameControls';
 import { DroneNetworkViz } from './DroneNetworkViz';
-
-const DEFAULT_MUTATION_RATE = 0.15;
-const DEFAULT_MUTATION_SCALE = 0.4;
-
-function drawBackground(ctx: CanvasRenderingContext2D, isDark: boolean): void {
-    const trailColor = isDark
-        ? 'rgba(8, 8, 12, 1)'
-        : 'rgba(248, 248, 249, 1)';
-    ctx.fillStyle = trailColor;
-    ctx.fillRect(0, 0, DRONE_WIDTH, DRONE_HEIGHT);
-
-    const gridColor = isDark
-        ? 'rgba(255,255,255,0.025)'
-        : 'rgba(0,0,0,0.025)';
-    ctx.strokeStyle = gridColor;
-    ctx.lineWidth = 1;
-
-    for (let x = 0; x < DRONE_WIDTH; x += 40) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, DRONE_HEIGHT);
-        ctx.stroke();
-    }
-    for (let y = 0; y < DRONE_HEIGHT; y += 40) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(DRONE_WIDTH, y);
-        ctx.stroke();
-    }
-}
-
-function drawTarget(ctx: CanvasRenderingContext2D, tx: number, ty: number) {
-    // Outer dashed ring
-    ctx.beginPath();
-    ctx.arc(tx, ty, TARGET_RADIUS * 2, 0, Math.PI * 2);
-    ctx.setLineDash([5, 5]);
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)'; // Emerald
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Inner target point
-    ctx.beginPath();
-    ctx.arc(tx, ty, TARGET_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.1)';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.6)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Crosshair
-    ctx.beginPath();
-    ctx.moveTo(tx - 10, ty);
-    ctx.lineTo(tx + 10, ty);
-    ctx.moveTo(tx, ty - 10);
-    ctx.lineTo(tx, ty + 10);
-    ctx.strokeStyle = 'rgba(16, 185, 129, 0.8)';
-    ctx.stroke();
-}
-
-function drawDrones(
-    ctx: CanvasRenderingContext2D,
-    drones: { x: number; y: number; dead: boolean; color: string }[],
-    isDark: boolean,
-) {
-    drones.forEach(drone => {
-        if (drone.dead) return; // Keep it clean, don't draw dead drones for this demo
-
-        ctx.globalAlpha = 0.6;
-        ctx.fillStyle = isDark ? '#fff' : '#000'; // Neural drones are white/black
-        
-        ctx.beginPath();
-        ctx.arc(drone.x, drone.y, DRONE_SIZE / 2, 0, Math.PI * 2);
-        ctx.fill();
-    });
-    ctx.globalAlpha = 1.0;
-}
-
-function drawPidDrone(
-    ctx: CanvasRenderingContext2D,
-    pidDrone: { x: number; y: number; color: string }
-) {
-    ctx.fillStyle = pidDrone.color; // Orange for PID Reference
-    ctx.beginPath();
-    ctx.arc(pidDrone.x, pidDrone.y, DRONE_SIZE / 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Outline for PID Drone
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Small label 'PID' above it
-    ctx.font = 'bold 10px Inter';
-    ctx.fillStyle = pidDrone.color;
-    ctx.textAlign = 'center';
-    ctx.fillText('PID', pidDrone.x, pidDrone.y - 15);
-}
-
-function drawWindIndicator(ctx: CanvasRenderingContext2D, windX: number, windY: number) {
-    ctx.font = 'bold 10px Inter';
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.8)'; // Red for wind 
-    ctx.textAlign = 'right';
-    ctx.fillText(`WIND: ${(windX * 100).toFixed(1)} / ${(windY * 100).toFixed(1)}`, DRONE_WIDTH - 20, 20);
-    
-    // Draw wind vector
-    ctx.beginPath();
-    ctx.moveTo(DRONE_WIDTH - 50, 40);
-    ctx.lineTo(DRONE_WIDTH - 50 + windX * 150, 40 + windY * 150);
-    ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-}
+import {
+    drawBackground,
+    drawTarget,
+    drawDrones,
+    drawPidDrone,
+    drawWindIndicator,
+} from './renderers';
 
 export const DroneDemo: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -176,9 +69,9 @@ export const DroneDemo: React.FC = () => {
         computeDrone,
         evolve: evolveWithTracking,
         setStats,
-        mutationRate: DEFAULT_MUTATION_RATE,
-        mutationScale: DEFAULT_MUTATION_SCALE,
-        mutationStrategy: wasm.MutationStrategy.Additive,
+        mutationRate: DRONE_EVOLUTION_CONFIG.mutationRate,
+        mutationScale: DRONE_EVOLUTION_CONFIG.mutationScale,
+        mutationStrategy: DRONE_EVOLUTION_CONFIG.mutationStrategy,
         onGenerationEnd: handleGenerationEnd,
     });
 

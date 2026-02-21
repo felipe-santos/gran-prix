@@ -29,7 +29,6 @@ import {
     drawVacuumAgent,
     drawMiniDustMap,
     drawHUD,
-    type BestAgentStats,
 } from './renderers';
 import {
     VACUUM_EVOLUTION_CONFIG,
