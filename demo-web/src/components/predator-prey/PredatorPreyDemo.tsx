@@ -8,6 +8,12 @@ import {
     PREY_POPULATION_SIZE,
     PREDATOR_SIZE,
     PREY_SIZE,
+    PREDATOR_INPUTS,
+    PREDATOR_HIDDEN,
+    PREDATOR_OUTPUTS,
+    PREY_INPUTS,
+    PREY_HIDDEN,
+    PREY_OUTPUTS,
     PredatorPreyStats,
 } from '../../types';
 import { PerformanceData } from '../PerformanceCharts';
@@ -19,6 +25,7 @@ import { PredatorPreyCanvas } from './PredatorPreyCanvas';
 import { PredatorPreyStatsBar } from './PredatorPreyStatsBar';
 import { PredatorPreyControls } from './PredatorPreyControls';
 import { PredatorPreyFitnessChart } from './PredatorPreyFitnessChart';
+import { PredatorPreyNetworkViz } from './PredatorPreyNetworkViz';
 
 const DEFAULT_MUTATION_RATE = 0.15;
 const DEFAULT_MUTATION_SCALE = 0.4;
@@ -107,7 +114,7 @@ export const PredatorPreyDemo: React.FC = () => {
     const { preyPopulation, initPreyWasm, computePrey, evolvePrey } = usePreyWasm();
 
     const handleGenerationEnd = useCallback(
-        (predMax: number, predAvg: number, preyMax: number, preyAvg: number) => {
+        (predMax: number, predAvg: number, _preyMax: number, _preyAvg: number) => {
             setPerformanceHistory(prev => {
                 const nextGen = prev.length > 0 ? prev[prev.length - 1].generation + 1 : 1;
                 // Currently PerformanceCharts supports single max/avg series
@@ -208,8 +215,22 @@ export const PredatorPreyDemo: React.FC = () => {
                 </p>
             </div>
 
-            <div className="w-full max-w-7xl flex flex-col items-center justify-center gap-8">
-                <div className="flex flex-col items-center w-full">
+            <div className="w-full max-w-[1400px] flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8">
+                {/* ── Left Panel: Predator Brain ── */}
+                <div className="hidden lg:flex flex-col gap-8 w-72 mt-20">
+                    <PredatorPreyNetworkViz
+                        population={predatorPopulation}
+                        fitnessScores={Float32Array.from(gameState.current.predators.map(p => p.fitness))}
+                        inputSize={PREDATOR_INPUTS}
+                        hiddenSize={PREDATOR_HIDDEN}
+                        outputSize={PREDATOR_OUTPUTS}
+                        title="Fox Brain"
+                        themeColor="text-rose-500"
+                        nodeColor="rgba(244, 63, 94, 0.6)"
+                    />
+                </div>
+
+                <div className="flex flex-col items-center w-full max-w-[800px]">
                     <PredatorPreyStatsBar stats={stats} />
                     <PredatorPreyCanvas
                         ref={canvasRef}
@@ -224,6 +245,20 @@ export const PredatorPreyDemo: React.FC = () => {
                     <div className="w-full max-w-5xl mt-8">
                         <PredatorPreyFitnessChart data={performanceHistory} />
                     </div>
+                </div>
+
+                {/* ── Right Panel: Prey Brain ── */}
+                <div className="hidden lg:flex flex-col gap-8 w-72 mt-20">
+                    <PredatorPreyNetworkViz
+                        population={preyPopulation}
+                        fitnessScores={Float32Array.from(gameState.current.prey.map(p => p.fitness))}
+                        inputSize={PREY_INPUTS}
+                        hiddenSize={PREY_HIDDEN}
+                        outputSize={PREY_OUTPUTS}
+                        title="Rabbit Brain"
+                        themeColor="text-blue-400"
+                        nodeColor="rgba(96, 165, 250, 0.6)"
+                    />
                 </div>
             </div>
         </div>

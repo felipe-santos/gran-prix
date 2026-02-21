@@ -213,7 +213,6 @@ export function usePredatorPreyGameLoop({
             const distWall = Math.min(distLeft, distRight, distTop, distBottom);
             const wallNorm = Math.min(distWall / 200, 1.0); // normalize up to 200px
 
-            const speed = Math.sqrt(pred.vx*pred.vx + pred.vy*pred.vy);
 
             const offset = idx * PREDATOR_INPUTS;
             predInputs[offset + 0] = distNorm;
@@ -284,6 +283,9 @@ export function usePredatorPreyGameLoop({
             preyInputs[offset + 4] = wallNorm;
             preyInputs[offset + 5] = prey.energy;
             preyInputs[offset + 6] = flockNorm;
+
+            // Survival fitness + Distance reward
+            prey.fitness += 1.0 + (distNorm * 5.0);
         });
 
         // ─── 2. WASM Compute ──────────────────────────────────────────────────
@@ -376,8 +378,7 @@ export function usePredatorPreyGameLoop({
             if (prey.y < PREY_SIZE) { prey.y = PREY_SIZE; prey.vy *= -1; }
             if (prey.y > PREDATOR_PREY_HEIGHT - PREY_SIZE) { prey.y = PREDATOR_PREY_HEIGHT - PREY_SIZE; prey.vy *= -1; }
 
-            // Survival fitness
-            prey.fitness += 1.0;
+            // Survival fitness handled in Input phase
         });
 
         // ─── 4. Collision Detection (Eating) ──────────────────────────────────
