@@ -442,9 +442,14 @@ export function useVacuumGameLoop({
                     }
                 }
 
-                // ── Fitness ──
-                const cleanRatio = env.totalDust > 0 ? agent.dustCleaned / env.totalDust : 0;
-                const cleanScore = cleanRatio * 10.0;
+                // ── Fitness (Competitive Swarm Mathematics) ──
+                // In a swarm of 200 agents, the 'fair share' of dirt per agent is totalDust/200.
+                // If an agent cleans its fair share (or more), it gets up to full 10.0 points.
+                // This preserves Swarm sharing while scaling fitness readable out of 10.
+                const fairShare = env.totalDust > 0 ? env.totalDust / VACUUM_POPULATION_SIZE : 1;
+                const agentCleanRatio = agent.dustCleaned / fairShare;
+                const cleanScore = Math.min(10.0, agentCleanRatio * 10.0);
+                
                 const batteryBonus = (agent.battery > 0.1 && distSq < 30 * 30) ? 2.0 : 0;
                 const wallPenalty = Math.min(agent.wallHits * 0.02, 2.0);
                 const deathPenalty = agent.dead ? 3.0 : 0;

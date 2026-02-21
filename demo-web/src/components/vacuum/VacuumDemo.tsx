@@ -268,12 +268,14 @@ export function VacuumDemo() {
         const { env, agents, frame } = state;
 
         drawFloor(ctx);
+        
+        const sorted = [...agents].filter(a => !a.dead).sort((a, b) => b.fitness - a.fitness);
+        const topAgents = sorted.slice(0, 10);
+        
         drawDust(ctx, env.dustMap, env.cols, env.rows);
         drawObstacles(ctx, env.obstacles);
         drawCharger(ctx, env.chargerX, env.chargerY, frame);
 
-        const sorted = [...agents].filter(a => !a.dead).sort((a, b) => b.fitness - a.fitness);
-        const topAgents = sorted.slice(0, 10);
 
         for (const agent of sorted.slice(10)) {
             drawVacuumAgent(ctx, agent.x, agent.y, agent.heading, agent.battery, agent.color, false, false);
@@ -336,10 +338,10 @@ export function VacuumDemo() {
         );
     }
 
-    const currentDustRemaining = gameState.current.env.dustMap.filter(d => d).length;
-    const totalDust = gameState.current.env.totalDust;
+    const currentDustRemaining = gameState.current?.env?.dustMap?.filter(d => d).length || 0;
+    const totalDust = gameState.current?.env?.totalDust || 0;
     const dustProgress = totalDust > 0 ? 1 - (currentDustRemaining / totalDust) : 0;
-    const bestBattery = gameState.current.agents.filter(a => !a.dead).sort((a, b) => b.fitness - a.fitness)[0]?.battery ?? 0;
+    const bestBattery = gameState.current?.agents?.filter(a => !a.dead).sort((a, b) => b.fitness - a.fitness)[0]?.battery ?? 0;
 
     return (
         <div className="w-full flex flex-col items-center gap-0">
