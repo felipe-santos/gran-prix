@@ -28,6 +28,7 @@ import { FlappyDemo } from './components/flappy';
 import { WalkerDemo } from './components/walker';
 import { PredatorPreyDemo } from './components/predator-prey';
 import { DroneDemo } from './components/drone';
+import { SmartGridDemo } from './components/smart-grid';
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -35,7 +36,7 @@ function App() {
   const [stats, setStats] = useState<GameStats>({ score: 0, generation: 1, best: 0, alive: 0 });
   const [isRestarting] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
-  const [activeTab, setActiveTab] = useState<'evolution' | 'training' | 'flappy' | 'walker' | 'predator-prey' | 'drone'>('drone');
+  const [activeTab, setActiveTab] = useState<'evolution' | 'training' | 'flappy' | 'walker' | 'predator-prey' | 'drone' | 'smart-grid'>('smart-grid');
 
   // Learning Lab State
   const [mutationRate, setMutationRate] = useState(0.2);
@@ -186,7 +187,7 @@ function App() {
       <Header />
 
       <div className="flex gap-4 mb-8 p-1 bg-white/5 border border-white/10 rounded-xl overflow-x-auto max-w-full">
-        {(['evolution', 'predator-prey', 'flappy', 'walker', 'drone', 'training'] as const).map(tab => (
+        {(['evolution', 'predator-prey', 'flappy', 'walker', 'drone', 'smart-grid', 'training'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -195,13 +196,17 @@ function App() {
                 : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
               }`}
           >
-            {tab === 'evolution' ? 'Genetic Evolution' : tab === 'training' ? 'Backprop Training' : tab === 'flappy' ? 'Flappy Bird RL' : tab === 'predator-prey' ? 'Predator vs Prey' : tab === 'drone' ? 'Drone Stabilizer' : 'Bipedal Walker'}
+            {tab === 'evolution' ? 'Genetic Evolution' : tab === 'training' ? 'Backprop Training' : tab === 'flappy' ? 'Flappy Bird RL' : tab === 'predator-prey' ? 'Predator vs Prey' : tab === 'drone' ? 'Drone Stabilizer' : tab === 'smart-grid' ? 'Smart Grid' : 'Bipedal Walker'}
           </button>
         ))}
       </div>
 
       <main className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 transition-all duration-500">
-        {activeTab === 'drone' ? (
+        {activeTab === 'smart-grid' ? (
+          <div className="w-full flex justify-center py-8">
+            <SmartGridDemo />
+          </div>
+        ) : activeTab === 'drone' ? (
           <div className="w-full flex justify-center py-8">
             <DroneDemo />
           </div>
