@@ -9,144 +9,20 @@ import * as wasm from '../../wasm/pkg/gran_prix_wasm';
 import {
     FLAPPY_WIDTH,
     FLAPPY_HEIGHT,
-    FLAPPY_BIRD_SIZE,
-    FLAPPY_PIPE_WIDTH,
     FLAPPY_POPULATION_SIZE,
     FlappyStats,
-} from '../../types';
+} from '../../types/flappy';
 import { PerformanceData } from '../PerformanceCharts';
 import { useFlappyWasm } from '../../hooks/useFlappyWasm';
 import { useFlappyGameLoop } from '../../hooks/useFlappyGameLoop';
+import { FLAPPY_EVOLUTION_CONFIG } from '../../config/flappy.config';
 
 import { FlappyCanvas } from './FlappyCanvas';
 import { FlappyStatsBar } from './FlappyStatsBar';
 import { FlappyControls } from './FlappyControls';
 import { FlappyNetworkViz } from './FlappyNetworkViz';
 import { FlappyFitnessChart } from './FlappyFitnessChart';
-
-// ── Mutation defaults (tuned for Flappy Bird) ─────────────────────────────────
-const DEFAULT_MUTATION_RATE = 0.15;
-const DEFAULT_MUTATION_SCALE = 0.4;
-
-// ── Canvas render helpers ─────────────────────────────────────────────────────
-
-/** Draw the dark/light background grid (Feng-Shui grid matches Cars demo). */
-function drawBackground(ctx: CanvasRenderingContext2D, isDark: boolean): void {
-    const trailColor = isDark
-        ? 'rgba(8, 8, 12, 0.7)'
-        : 'rgba(248, 248, 249, 0.7)';
-    ctx.fillStyle = trailColor;
-    ctx.fillRect(0, 0, FLAPPY_WIDTH, FLAPPY_HEIGHT);
-
-    const gridColor = isDark
-        ? 'rgba(255,255,255,0.025)'
-        : 'rgba(0,0,0,0.025)';
-    ctx.strokeStyle = gridColor;
-    ctx.lineWidth = 1;
-
-    for (let x = 0; x < FLAPPY_WIDTH; x += 40) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, FLAPPY_HEIGHT);
-        ctx.stroke();
-    }
-    for (let y = 0; y < FLAPPY_HEIGHT; y += 40) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(FLAPPY_WIDTH, y);
-        ctx.stroke();
-    }
-}
-
-/** Draw pipe pair. Top pipe goes from 0→gapTop, bottom goes from gapBottom→canvas height. */
-function drawPipes(
-    ctx: CanvasRenderingContext2D,
-    pipes: { x: number; gapTop: number; gapBottom: number }[],
-): void {
-    pipes.forEach(pipe => {
-        // Top pipe
-        const grad = ctx.createLinearGradient(pipe.x, 0, pipe.x + FLAPPY_PIPE_WIDTH, 0);
-        grad.addColorStop(0, '#15803d');
-        grad.addColorStop(1, '#16a34a');
-        ctx.fillStyle = grad;
-
-        // Top pipe body
-        ctx.beginPath();
-        ctx.roundRect(pipe.x, 0, FLAPPY_PIPE_WIDTH, pipe.gapTop - 12, [0, 0, 6, 6]);
-        ctx.fill();
-
-        // Top pipe cap
-        ctx.fillStyle = '#22c55e';
-        ctx.beginPath();
-        ctx.roundRect(pipe.x - 4, pipe.gapTop - 20, FLAPPY_PIPE_WIDTH + 8, 20, [4, 4, 4, 4]);
-        ctx.fill();
-
-        // Bottom pipe body
-        const grad2 = ctx.createLinearGradient(pipe.x, 0, pipe.x + FLAPPY_PIPE_WIDTH, 0);
-        grad2.addColorStop(0, '#15803d');
-        grad2.addColorStop(1, '#16a34a');
-        ctx.fillStyle = grad2;
-
-        ctx.beginPath();
-        ctx.roundRect(pipe.x, pipe.gapBottom + 12, FLAPPY_PIPE_WIDTH, FLAPPY_HEIGHT - pipe.gapBottom - 12, [6, 6, 0, 0]);
-        ctx.fill();
-
-        // Bottom pipe cap
-        ctx.fillStyle = '#22c55e';
-        ctx.beginPath();
-        ctx.roundRect(pipe.x - 4, pipe.gapBottom, FLAPPY_PIPE_WIDTH + 8, 20, [4, 4, 4, 4]);
-        ctx.fill();
-    });
-}
-
-/** Draw all birds. Dead birds are shown dimly; alive ones are bright ellipses. */
-function drawBirds(
-    ctx: CanvasRenderingContext2D,
-    birds: { y: number; dead: boolean; color: string }[],
-    isDark: boolean,
-): void {
-    const BIRD_X = 80;
-
-    birds.forEach(bird => {
-        const cx = BIRD_X + FLAPPY_BIRD_SIZE / 2;
-        const cy = bird.y;
-        const rx = FLAPPY_BIRD_SIZE / 2;
-        const ry = FLAPPY_BIRD_SIZE / 2.4;
-
-        if (bird.dead) {
-            ctx.globalAlpha = isDark ? 0.08 : 0.12;
-            ctx.fillStyle = isDark ? '#333' : '#ccc';
-        } else {
-            ctx.globalAlpha = 0.92;
-            ctx.fillStyle = bird.color;
-        }
-
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        ctx.fill();
-    });
-
-    ctx.globalAlpha = 1.0;
-}
-
-/** Minimal HUD: generation + score printed on canvas. */
-function drawHUD(
-    ctx: CanvasRenderingContext2D,
-    generation: number,
-    score: number,
-    alive: number,
-): void {
-    ctx.font = 'bold 11px Inter, system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.85)';
-    ctx.textAlign = 'left';
-    ctx.fillText(`GEN ${generation}`, 12, 20);
-
-    ctx.fillStyle = 'rgba(200, 200, 220, 0.5)';
-    ctx.fillText(`SCORE ${score}`, 12, 36);
-    ctx.fillText(`ALIVE ${alive}`, 12, 52);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
+import { drawBackground, drawPipes, drawBirds, drawHUD } from './renderers';
 
 /**
  * FlappyDemo — main orchestrator for the Flappy Bird neuro-evolution frame.
@@ -211,9 +87,9 @@ export const FlappyDemo: React.FC = () => {
         computeFlappy,
         evolve: evolveWithTracking,
         setStats,
-        mutationRate: DEFAULT_MUTATION_RATE,
-        mutationScale: DEFAULT_MUTATION_SCALE,
-        mutationStrategy: wasm.MutationStrategy.Additive,
+        mutationRate: FLAPPY_EVOLUTION_CONFIG.mutationRate,
+        mutationScale: FLAPPY_EVOLUTION_CONFIG.mutationScale,
+        mutationStrategy: FLAPPY_EVOLUTION_CONFIG.mutationStrategy,
         onGenerationEnd: handleGenerationEnd,
     });
 
@@ -416,7 +292,7 @@ export const FlappyDemo: React.FC = () => {
                                         Mutation Rate
                                     </span>
                                     <span className="text-sm font-mono font-bold text-emerald-500">
-                                        {(DEFAULT_MUTATION_RATE * 100).toFixed(0)}%
+                                        {(FLAPPY_EVOLUTION_CONFIG.mutationRate * 100).toFixed(0)}%
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center">
@@ -424,7 +300,7 @@ export const FlappyDemo: React.FC = () => {
                                         Mutation Scale
                                     </span>
                                     <span className="text-sm font-mono font-bold text-emerald-500">
-                                        {DEFAULT_MUTATION_SCALE.toFixed(2)}
+                                        {FLAPPY_EVOLUTION_CONFIG.mutationScale.toFixed(2)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center">
