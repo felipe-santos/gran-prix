@@ -238,3 +238,74 @@ export const PREY_OUTPUTS = 2;
 
 /** Maximum frames before forced generation cycle (to keep the loop going if survival is too good) */
 export const PREDATOR_PREY_MAX_FRAMES = 1200;
+
+// ─── Drone Stabilizer Demo (PID vs Neural) ──────────────────────────────────
+
+export interface DroneAgent {
+    id: number;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    fitness: number;
+    dead: boolean;
+    color: string;
+}
+
+export interface PidDroneAgent {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    integralX: number;
+    integralY: number;
+    prevErrorX: number;
+    prevErrorY: number;
+    color: string;
+}
+
+export interface DroneGameState {
+    drones: DroneAgent[];
+    pidDrone: PidDroneAgent;
+    targetX: number;
+    targetY: number;
+    windX: number;
+    windY: number;
+    frame: number;
+    generation: number;
+}
+
+export interface DroneStats {
+    generation: number;
+    alive: number;
+    best: number;
+    avgFitness: number;
+}
+
+// Canvas dimensions
+export const DRONE_WIDTH = 800;
+export const DRONE_HEIGHT = 600;
+
+export const DRONE_SIZE = 20;
+export const TARGET_RADIUS = 30;
+
+export const DRONE_POPULATION_SIZE = 200;
+
+/**
+ * Neural network inputs (4):
+ *   [0] distBoxX      — distance to target X (normalized)
+ *   [1] distBoxY      — distance to target Y (normalized)
+ *   [2] vx            — velocity X (normalized)
+ *   [3] vy            — velocity Y (normalized)
+ */
+export const DRONE_INPUTS = 4;
+export const DRONE_HIDDEN = 8;
+
+/**
+ * Neural network outputs (2):
+ *   [0] thrustX       — mapped to [-1, 1] force X
+ *   [1] thrustY       — mapped to [-1, 1] force Y (opposes gravity)
+ */
+export const DRONE_OUTPUTS = 2;
+
+export const DRONE_MAX_FRAMES = 1000;
