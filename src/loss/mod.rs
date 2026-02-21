@@ -1,5 +1,4 @@
 use crate::Tensor;
-use crate::tensor::ops::TensorOps;
 
 pub trait Loss {
     fn calculate(&self, predicted: &Tensor, target: &Tensor) -> f32;
@@ -31,7 +30,7 @@ impl Loss for BinaryCrossEntropy {
         let p = predicted.mapv(|x: f32| x.clamp(epsilon, 1.0 - epsilon));
         
         let term1 = target * &p.mapv(|x: f32| x.ln());
-        // For term2, (1.0 - &p) creates a temporary Tensor, which implements TensorOps.
+        // For term2, (1.0 - &p) creates a temporary Tensor.
         let one_minus_p = 1.0 - &p; 
         let term2 = (1.0 - target) * &one_minus_p.mapv(|x: f32| x.ln());
         

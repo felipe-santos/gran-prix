@@ -1,6 +1,5 @@
 use crate::backend::Backend;
 use crate::{Tensor, GPResult, GPError};
-use crate::tensor::ops::TensorOps;
 use ndarray::Zip;
 
 #[derive(Debug)]

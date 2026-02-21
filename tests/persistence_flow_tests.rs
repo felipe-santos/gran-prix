@@ -34,7 +34,7 @@ fn test_full_persistence_with_custom_op() {
     
     let x = gb.val(array![[1.0, 1.0]].into_dyn().into());
     let y = gb.val(array![[2.0, 2.0]].into_dyn().into());
-    let node = graph.op(Box::new(CustomAddOp), vec![x, y]);
+    let node = graph.op(gran_prix::graph::OpType::Custom(Box::new(CustomAddOp)), vec![x, y]);
     
     let result = graph.execute(node).unwrap();
     assert_eq!(result, array![[3.0, 3.0]].into_dyn().into());

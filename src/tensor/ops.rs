@@ -1,6 +1,5 @@
 use super::{Tensor, Storage};
 
-use ndarray::{ArrayD, IxDyn};
 #[cfg(feature = "cuda")]
 use ndarray_rand::RandomExt;
 #[cfg(feature = "cuda")]
@@ -117,25 +116,8 @@ impl PartialEq for Tensor {
     }
 }
 
-/// Helper trait for common tensor operations.
-pub trait TensorOps {
-    fn new_zeros(shape: &[usize]) -> Self;
-    fn new_random(shape: &[usize]) -> Self;
-    fn mapv<F>(&self, f: F) -> Self where F: Fn(f32) -> f32 + Sync + Send;
-}
-
-impl TensorOps for Tensor {
-    fn new_zeros(shape: &[usize]) -> Self {
-        ArrayD::zeros(IxDyn(shape)).into()
-    }
-
-    fn new_random(shape: &[usize]) -> Self {
-        use ndarray_rand::RandomExt;
-        use rand::distributions::Uniform;
-        ArrayD::random(IxDyn(shape), Uniform::new(-1.0, 1.0)).into()
-    }
-
-    fn mapv<F>(&self, f: F) -> Self 
+impl Tensor {
+    pub fn mapv<F>(&self, f: F) -> Self 
     where F: Fn(f32) -> f32 + Sync + Send {
         match &self.storage {
             Storage::Cpu(data) => data.mapv(f).into(),

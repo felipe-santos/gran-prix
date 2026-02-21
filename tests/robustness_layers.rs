@@ -3,7 +3,7 @@ use gran_prix::Layer;
 use gran_prix::graph::Graph;
 use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::tensor::{Tensor, TensorOps};
+use gran_prix::tensor::Tensor;
 use ndarray::array;
 
 #[test]

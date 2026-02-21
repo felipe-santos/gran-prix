@@ -20,6 +20,22 @@ pub enum Node {
     },
 }
 
+impl Node {
+    pub fn op(&self) -> Option<&OpType> {
+        match self {
+            Node::Op { op, .. } => Some(op),
+            _ => None,
+        }
+    }
+
+    pub fn inputs(&self) -> Option<&[NodeId]> {
+        match self {
+            Node::Op { inputs, .. } => Some(inputs),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum OpType {
     MatMul,
@@ -45,7 +61,7 @@ impl OpType {
             OpType::Tanh => "Tanh",
             OpType::Sigmoid => "Sigmoid",
             OpType::Reshape { .. } => "Reshape",
-            OpType::AddReLU => "AddReLU",
+            OpType::AddReLU => "AddReLU (Fused)",
             OpType::Custom(op) => op.name(),
         }
     }

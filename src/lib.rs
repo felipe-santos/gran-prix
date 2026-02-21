@@ -6,7 +6,7 @@ pub mod errors;
 pub mod types;
 pub mod loss;
 
-pub use tensor::{Tensor, TensorOps};
+pub use tensor::Tensor;
 pub use errors::{GPError, GPResult};
 pub use types::{NodeId, Shape, Device};
 

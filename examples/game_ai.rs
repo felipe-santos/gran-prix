@@ -2,7 +2,6 @@ use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::loss::{Loss, MSE};
 use gran_prix::Tensor;
-use gran_prix::tensor::TensorOps;
 use ndarray::array;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

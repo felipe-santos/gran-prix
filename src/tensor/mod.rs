@@ -190,7 +190,6 @@ impl From<ArrayD<f32>> for Tensor {
 }
 
 pub mod ops;
-pub use ops::TensorOps;
 
 impl Tensor {
     pub fn device(&self) -> Device {
