@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as wasm from '../wasm/pkg/gran_prix_wasm';
-import { POPULATION_SIZE } from '../types';
+import { POPULATION_SIZE, EVOLUTION_INPUTS, EVOLUTION_HIDDEN, EVOLUTION_OUTPUTS } from '../types';
 import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 export function useWasmPopulation() {
@@ -21,7 +21,12 @@ export function useWasmPopulation() {
             console.log("PRIX: Requesting Global WASM Load (Main App)...");
             await ensureWasmLoaded();
             
-            const pop = new wasm.Population(POPULATION_SIZE, 5, 8, 1);
+            const pop = new wasm.Population(
+                POPULATION_SIZE,
+                EVOLUTION_INPUTS,
+                new Uint32Array(EVOLUTION_HIDDEN),
+                EVOLUTION_OUTPUTS
+            );
             setPopulation(pop);
             console.log(`Gran-Prix Population Online! Size: ${pop.count()}`);
             return pop;

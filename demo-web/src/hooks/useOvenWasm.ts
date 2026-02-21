@@ -26,7 +26,7 @@ export function useOvenWasm() {
             const pop = new wasm.Population(
                 OVEN_POPULATION_SIZE,
                 OVEN_INPUTS,
-                OVEN_HIDDEN,
+                new Uint32Array(OVEN_HIDDEN),
                 OVEN_OUTPUTS,
             );
             setPopulation(pop);

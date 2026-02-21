@@ -95,7 +95,7 @@ export const TRADER_POPULATION_SIZE = 200;
  *   [6] drawdown       — current drawdown from peak [0..1]
  */
 export const TRADER_INPUTS = 7;
-export const TRADER_HIDDEN = 10;
+export const TRADER_HIDDEN = [16, 12, 8];
 
 /**
  * Neural network outputs (3):

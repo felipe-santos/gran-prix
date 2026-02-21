@@ -107,7 +107,7 @@ export const VACUUM_POPULATION_SIZE = 200;
  *   [8] cosHeading       — cos(heading) cyclic encoding
  */
 export const VACUUM_INPUTS = 9;
-export const VACUUM_HIDDEN = 10;
+export const VACUUM_HIDDEN = [10, 8];
 
 /**
  * Neural network outputs (3):

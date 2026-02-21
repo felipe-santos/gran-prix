@@ -37,8 +37,8 @@ use crate::mutation::{MutationStrategy, XorShift};
 /// ```no_run
 /// use gran_prix_wasm::{Population, MutationStrategy};
 ///
-/// let mut pop = Population::new(50, 4, 8, 2)?;
-/// let fitness = vec![/* 50 fitness scores */];
+/// let mut pop = Population::new(50, 4, &Uint32Array::from(&[8][..]), 2)?;
+/// let fitness = vec![1.0; 50];
 /// pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive)?;
 /// ```
 #[wasm_bindgen]
@@ -53,7 +53,7 @@ pub struct Population {
     global_kernel: Vec<f32>,
     /// Network architecture parameters
     num_inputs: usize,
-    hidden_size: usize,
+    hidden_layers: Vec<usize>,
     num_outputs: usize,
 }
 
@@ -80,7 +80,7 @@ impl Population {
     pub fn new(
         size: usize,
         num_inputs: usize,
-        hidden_size: usize,
+        hidden_layers: Vec<usize>,
         num_outputs: usize,
     ) -> Result<Population, JsValue> {
         if size == 0 {
@@ -90,7 +90,7 @@ impl Population {
         let mut brains = Vec::with_capacity(size);
         for i in 0..size {
             // Create brain with varied weights based on index
-            let brain = NeuralBrain::new(i, num_inputs, hidden_size, num_outputs)?;
+            let brain = NeuralBrain::new(i, num_inputs, hidden_layers.clone(), num_outputs)?;
             brains.push(brain);
         }
 
@@ -100,7 +100,7 @@ impl Population {
             rng: XorShift::new(12345), // Fixed seed for reproducibility
             global_kernel: vec![0.0, 1.0, 0.0], // Identity kernel
             num_inputs,
-            hidden_size,
+            hidden_layers,
             num_outputs,
         };
 
@@ -117,26 +117,19 @@ impl Population {
     }
 
     /// Compute forward pass for all agents
+    /// Compute forward pass for all agents
     ///
     /// # Arguments
     ///
-    /// * `inputs` - Flattened input array: `[agent0_inputs, agent1_inputs, ...]`
-    ///              Length must be `population_size * num_inputs`
+    /// * inputs - Flattened input array of shape (population_size * num_inputs)
     ///
     /// # Returns
     ///
-    /// Flattened output array: `[agent0_outputs, agent1_outputs, ...]`
-    /// Length = `population_size * num_outputs`
-    ///
-    /// # Errors
-    ///
-    /// - Input array length mismatch
-    /// - Brain computation errors
+    /// Flattened output array of shape (population_size * num_outputs)
     ///
     /// # Performance
     ///
-    /// This is called every frame for all agents, so it must be fast.
-    /// Each brain's `compute()` is already optimized (zero-alloc).
+    /// This is called every frame for all agents. Optimized for speed.
     pub fn compute_all(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
         let expected_len = self.brains.len() * self.num_inputs;
         if inputs.len() != expected_len {
@@ -162,25 +155,17 @@ impl Population {
     ///
     /// # Arguments
     ///
-    /// * `fitness_scores` - Fitness for each agent (higher is better)
-    ///                      Length must equal population size
-    /// * `mutation_rate` - Probability of mutating each weight (0.0 to 1.0)
-    /// * `mutation_scale` - Magnitude of mutations
-    /// * `strategy` - Mutation algorithm to use
+    /// * fitness_scores - Fitness for each agent (higher is better)
+    /// * mutation_rate - Probability of mutating weights (0.0 to 1.0)
+    /// * mutation_scale - Magnitude of mutations
+    /// * strategy - Mutation algorithm to use
     ///
     /// # Returns
     ///
-    /// `Ok(())` on success, error if fitness array mismatches or evolution fails
+    /// Success or error if length mismatch
     ///
     /// # Algorithm
     ///
-    /// ```text
-    /// 1. Find best agent (max fitness)
-    /// 2. Extract best agent's weights
-    /// 3. Create new population:
-    ///    - Agent 0: Elite (exact copy of best)
-    ///    - Agents 1..N: Mutated copies of best
-    /// 4. Increment generation counter
     /// ```
     ///
     /// # Design Note: Why No Tournament Selection?
@@ -228,7 +213,7 @@ impl Population {
         let mut new_brains = Vec::with_capacity(prev_len);
 
         // 1. ELITE: First brain is exact copy of best
-        let elite = NeuralBrain::new(0, self.num_inputs, self.hidden_size, self.num_outputs)?;
+        let elite = NeuralBrain::new(0, self.num_inputs, self.hidden_layers.clone(), self.num_outputs)?;
         elite.import_weights(&best_weights)?;
         new_brains.push(elite);
 
@@ -238,7 +223,7 @@ impl Population {
         for i in 1..prev_len {
             // Unique seed per offspring to ensure weight diversity
             let seed = i + (self.generation as usize * 1000);
-            let offspring = NeuralBrain::new(seed, self.num_inputs, self.hidden_size, self.num_outputs)?;
+            let offspring = NeuralBrain::new(seed, self.num_inputs, self.hidden_layers.clone(), self.num_outputs)?;
             offspring.import_weights(&best_weights)?;
 
             // Propagate global kernel to offspring

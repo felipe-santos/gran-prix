@@ -148,7 +148,7 @@ export interface OvenStats {
  * [10] Moisture level [0..1]
  */
 export const OVEN_INPUTS = 11;
-export const OVEN_HIDDEN = 12;
+export const OVEN_HIDDEN = [12, 8]; // Now supporting multiple layers Correctly!
 
 /**
  * 3 Outputs:

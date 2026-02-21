@@ -32,3 +32,8 @@ export const GAME_WIDTH = 800;
 export const GAME_HEIGHT = 400;
 export const PLAYER_SIZE = 20;
 export const POPULATION_SIZE = 500;
+
+// ─── Neural Network Topology ────────────────────────────────────────────────
+export const EVOLUTION_INPUTS = 5;
+export const EVOLUTION_HIDDEN = [8];
+export const EVOLUTION_OUTPUTS = 1;

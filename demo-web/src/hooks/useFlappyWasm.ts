@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as wasm from '../wasm/pkg/gran_prix_wasm';
-import { FLAPPY_POPULATION_SIZE, FLAPPY_INPUTS } from '../types';
+import { FLAPPY_POPULATION_SIZE, FLAPPY_INPUTS, FLAPPY_HIDDEN } from '../types';
 import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 /**
@@ -25,7 +25,12 @@ export function useFlappyWasm() {
             console.log('FLAPPY: Requesting WASM Load...');
             await ensureWasmLoaded();
 
-            const pop = new wasm.Population(FLAPPY_POPULATION_SIZE, FLAPPY_INPUTS, 8, 1);
+            const pop = new wasm.Population(
+                FLAPPY_POPULATION_SIZE,
+                FLAPPY_INPUTS,
+                new Uint32Array(FLAPPY_HIDDEN),
+                1,
+            );
             setPopulation(pop);
             console.log(`FLAPPY: Population Online — size=${pop.count()}, inputs=${FLAPPY_INPUTS}`);
             return pop;

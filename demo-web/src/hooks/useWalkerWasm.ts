@@ -33,7 +33,7 @@ export function useWalkerWasm() {
             const pop = new wasm.Population(
                 WALKER_POPULATION_SIZE,
                 WALKER_INPUTS,
-                WALKER_HIDDEN,
+                new Uint32Array(WALKER_HIDDEN),
                 WALKER_OUTPUTS,
             );
             setPopulation(pop);

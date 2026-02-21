@@ -74,7 +74,7 @@ export const DRONE_POPULATION_SIZE = 200;
  *   [3] vy            — velocity Y (normalized)
  */
 export const DRONE_INPUTS = 4;
-export const DRONE_HIDDEN = 8;
+export const DRONE_HIDDEN = [12, 8];
 
 /**
  * Neural network outputs (2):

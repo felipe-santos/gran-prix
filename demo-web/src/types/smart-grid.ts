@@ -76,7 +76,7 @@ export const GRID_POPULATION_SIZE = 200;
  *   [7] solarForecast   — expected solar for next hour (normalized)
  */
 export const GRID_INPUTS = 8;
-export const GRID_HIDDEN = 10;
+export const GRID_HIDDEN = [16, 12];
 
 /**
  * Neural network outputs (3):

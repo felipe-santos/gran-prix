@@ -32,7 +32,7 @@ export function usePreyWasm() {
             const pop = new wasm.Population(
                 PREY_POPULATION_SIZE,
                 PREY_INPUTS,
-                PREY_HIDDEN,
+                new Uint32Array(PREY_HIDDEN),
                 PREY_OUTPUTS,
             );
             setPopulation(pop);

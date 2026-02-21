@@ -110,14 +110,12 @@ impl NeuralBrain {
     /// variance in the population. This prevents all agents from behaving
     /// identically at generation 0.
     ///
-    /// ```text
     /// w[i] = sign * 0.1 where sign = (-1)^(i + seed_offset)
-    /// ```
     #[wasm_bindgen(constructor)]
     pub fn new(
         seed_offset: usize,
         num_inputs: usize,
-        hidden_size: usize,
+        hidden_layers: Vec<usize>,
         num_outputs: usize,
     ) -> Result<NeuralBrain, JsValue> {
         let backend = Box::new(CPUBackend);
@@ -135,25 +133,30 @@ impl NeuralBrain {
                 let sign = if (i + offset) % 2 == 0 { 1.0 } else { -1.0 };
                 data.push(sign * 0.1);
             }
-            // SAFETY: Shape matches data length by construction (total = rows * cols)
             Tensor::new_cpu(
                 Array::from_shape_vec(IxDyn(&[rows, cols]), data)
-                    .expect("Shape mismatch in alternating_tensor (bug in logic)")
+                    .expect("Shape mismatch in alternating_tensor")
             )
         };
 
-        // Layer 1: Input → Hidden
-        let w1 = gb.param(alternating_tensor(num_inputs, hidden_size, seed_offset));
-        let b1 = gb.param(Tensor::new_zeros(&[1, hidden_size]));
-        let hidden = gb.matmul(input_id, w1);
-        let hidden = gb.add(hidden, b1);
-        let hidden = gb.relu(hidden);
+        let mut current_size = num_inputs;
+        let mut last_node = input_id;
 
-        // Layer 2: Hidden → Output
-        let w2 = gb.param(alternating_tensor(hidden_size, num_outputs, seed_offset + 10));
-        let b2 = gb.param(Tensor::new_zeros(&[1, num_outputs]));
-        let output = gb.matmul(hidden, w2);
-        let output = gb.add(output, b2);
+        // Build Hidden Layers
+        for (i, &hidden_size) in hidden_layers.iter().enumerate() {
+            let w = gb.param(alternating_tensor(current_size, hidden_size, seed_offset + i * 100));
+            let b = gb.param(Tensor::new_zeros(&[1, hidden_size]));
+            let layer = gb.matmul(last_node, w);
+            let layer = gb.add(layer, b);
+            last_node = gb.relu(layer);
+            current_size = hidden_size;
+        }
+
+        // Final Output Layer
+        let w_final = gb.param(alternating_tensor(current_size, num_outputs, seed_offset + 1000));
+        let b_final = gb.param(Tensor::new_zeros(&[1, num_outputs]));
+        let output = gb.matmul(last_node, w_final);
+        let output = gb.add(output, b_final);
         let final_output = gb.sigmoid(output);
 
         Ok(NeuralBrain {

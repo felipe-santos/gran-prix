@@ -26,7 +26,7 @@ export function useVacuumWasm() {
             const pop = new wasm.Population(
                 VACUUM_POPULATION_SIZE,
                 VACUUM_INPUTS,
-                VACUUM_HIDDEN,
+                new Uint32Array(VACUUM_HIDDEN),
                 VACUUM_OUTPUTS,
             );
             setPopulation(pop);

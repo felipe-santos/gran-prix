@@ -1,14 +1,54 @@
 /* @ts-self-types="./gran_prix_wasm.d.ts" */
 
 /**
+ * Mutation strategy for neural network weight evolution
+ *
+ * # Examples
+ *
+ * ```
+ * use gran_prix_wasm::MutationStrategy;
+ *
+ * let strategy = MutationStrategy::Additive;
+ * ```
  * @enum {0 | 1 | 2}
  */
 export const MutationStrategy = Object.freeze({
+    /**
+     * Add random noise: `weight + random(-scale, scale)`
+     */
     Additive: 0, "0": "Additive",
+    /**
+     * Scale by random factor: `weight * (1.0 + random(-scale, scale))`
+     */
     Multiplicative: 1, "1": "Multiplicative",
+    /**
+     * Reset to random value: `weight = random(-scale, scale)`
+     */
     Reset: 2, "2": "Reset",
 });
 
+/**
+ * Neural network brain for evolutionary agents
+ *
+ * # Design
+ *
+ * `NeuralBrain` wraps a computation graph and exposes a simple `compute()`
+ * interface for forward passes. It's designed for:
+ *
+ * - **Evolution**: Weights can be exported/imported/mutated
+ * - **Zero-alloc inference**: Input tensor is pre-allocated
+ * - **Corruption safety**: Magic number detects memory issues
+ * - **WASM compatibility**: Uses `RefCell` for interior mutability
+ *
+ * # Examples
+ *
+ * ```no_run
+ * use gran_prix_wasm::NeuralBrain;
+ *
+ * let brain = NeuralBrain::new(0, 4, 8, 2)?;
+ * let outputs = brain.compute(&[1.0, 0.5, -0.3, 0.8])?;
+ * ```
+ */
 export class NeuralBrain {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -21,6 +61,28 @@ export class NeuralBrain {
         wasm.__wbg_neuralbrain_free(ptr, 0);
     }
     /**
+     * Compute forward pass through the network
+     *
+     * # Arguments
+     *
+     * * `inputs` - Input values (length must match `num_inputs` from constructor)
+     *
+     * # Returns
+     *
+     * Output values (length = `num_outputs`) or error
+     *
+     * # Errors
+     *
+     * - `"Corrupted before compute"`: Magic number mismatch (memory corruption)
+     * - `"Re-entrant call detected"`: Attempting to call `compute` while already computing
+     * - Graph execution errors
+     *
+     * # Performance
+     *
+     * This is the **hot path** for inference. Optimizations:
+     * - Pre-allocated input tensor (no heap allocation)
+     * - Single borrow of `RefCell` per phase
+     * - Minimal error handling overhead
      * @param {Float32Array} inputs
      * @returns {Float32Array}
      */
@@ -36,6 +98,15 @@ export class NeuralBrain {
         return v2;
     }
     /**
+     * Export all network weights as flat vector
+     *
+     * # Returns
+     *
+     * Flattened weight vector in graph order
+     *
+     * # Use Case
+     *
+     * Used by evolution to extract parent weights for offspring.
      * @returns {Float32Array}
      */
     export_weights() {
@@ -48,6 +119,15 @@ export class NeuralBrain {
         return v1;
     }
     /**
+     * Get graph snapshot for visualization
+     *
+     * # Returns
+     *
+     * JavaScript value containing node information and activations
+     *
+     * # Use Case
+     *
+     * Used by UI to display network structure and activation values.
      * @returns {any}
      */
     get_graph_snapshot() {
@@ -55,6 +135,24 @@ export class NeuralBrain {
         return ret;
     }
     /**
+     * Import weights into network
+     *
+     * # Arguments
+     *
+     * * `weights` - Flat weight vector (must match network size)
+     *
+     * # Returns
+     *
+     * `Ok(())` on success, error if weight array is too short
+     *
+     * # Use Case
+     *
+     * Used by evolution to inject parent/mutated weights into offspring.
+     *
+     * # Important Note
+     *
+     * This works correctly when called on a **fresh brain** (newly constructed).
+     * If called on an already-run brain, you must call `reset()` to clear cached values.
      * @param {Float32Array} weights
      */
     import_weights(weights) {
@@ -66,13 +164,37 @@ export class NeuralBrain {
         }
     }
     /**
+     * Create a new neural network brain
+     *
+     * # Arguments
+     *
+     * * `seed_offset` - Seed for deterministic weight initialization
+     * * `num_inputs` - Number of input neurons
+     * * `hidden_size` - Number of hidden neurons
+     * * `num_outputs` - Number of output neurons
+     *
+     * # Returns
+     *
+     * New brain instance or error if graph construction fails
+     *
+     * # Weight Initialization
+     *
+     * Weights are initialized with alternating signs to guarantee steering
+     * variance in the population. This prevents all agents from behaving
+     * identically at generation 0.
+     *
+     * ```text
+     * w[i] = sign * 0.1 where sign = (-1)^(i + seed_offset)
+     * ```
      * @param {number} seed_offset
      * @param {number} num_inputs
-     * @param {number} hidden_size
+     * @param {Uint32Array} hidden_layers
      * @param {number} num_outputs
      */
-    constructor(seed_offset, num_inputs, hidden_size, num_outputs) {
-        const ret = wasm.neuralbrain_new(seed_offset, num_inputs, hidden_size, num_outputs);
+    constructor(seed_offset, num_inputs, hidden_layers, num_outputs) {
+        const ptr0 = passArray32ToWasm0(hidden_layers, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.neuralbrain_new(seed_offset, num_inputs, ptr0, len0, num_outputs);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -80,10 +202,26 @@ export class NeuralBrain {
         NeuralBrainFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
+    /**
+     * Reset cached values and gradients in the graph
+     *
+     * This is typically called between generations or training epochs.
+     */
     reset() {
         wasm.neuralbrain_reset(this.__wbg_ptr);
     }
     /**
+     * Set custom convolution kernel
+     *
+     * # Arguments
+     *
+     * * `k1`, `k2`, `k3` - Kernel values
+     *
+     * # Example
+     *
+     * ```no_run
+     * brain.set_kernel(-0.5, 1.0, -0.5); // Edge detection
+     * ```
      * @param {number} k1
      * @param {number} k2
      * @param {number} k3
@@ -92,6 +230,21 @@ export class NeuralBrain {
         wasm.neuralbrain_set_kernel(this.__wbg_ptr, k1, k2, k3);
     }
     /**
+     * Simple training step (placeholder for reinforcement learning)
+     *
+     * # Arguments
+     *
+     * * `_sensors` - Input sensor data (unused currently)
+     * * `_target` - Target value (unused currently)
+     *
+     * # Returns
+     *
+     * Always `Ok(())` (no-op implementation)
+     *
+     * # Design Note
+     *
+     * This is a placeholder for future RL integration. Current evolution
+     * doesn't use gradient-based learning.
      * @param {Float32Array} _sensors
      * @param {number} _target
      */
@@ -106,6 +259,28 @@ export class NeuralBrain {
 }
 if (Symbol.dispose) NeuralBrain.prototype[Symbol.dispose] = NeuralBrain.prototype.free;
 
+/**
+ * Population of neural network agents
+ *
+ * Manages a collection of `NeuralBrain` instances and provides evolutionary
+ * operators (selection, mutation, elitism).
+ *
+ * # Design Rationale
+ *
+ * - **Elitism**: Best agent always survives (prevents regression)
+ * - **Asexual reproduction**: Mutation-only (no crossover)
+ * - **Deterministic**: Same fitness sequence produces same evolution
+ *
+ * # Examples
+ *
+ * ```no_run
+ * use gran_prix_wasm::{Population, MutationStrategy};
+ *
+ * let mut pop = Population::new(50, 4, 8, 2)?;
+ * let fitness = vec![/* 50 fitness scores */];
+ * pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive)?;
+ * ```
+ */
 export class Population {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -118,6 +293,27 @@ export class Population {
         wasm.__wbg_population_free(ptr, 0);
     }
     /**
+     * Compute forward pass for all agents
+     *
+     * # Arguments
+     *
+     * * `inputs` - Flattened input array: `[agent0_inputs, agent1_inputs, ...]`
+     *              Length must be `population_size * num_inputs`
+     *
+     * # Returns
+     *
+     * Flattened output array: `[agent0_outputs, agent1_outputs, ...]`
+     * Length = `population_size * num_outputs`
+     *
+     * # Errors
+     *
+     * - Input array length mismatch
+     * - Brain computation errors
+     *
+     * # Performance
+     *
+     * This is called every frame for all agents, so it must be fast.
+     * Each brain's `compute()` is already optimized (zero-alloc).
      * @param {Float32Array} inputs
      * @returns {Float32Array}
      */
@@ -133,6 +329,11 @@ export class Population {
         return v2;
     }
     /**
+     * Get number of agents in population
+     *
+     * # Returns
+     *
+     * Population size
      * @returns {number}
      */
     count() {
@@ -140,6 +341,39 @@ export class Population {
         return ret >>> 0;
     }
     /**
+     * Evolve population based on fitness scores
+     *
+     * # Arguments
+     *
+     * * `fitness_scores` - Fitness for each agent (higher is better)
+     *                      Length must equal population size
+     * * `mutation_rate` - Probability of mutating each weight (0.0 to 1.0)
+     * * `mutation_scale` - Magnitude of mutations
+     * * `strategy` - Mutation algorithm to use
+     *
+     * # Returns
+     *
+     * `Ok(())` on success, error if fitness array mismatches or evolution fails
+     *
+     * # Algorithm
+     *
+     * ```text
+     * 1. Find best agent (max fitness)
+     * 2. Extract best agent's weights
+     * 3. Create new population:
+     *    - Agent 0: Elite (exact copy of best)
+     *    - Agents 1..N: Mutated copies of best
+     * 4. Increment generation counter
+     * ```
+     *
+     * # Design Note: Why No Tournament Selection?
+     *
+     * We use simple best-selection (elitism) because:
+     * - Simpler to understand for demos
+     * - Converges faster (good for quick visualization)
+     * - Avoids premature convergence via mutation diversity
+     *
+     * Production systems might use tournament selection, crossover, etc.
      * @param {Float32Array} fitness_scores
      * @param {number} mutation_rate
      * @param {number} mutation_scale
@@ -154,6 +388,19 @@ export class Population {
         }
     }
     /**
+     * Get best brain's graph snapshot for visualization
+     *
+     * # Arguments
+     *
+     * * `fitness_scores` - Current fitness scores
+     *
+     * # Returns
+     *
+     * JavaScript value with best brain's graph structure, or NULL if mismatch
+     *
+     * # Use Case
+     *
+     * UI displays the brain of the highest-performing agent.
      * @param {Float32Array} fitness_scores
      * @returns {any}
      */
@@ -164,13 +411,32 @@ export class Population {
         return ret;
     }
     /**
+     * Create a new population
+     *
+     * # Arguments
+     *
+     * * `size` - Number of agents in population
+     * * `num_inputs` - Input layer size for each brain
+     * * `hidden_size` - Hidden layer size for each brain
+     * * `num_outputs` - Output layer size for each brain
+     *
+     * # Returns
+     *
+     * New population or error if size is 0 or brain construction fails
+     *
+     * # Weight Initialization
+     *
+     * Each brain is initialized with a unique `seed_offset` based on its index.
+     * This ensures diversity in initial population.
      * @param {number} size
      * @param {number} num_inputs
-     * @param {number} hidden_size
+     * @param {Uint32Array} hidden_layers
      * @param {number} num_outputs
      */
-    constructor(size, num_inputs, hidden_size, num_outputs) {
-        const ret = wasm.population_new(size, num_inputs, hidden_size, num_outputs);
+    constructor(size, num_inputs, hidden_layers, num_outputs) {
+        const ptr0 = passArray32ToWasm0(hidden_layers, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.population_new(size, num_inputs, ptr0, len0, num_outputs);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -179,6 +445,19 @@ export class Population {
         return this;
     }
     /**
+     * Set global convolution kernel for all brains
+     *
+     * # Arguments
+     *
+     * * `k1`, `k2`, `k3` - Kernel values
+     *
+     * # Effect
+     *
+     * Updates kernel for all current brains and stores for future offspring.
+     *
+     * # Use Case
+     *
+     * Allows runtime tuning of input preprocessing without restarting evolution.
      * @param {number} k1
      * @param {number} k2
      * @param {number} k3
@@ -581,6 +860,14 @@ function getStringFromWasm0(ptr, len) {
     return decodeText(ptr, len);
 }
 
+let cachedUint32ArrayMemory0 = null;
+function getUint32ArrayMemory0() {
+    if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
+        cachedUint32ArrayMemory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32ArrayMemory0;
+}
+
 let cachedUint8ArrayMemory0 = null;
 function getUint8ArrayMemory0() {
     if (cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0) {
@@ -600,6 +887,13 @@ function handleError(f, args) {
 
 function isLikeNone(x) {
     return x === undefined || x === null;
+}
+
+function passArray32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getUint32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passArrayF32ToWasm0(arg, malloc) {
@@ -687,6 +981,7 @@ function __wbg_finalize_init(instance, module) {
     wasmModule = module;
     cachedDataViewMemory0 = null;
     cachedFloat32ArrayMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

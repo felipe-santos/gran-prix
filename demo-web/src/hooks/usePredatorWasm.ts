@@ -32,7 +32,7 @@ export function usePredatorWasm() {
             const pop = new wasm.Population(
                 PREDATOR_POPULATION_SIZE,
                 PREDATOR_INPUTS,
-                PREDATOR_HIDDEN,
+                new Uint32Array(PREDATOR_HIDDEN),
                 PREDATOR_OUTPUTS,
             );
             setPopulation(pop);

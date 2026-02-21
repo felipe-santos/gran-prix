@@ -80,7 +80,7 @@ export const PREY_POPULATION_SIZE = 150;
  * [6] constant bias / random noise
  */
 export const PREDATOR_INPUTS = 7;
-export const PREDATOR_HIDDEN = 12;
+export const PREDATOR_HIDDEN = [12, 8];
 
 /**
  * Predator Outputs (2):
@@ -100,7 +100,7 @@ export const PREDATOR_OUTPUTS = 2;
  * [6] distance to nearest flock member (rabbit)
  */
 export const PREY_INPUTS = 7;
-export const PREY_HIDDEN = 12;
+export const PREY_HIDDEN = [12, 8];
 
 /**
  * Prey Outputs (2):

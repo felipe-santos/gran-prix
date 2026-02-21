@@ -26,7 +26,7 @@ export function useSmartGridWasm() {
             const pop = new wasm.Population(
                 GRID_POPULATION_SIZE,
                 GRID_INPUTS,
-                GRID_HIDDEN,
+                new Uint32Array(GRID_HIDDEN),
                 GRID_OUTPUTS,
             );
             setPopulation(pop);

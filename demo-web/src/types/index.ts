@@ -38,10 +38,12 @@ export type {
     GameState,
 } from './evolution';
 export {
-    GAME_WIDTH,
     GAME_HEIGHT,
     PLAYER_SIZE,
     POPULATION_SIZE,
+    EVOLUTION_INPUTS,
+    EVOLUTION_HIDDEN,
+    EVOLUTION_OUTPUTS,
 } from './evolution';
 
 // ─── Flappy Bird RL ─────────────────────────────────────────────────────────
@@ -58,6 +60,7 @@ export {
     FLAPPY_PIPE_WIDTH,
     FLAPPY_GAP_SIZE,
     FLAPPY_INPUTS,
+    FLAPPY_HIDDEN,
     FLAPPY_POPULATION_SIZE,
 } from './flappy';
 

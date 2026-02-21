@@ -64,4 +64,5 @@ export const FLAPPY_GAP_SIZE = 130;
 
 /** Number of WASM inputs per bird: [dy_top, dy_bottom, bird_y_norm, vy_norm] */
 export const FLAPPY_INPUTS = 4;
+export const FLAPPY_HIDDEN = [8];
 export const FLAPPY_POPULATION_SIZE = 200;

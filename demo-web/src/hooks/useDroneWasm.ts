@@ -24,7 +24,7 @@ export function useDroneWasm() {
         try {
             const size = DRONE_POPULATION_SIZE || 200;
             const ins = DRONE_INPUTS || 4;
-            const hids = DRONE_HIDDEN || 8;
+            const hids = new Uint32Array(DRONE_HIDDEN || [8]);
             const outs = DRONE_OUTPUTS || 2;
 
             await ensureWasmLoaded();

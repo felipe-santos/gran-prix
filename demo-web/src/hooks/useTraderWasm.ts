@@ -26,7 +26,7 @@ export function useTraderWasm() {
             const pop = new wasm.Population(
                 TRADER_POPULATION_SIZE,
                 TRADER_INPUTS,
-                TRADER_HIDDEN,
+                new Uint32Array(TRADER_HIDDEN),
                 TRADER_OUTPUTS,
             );
             setPopulation(pop);

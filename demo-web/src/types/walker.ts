@@ -59,7 +59,7 @@ export const WALKER_POPULATION_SIZE = 50;
 export const WALKER_INPUTS = 10;
 
 /** Hidden layer size — larger than Flappy because motor coordination is harder */
-export const WALKER_HIDDEN = 12;
+export const WALKER_HIDDEN = [12, 8];
 
 /**
  * Neural network outputs (4 continuous):
