@@ -431,10 +431,10 @@ export function OvenDemo() {
                                 </label>
                                 <div className="space-y-1.5">
                                     {[
-                                        ['+(T-25)', 'Pontos base = Temp Core alcançada'],
+                                        ['+(T-25)*2', 'Pontos pesados baseados no aquecimento até o centro'],
                                         ['+500', 'Bônus se cozinhar perfeitamente (atingiu Target, sem queimar)'],
                                         ['+Moist', 'Bônus por preservar umidade'],
-                                        ['-90%', 'Perde quase todos os pontos se queimar (mantém gradiente!)'],
+                                        ['-40%', 'Perde apenas 40% dos pontos se queimar (protege o gradiente)'],
                                         ['-Time', 'Penalidade por demorar demais'],
                                         ['-Energy', 'Penalidade por desperdício elétrico'],
                                     ].map(([reward, desc]) => (

@@ -203,23 +203,28 @@ export function useOvenGameLoop({
 
                 const f = agent.food;
 
-                // 1. Heaters warm the air
+                // 1. Heaters warm the air (Asymptotic Equilibrium)
+                // Max Power: 3.5. At 100% power, 3.5 * 0.1 = 0.35 heating/frame.
+                // Equilibrium is reached when 0.35 = (AirTemp - 25) * 0.0012 => AirTemp = ~316°C
+                // At 50% power, equilibrium is AirTemp = ~170°C.
                 const heaterPower = (agent.topHeater * 2.0) + (agent.bottomHeater * 1.5);
-                const heatingDelta = heaterPower * 0.8;
-                const coolingDelta = (agent.airTemp - OVEN_AMBIENT_TEMP) * 0.005; // Oven leaks heat
+                const heatingDelta = heaterPower * 0.1; 
+                const coolingDelta = (agent.airTemp - OVEN_AMBIENT_TEMP) * 0.0012; // Oven leaks heat proportionally to temp diff
                 agent.airTemp += heatingDelta - coolingDelta;
-                agent.airTemp = Math.max(OVEN_MAX_TEMP, agent.airTemp);
+                agent.airTemp = Math.max(OVEN_AMBIENT_TEMP, Math.min(OVEN_MAX_TEMP, agent.airTemp));
 
                 // 2. Air warms the surface
                 const fanMultiplier = agent.fan === 1.0 ? 1.5 : 1.0;
                 const surfaceDelta = (agent.airTemp - agent.surfaceTemp) * f.surfaceConductivity * fanMultiplier * 0.01;
                 // Direct radiation from top heater
-                const radiationDelta = agent.topHeater * 0.2;
+                const radiationDelta = agent.topHeater * 0.1;
                 agent.surfaceTemp += surfaceDelta + radiationDelta;
+                agent.surfaceTemp = Math.max(OVEN_AMBIENT_TEMP, agent.surfaceTemp);
 
                 // 3. Surface warms the core
                 const coreDelta = (agent.surfaceTemp - agent.coreTemp) * f.coreConductivity * 0.01;
                 agent.coreTemp += coreDelta;
+                agent.coreTemp = Math.max(OVEN_AMBIENT_TEMP, agent.coreTemp);
 
                 // 4. Moisture loss
                 if (agent.surfaceTemp > 100) {
@@ -237,11 +242,13 @@ export function useOvenGameLoop({
 
                     // ── Compute Temporary/Final Fitness ──
                     // Base points for heating up the core
-                    let fit = (agent.coreTemp - OVEN_AMBIENT_TEMP);
+                    let fit = (agent.coreTemp - OVEN_AMBIENT_TEMP) * 2;
 
-                    // Severe penalty if burnt, but preserve gradient
+                    // Moderate penalty if burnt, preserve gradient strongly
                     if (agent.burnt) {
-                        fit = fit * 0.1;
+                        fit = fit * 0.6;
+                        // Give slight bonus based on how close surface got to burnTemp before actually burning
+                        // to encourage pushing the limit but not crossing it
                     }
 
                     // Reward if cooked perfectly without burning

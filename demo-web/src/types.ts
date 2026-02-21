@@ -654,7 +654,7 @@ export const OVEN_FOODS: Record<OvenFoodType, OvenFoodProfile> = {
         type: OvenFoodType.Turkey,
         targetCore: 75,
         burnTemp: 180,
-        coreConductivity: 0.01, // Huge mass, very slow core heating
+        coreConductivity: 0.015, // Huge mass, very slow core heating
         surfaceConductivity: 0.08,
         moistureLossRate: 0.02,
     },
