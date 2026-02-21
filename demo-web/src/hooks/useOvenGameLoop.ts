@@ -44,6 +44,7 @@ export function useOvenGameLoop({
         frame: 0,
         generation: 1,
         currentFoodType: OvenFoodType.Cake, // Start with Cake
+        restingFrames: 0,
     });
 
     const mutationRateRef = useRef(mutationRate);
@@ -85,7 +86,16 @@ export function useOvenGameLoop({
         }));
 
         state.frame = 0;
-        setStats(s => ({ ...s, bestCoreTemp: OVEN_AMBIENT_TEMP, successRate: 0 }));
+        setStats(s => ({ 
+            ...s, 
+            bestCoreTemp: OVEN_AMBIENT_TEMP,
+            successRates: s.successRates || {
+                [OvenFoodType.Cake]: 0,
+                [OvenFoodType.Bread]: 0,
+                [OvenFoodType.Turkey]: 0,
+                [OvenFoodType.Pizza]: 0,
+            }
+        }));
     }, [setStats]);
 
     const runEvolution = useCallback(() => {
@@ -100,13 +110,17 @@ export function useOvenGameLoop({
         try {
             evolve(scores, mutationRateRef.current, mutationScaleRef.current, mutationStrategyRef.current);
 
-            setStats({
+            setStats(s => ({
+                ...s,
                 generation: state.generation,
                 bestFitness: maxFitness,
                 avgFitness,
                 bestCoreTemp: Math.max(...state.agents.map(a => a.coreTemp)),
-                successRate: (successes / OVEN_POPULATION_SIZE) * 100,
-            });
+                successRates: {
+                    ...s.successRates,
+                    [state.currentFoodType]: (successes / OVEN_POPULATION_SIZE) * 100
+                }
+            }));
             onGenerationEnd(maxFitness, avgFitness);
 
             state.generation++;
@@ -127,7 +141,10 @@ export function useOvenGameLoop({
 
             // Pre-check if all agents failed/succeeded early
             const activeAgents = agents.filter(a => !a.burnt && !a.cooked);
-            if (activeAgents.length === 0 || state.frame >= OVEN_MAX_FRAMES) {
+            if (activeAgents.length === 0) {
+                state.restingFrames++;
+            }
+            if ((activeAgents.length === 0 && state.restingFrames > 300) || state.frame >= OVEN_MAX_FRAMES) {
                 runEvolution();
                 return;
             }
@@ -167,12 +184,21 @@ export function useOvenGameLoop({
 
             for (let i = 0; i < OVEN_POPULATION_SIZE; i++) {
                 const agent = agents[i];
-                if (agent.burnt || agent.cooked) continue; // Freeze state
+                const isDone = agent.burnt || agent.cooked;
 
-                const outBase = i * OVEN_OUTPUTS;
-                agent.topHeater = Math.max(0, Math.min(1, outputs[outBase + 0]));
-                agent.bottomHeater = Math.max(0, Math.min(1, outputs[outBase + 1]));
-                agent.fan = outputs[outBase + 2] > 0.5 ? 1.0 : 0.0; // Binary fan
+                if (isDone) {
+                    agent.topHeater = 0;
+                    agent.bottomHeater = 0;
+                    agent.fan = 0;
+                } else {
+                    const outBase = i * OVEN_OUTPUTS;
+                    agent.topHeater = Math.max(0, Math.min(1, outputs[outBase + 0]));
+                    agent.bottomHeater = Math.max(0, Math.min(1, outputs[outBase + 1]));
+                    agent.fan = outputs[outBase + 2] > 0.5 ? 1.0 : 0.0; // Binary fan
+
+                    // Energy tracking
+                    agent.energyUsed += agent.topHeater + agent.bottomHeater + (agent.fan * 0.3);
+                }
 
                 const f = agent.food;
 
@@ -181,7 +207,7 @@ export function useOvenGameLoop({
                 const heatingDelta = heaterPower * 0.8;
                 const coolingDelta = (agent.airTemp - OVEN_AMBIENT_TEMP) * 0.005; // Oven leaks heat
                 agent.airTemp += heatingDelta - coolingDelta;
-                agent.airTemp = Math.min(OVEN_MAX_TEMP, agent.airTemp);
+                agent.airTemp = Math.max(OVEN_MAX_TEMP, agent.airTemp);
 
                 // 2. Air warms the surface
                 const fanMultiplier = agent.fan === 1.0 ? 1.5 : 1.0;
@@ -200,38 +226,37 @@ export function useOvenGameLoop({
                     agent.moisture = Math.max(0, agent.moisture);
                 }
 
-                // Energy tracking
-                agent.energyUsed += agent.topHeater + agent.bottomHeater + (agent.fan * 0.3);
+                if (!isDone) {
+                    // Flags check
+                    if (agent.surfaceTemp >= f.burnTemp) {
+                        agent.burnt = true;
+                    } else if (agent.coreTemp >= f.targetCore) {
+                        agent.cooked = true;
+                    }
 
-                // Flags check
-                if (agent.surfaceTemp >= f.burnTemp) {
-                    agent.burnt = true;
+                    // ── Compute Temporary/Final Fitness ──
+                    // Base points for heating up the core
+                    let fit = (agent.coreTemp - OVEN_AMBIENT_TEMP);
+
+                    // Severe penalty if burnt
+                    if (agent.burnt) {
+                        fit -= 200;
+                    }
+
+                    // Reward if cooked perfectly without burning
+                    if (agent.cooked && !agent.burnt) {
+                        fit += 500;
+                        // Bonus for preserving moisture
+                        fit += agent.moisture * 200;
+                        // Penalty for wasted time/energy
+                        const timePenalty = (state.frame / OVEN_MAX_FRAMES) * 50;
+                        const energyPenalty = agent.energyUsed * 0.05;
+                        fit -= (timePenalty + energyPenalty);
+                    }
+
+                    agent.fitness = Math.max(0, fit);
                 }
-                if (agent.coreTemp >= f.targetCore) {
-                    agent.cooked = true;
-                }
 
-                // ── Compute Temporary/Final Fitness ──
-                // Base points for heating up the core
-                let fit = (agent.coreTemp - OVEN_AMBIENT_TEMP);
-
-                // Severe penalty if burnt
-                if (agent.burnt) {
-                    fit -= 200;
-                }
-
-                // Reward if cooked perfectly without burning
-                if (agent.cooked && !agent.burnt) {
-                    fit += 500;
-                    // Bonus for preserving moisture
-                    fit += agent.moisture * 200;
-                    // Penalty for wasted time/energy
-                    const timePenalty = (state.frame / OVEN_MAX_FRAMES) * 50;
-                    const energyPenalty = agent.energyUsed * 0.05;
-                    fit -= (timePenalty + energyPenalty);
-                }
-
-                agent.fitness = Math.max(0, fit);
                 currentBestCore = Math.max(currentBestCore, agent.coreTemp);
             }
 

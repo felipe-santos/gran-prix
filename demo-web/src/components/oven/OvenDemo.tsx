@@ -10,7 +10,8 @@ import {
     OVEN_MAX_TEMP,
     OVEN_AMBIENT_TEMP,
     OvenStats,
-    OvenAgent
+    OvenAgent,
+    OvenFoodType
 } from '../../types';
 import { PerformanceData, PerformanceCharts } from '../PerformanceCharts';
 import { useOvenWasm } from '../../hooks/useOvenWasm';
@@ -149,10 +150,25 @@ function drawOven(ctx: CanvasRenderingContext2D, bestAgent: OvenAgent | null) {
         ctx.fillStyle = '#10b981';
         ctx.font = 'bold 14px monospace';
         ctx.fillText('PERFECTLY COOKED! 🏆', 10, 100);
+        ctx.fillStyle = '#06b6d4';
+        ctx.fillText('RESTING / CARRYOVER', 10, 115);
     } else if (bestAgent.burnt) {
         ctx.fillStyle = '#ef4444';
         ctx.font = 'bold 14px monospace';
         ctx.fillText('BURNT! ❌', 10, 100);
+    }
+
+    // ON/OFF status
+    const isOvenOn = bestAgent.topHeater > 0.01 || bestAgent.bottomHeater > 0.01 || bestAgent.fan > 0.1;
+    ctx.textAlign = 'right';
+    if (isOvenOn) {
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.fillText('OVEN: ON 🔥', w - 10, 25);
+    } else {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 16px Inter, sans-serif';
+        ctx.fillText('OVEN: OFF ❄️', w - 10, 25);
     }
 }
 
@@ -161,7 +177,14 @@ function drawOven(ctx: CanvasRenderingContext2D, bestAgent: OvenAgent | null) {
 export function OvenDemo() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [stats, setStats] = useState<OvenStats>({ generation: 1, bestFitness: 0, avgFitness: 0, bestCoreTemp: 0, successRate: 0 });
+    const [stats, setStats] = useState<OvenStats>({
+        generation: 1, bestFitness: 0, avgFitness: 0, bestCoreTemp: 0, successRates: {
+            [OvenFoodType.Cake]: 0,
+            [OvenFoodType.Bread]: 0,
+            [OvenFoodType.Turkey]: 0,
+            [OvenFoodType.Pizza]: 0,
+        }
+    });
     const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
     const fitnessRef = useRef<Float32Array>(new Float32Array(OVEN_POPULATION_SIZE));
 
@@ -232,7 +255,14 @@ export function OvenDemo() {
     const handleReset = useCallback(() => {
         setIsPlaying(false);
         resetOven();
-        setStats({ generation: 1, bestFitness: 0, avgFitness: 0, bestCoreTemp: 0, successRate: 0 });
+        setStats({
+            generation: 1, bestFitness: 0, avgFitness: 0, bestCoreTemp: 0, successRates: {
+                [OvenFoodType.Cake]: 0,
+                [OvenFoodType.Bread]: 0,
+                [OvenFoodType.Turkey]: 0,
+                [OvenFoodType.Pizza]: 0,
+            }
+        });
         setPerformanceHistory([]);
         fitnessRef.current = new Float32Array(OVEN_POPULATION_SIZE);
     }, [resetOven]);

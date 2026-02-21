@@ -710,6 +710,8 @@ export interface OvenGameState {
     generation: number;
     /** The food type all agents are trying to cook this generation */
     currentFoodType: OvenFoodType;
+    /** Frames passed after all agents finished (to simulate cooldown) */
+    restingFrames: number;
 }
 
 export interface OvenStats {
@@ -717,7 +719,7 @@ export interface OvenStats {
     bestFitness: number;
     avgFitness: number;
     bestCoreTemp: number;
-    successRate: number; // % that reached cooked without burning
+    successRates: Record<OvenFoodType, number>; // % success for each food type
 }
 
 // Neural Network Topology
@@ -746,7 +748,7 @@ export const OVEN_HIDDEN = 12;
 export const OVEN_OUTPUTS = 3;
 
 export const OVEN_POPULATION_SIZE = 200;
-export const OVEN_MAX_FRAMES = 1200;
+export const OVEN_MAX_FRAMES = 4800;
 
 export const OVEN_AMBIENT_TEMP = 25.0; // Room temp (°C)
 export const OVEN_MAX_TEMP = 300.0;    // Absolute max oven capacity
