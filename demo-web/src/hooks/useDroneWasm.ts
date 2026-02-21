@@ -44,7 +44,7 @@ export function useDroneWasm() {
             console.log(`DRONE: Population Online — size=${pop.count()}, inputs=${ins}, outputs=${outs}`);
             return pop;
         } catch (e) {
-            console.error('DRONE: Failed to initialize WASM:', e);
+            console.error('DRONE: Failed to initialize WASM Error Details:', String(e), e);
             throw e;
         }
     }, []);

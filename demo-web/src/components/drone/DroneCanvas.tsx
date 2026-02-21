@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { DRONE_WIDTH, DRONE_HEIGHT } from '../../types';
+
 
 interface DroneCanvasProps {
     width: number;

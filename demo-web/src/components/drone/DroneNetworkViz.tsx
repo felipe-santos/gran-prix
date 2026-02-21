@@ -22,12 +22,18 @@ export const DroneNetworkViz: React.FC<DroneNetworkVizProps> = ({
     useEffect(() => {
 
         const canvas = canvasRef.current;
+        if (!canvas) return; // Add null check for canvas
         const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        
+        // Capture population locally to appease TS type narrowing
+        const pop = population;
+        if (!pop) return; // Add null check for population
 
         const draw = () => {
             let snapshot: any;
             try {
-                snapshot = population.get_best_brain_snapshot(fitnessScores);
+                snapshot = pop.get_best_brain_snapshot(fitnessScores);
             } catch {
                 rafRef.current = requestAnimationFrame(draw);
                 return;
@@ -48,7 +54,8 @@ export const DroneNetworkViz: React.FC<DroneNetworkVizProps> = ({
                 weights = null;
             }
 
-            const { width, height } = canvas;
+            const width = canvas.width;
+            const height = canvas.height;
             ctx.clearRect(0, 0, width, height);
 
             const layers = [inputSize, hiddenSize, outputSize];

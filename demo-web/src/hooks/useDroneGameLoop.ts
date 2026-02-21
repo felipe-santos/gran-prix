@@ -12,7 +12,7 @@ import {
 } from '../types';
 
 const GRAVITY = 0.2;
-const MAX_THRUST = 0.4; // Max acceleration per frame
+const MAX_THRUST = 0.5; // Max acceleration per frame
 const DRAG = 0.05; // Air resistance
 
 // PID Constants
@@ -88,7 +88,7 @@ export function useDroneGameLoop({
         state.drones = Array.from({ length: DRONE_POPULATION_SIZE }, (_, i) => ({
             id: i,
             x: DRONE_WIDTH / 2,
-            y: DRONE_HEIGHT - 50, // Start near bottom
+            y: DRONE_HEIGHT / 2, // Start in middle to avoid instant death from gravity
             vx: 0,
             vy: 0,
             dead: false,
@@ -98,7 +98,7 @@ export function useDroneGameLoop({
 
         state.pidDrone = {
             ...state.pidDrone,
-            x: DRONE_WIDTH / 2, y: DRONE_HEIGHT - 50, vx: 0, vy: 0,
+            x: DRONE_WIDTH / 2, y: DRONE_HEIGHT / 2, vx: 0, vy: 0,
             integralX: 0, integralY: 0, prevErrorX: 0, prevErrorY: 0
         };
 
@@ -230,16 +230,18 @@ export function useDroneGameLoop({
             drone.x += drone.vx;
             drone.y += drone.vy;
 
-            // Fitness: +1 per frame if inside target ring
+            // Fitness: Baseline for surviving, plus bonus if inside target ring
+            drone.fitness += 0.1;
             const dist = Math.hypot(drone.x - state.targetX, drone.y - state.targetY);
             if (dist < TARGET_RADIUS * 2) {
                 drone.fitness += (TARGET_RADIUS * 2 - dist) / 10;
             }
 
-            // Boundaries
-            if (drone.x < 0 || drone.x > DRONE_WIDTH || drone.y < 0 || drone.y > DRONE_HEIGHT) {
-                drone.dead = true;
-            }
+            // Boundaries (Bounce instead of instant death, but penalize fitness slightly)
+            if (drone.x < 0) { drone.x = 0; drone.vx *= -0.5; }
+            if (drone.x > DRONE_WIDTH) { drone.x = DRONE_WIDTH; drone.vx *= -0.5; }
+            if (drone.y < 0) { drone.y = 0; drone.vy *= -0.5; }
+            if (drone.y > DRONE_HEIGHT) { drone.y = DRONE_HEIGHT; drone.vy *= -0.5; drone.fitness = Math.max(0, drone.fitness - 1); }
         });
 
         // PID integration
