@@ -2,7 +2,7 @@ use wasm_bindgen::prelude::*;
 use gran_prix::{Tensor, GPError};
 use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::loss::{Loss, MSE};
+use gran_prix::loss::Loss;
 use ndarray::{Array, IxDyn};
 use serde::Serialize;
 use std::cell::RefCell;
