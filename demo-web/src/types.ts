@@ -595,8 +595,8 @@ export const VACUUM_HIDDEN = 10;
  */
 export const VACUUM_OUTPUTS = 3;
 
-/** Maximum frames per generation */
-export const VACUUM_MAX_FRAMES = 800;
+/** Maximum frames per generation (longer allows complex navigation strategies) */
+export const VACUUM_MAX_FRAMES = 1400;
 
 /** Dust cell size in pixels */
 export const VACUUM_CELL_SIZE = 20;

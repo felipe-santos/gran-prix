@@ -1,5 +1,5 @@
 import React from 'react';
-import { VacuumStats } from '../../types';
+import { VacuumStats, VACUUM_MAX_FRAMES } from '../../types';
 
 interface VacuumStatsBarProps {
     stats: VacuumStats;
@@ -22,7 +22,7 @@ export const VacuumStatsBar: React.FC<VacuumStatsBarProps> = ({
             <Stat label="Battery" value={`${(battery * 100).toFixed(0)}%`} icon={battery > 0.3 ? '🔋' : '🪫'} />
             <Stat label="Avg Cleaned" value={`${stats.avgCleaned.toFixed(0)}`} />
             <Stat label="Alive" value={`${stats.alive}`} />
-            <Stat label="Frame" value={`${frame}/800`} />
+            <Stat label="Frame" value={`${frame}/${VACUUM_MAX_FRAMES}`} />
         </div>
     );
 };

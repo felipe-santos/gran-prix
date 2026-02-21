@@ -1,128 +1,184 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import { VACUUM_INPUTS, VACUUM_HIDDEN, VACUUM_OUTPUTS } from '../../types';
 
 interface VacuumNetworkVizProps {
-    snapshot: any;
+    /** WASM Population instance — used to pull the best brain's weights each frame. */
+    population: wasm.Population | null;
+    /** Fitness array so we can identify the best individual */
+    fitnessScores: Float32Array;
 }
 
-const INPUT_LABELS = ['Dust↑', 'Dust←', 'Dust→', 'Obs↑', 'Battery', 'Dist⚡', 'Ang⚡', 'sin(θ)', 'cos(θ)'];
-const OUTPUT_LABELS = ['Fwd', 'Turn←', 'Turn→'];
+const INPUT_NAMES = [
+    'dust_fwd', 'dust_left', 'dust_right',
+    'obs_fwd', 'battery',
+    'dist_⚡', 'ang_⚡',
+    'sin(θ)', 'cos(θ)',
+];
+const OUTPUT_NAMES = ['fwd', 'turn_L', 'turn_R'];
 
-export const VacuumNetworkViz: React.FC<VacuumNetworkVizProps> = ({ snapshot }) => {
-    if (!snapshot) return null;
+/**
+ * Real-time neural network weight visualizer for the Smart Vacuum demo.
+ *
+ * Canvas-based renderer matching WalkerNetworkViz pattern.
+ * Connection colour encodes sign (emerald = positive, rose = negative).
+ * Connection width encodes magnitude.
+ */
+export const VacuumNetworkViz: React.FC<VacuumNetworkVizProps> = ({
+    population,
+    fitnessScores,
+}) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const rafRef = useRef<number | null>(null);
 
-    const nodes: { id: number; layer: number; value: number; label?: string }[] = [];
-    const links: { from: number; to: number; weight: number }[] = [];
+    useEffect(() => {
+        if (!population || !canvasRef.current) return;
 
-    // Parse snapshot (same format as other demos)
-    try {
-        const data = typeof snapshot === 'string' ? JSON.parse(snapshot) : snapshot;
-        if (Array.isArray(data)) {
-            data.forEach((n: any) => nodes.push(n));
-        }
-    } catch {
-        return null;
-    }
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
 
-    if (nodes.length === 0) return null;
+        const draw = () => {
+            let snapshot: any;
+            try {
+                snapshot = population.get_best_brain_snapshot(fitnessScores);
+            } catch {
+                rafRef.current = requestAnimationFrame(draw);
+                return;
+            }
 
-    // Assign labels
-    const inputNodes = nodes.filter(n => n.layer === 0);
-    const outputNodes = nodes.filter(n => n.layer === Math.max(...nodes.map(n => n.layer)));
+            if (!snapshot) {
+                rafRef.current = requestAnimationFrame(draw);
+                return;
+            }
 
-    inputNodes.forEach((n, i) => {
-        if (i < INPUT_LABELS.length) n.label = INPUT_LABELS[i];
-    });
-    outputNodes.forEach((n, i) => {
-        if (i < OUTPUT_LABELS.length) n.label = OUTPUT_LABELS[i];
-    });
+            // Extract flat weight array from snapshot
+            let weights: Float32Array | null = null;
+            try {
+                const flat: number[] = [];
+                if (Array.isArray(snapshot)) {
+                    for (const node of snapshot) {
+                        if (node.value) {
+                            for (const v of node.value) flat.push(v);
+                        }
+                    }
+                }
+                weights = flat.length > 0 ? new Float32Array(flat) : null;
+            } catch {
+                weights = null;
+            }
 
-    // Layout
-    const width = 360;
-    const height = 320;
-    const layers = [...new Set(nodes.map(n => n.layer))].sort();
-    const layerX = layers.reduce((acc, l, i) => {
-        acc[l] = 40 + (i / Math.max(1, layers.length - 1)) * (width - 80);
-        return acc;
-    }, {} as Record<number, number>);
+            const { width, height } = canvas;
+            ctx.clearRect(0, 0, width, height);
 
-    const layerNodes = layers.map(l => nodes.filter(n => n.layer === l));
-    const positions: Record<number, { x: number; y: number }> = {};
+            const layers = [VACUUM_INPUTS, VACUUM_HIDDEN, VACUUM_OUTPUTS];
+            const layerX = [width * 0.15, width * 0.5, width * 0.85];
+            const nodeRadius = 5;
 
-    layerNodes.forEach((lnodes, li) => {
-        const l = layers[li];
-        const gap = height / (lnodes.length + 1);
-        lnodes.forEach((n, i) => {
-            positions[n.id] = { x: layerX[l], y: gap * (i + 1) };
-        });
-    });
+            // ── Connections ────────────────────────────────────────────────
+            let wIdx = 0;
+            for (let l = 0; l < layers.length - 1; l++) {
+                const curNodes = layers[l];
+                const nextNodes = layers[l + 1];
 
-    // Build links between adjacent layers
-    for (let li = 0; li < layers.length - 1; li++) {
-        const fromLayer = layerNodes[li];
-        const toLayer = layerNodes[li + 1];
-        fromLayer.forEach(from => {
-            toLayer.forEach(to => {
-                links.push({ from: from.id, to: to.id, weight: Math.random() * 2 - 1 });
+                for (let i = 0; i < curNodes; i++) {
+                    const y1 = (height / (curNodes + 1)) * (i + 1);
+                    for (let j = 0; j < nextNodes; j++) {
+                        const y2 = (height / (nextNodes + 1)) * (j + 1);
+                        const weight = weights ? (weights[wIdx] ?? 0) : 0;
+                        wIdx++;
+
+                        const mag = Math.min(Math.abs(weight), 1.5);
+                        const alpha = 0.08 + mag * 0.5;
+                        ctx.beginPath();
+                        ctx.moveTo(layerX[l], y1);
+                        ctx.lineTo(layerX[l + 1], y2);
+                        ctx.lineWidth = Math.max(0.3, mag * 2);
+                        ctx.strokeStyle =
+                            weight >= 0
+                                ? `rgba(16, 185, 129, ${alpha})`
+                                : `rgba(244, 63, 94, ${alpha})`;
+                        ctx.stroke();
+                    }
+                    // Skip biases
+                    wIdx += nextNodes;
+                }
+            }
+
+            // ── Nodes + Labels ─────────────────────────────────────────────
+            layers.forEach((nodeCount, l) => {
+                for (let i = 0; i < nodeCount; i++) {
+                    const y = (height / (nodeCount + 1)) * (i + 1);
+
+                    // Node circle
+                    ctx.beginPath();
+                    ctx.arc(layerX[l], y, nodeRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = 'hsl(240 10% 8%)';
+                    ctx.strokeStyle =
+                        l === 0
+                            ? 'rgba(59, 130, 246, 0.7)'   // Input: blue
+                            : l === layers.length - 1
+                                ? 'rgba(245, 158, 11, 0.7)'  // Output: amber
+                                : 'rgba(100, 100, 120, 0.5)'; // Hidden: gray
+                    ctx.lineWidth = 1.5;
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Label text
+                    ctx.font = 'bold 7px Inter, system-ui, sans-serif';
+                    if (l === 0 && i < INPUT_NAMES.length) {
+                        // Input labels (left-aligned)
+                        ctx.fillStyle = 'rgba(140, 160, 200, 0.8)';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(INPUT_NAMES[i], layerX[l] - nodeRadius - 4, y + 3);
+                    } else if (l === layers.length - 1 && i < OUTPUT_NAMES.length) {
+                        // Output labels (right-aligned)
+                        ctx.fillStyle = 'rgba(245, 180, 80, 0.8)';
+                        ctx.textAlign = 'left';
+                        ctx.fillText(OUTPUT_NAMES[i], layerX[l] + nodeRadius + 4, y + 3);
+                    }
+                }
             });
-        });
-    }
+
+            // Layer labels at bottom
+            ctx.fillStyle = 'rgba(150,150,170,0.5)';
+            ctx.font = '7px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('IN', layerX[0], height - 4);
+            ctx.fillText('HIDDEN', layerX[1], height - 4);
+            ctx.fillText('OUT', layerX[2], height - 4);
+
+            rafRef.current = requestAnimationFrame(draw);
+        };
+
+        rafRef.current = requestAnimationFrame(draw);
+        return () => {
+            if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+        };
+    }, [population, fitnessScores]);
 
     return (
-        <div className="bg-card/50 border border-border rounded-2xl p-4 backdrop-blur-md">
-            <h3 className="text-[10px] font-bold text-foreground uppercase tracking-widest mb-3">
-                Best Agent Brain
-            </h3>
-            <svg width={width} height={height} className="w-full" viewBox={`0 0 ${width} ${height}`}>
-                {/* Links */}
-                {links.map((link, i) => {
-                    const from = positions[link.from];
-                    const to = positions[link.to];
-                    if (!from || !to) return null;
-                    const opacity = Math.min(1, Math.abs(link.weight));
-                    const color = link.weight > 0 ? '#10b981' : '#ef4444';
-                    return (
-                        <line
-                            key={i}
-                            x1={from.x} y1={from.y}
-                            x2={to.x} y2={to.y}
-                            stroke={color}
-                            strokeWidth={0.5 + Math.abs(link.weight)}
-                            opacity={opacity * 0.3}
-                        />
-                    );
-                })}
-                {/* Nodes */}
-                {nodes.map(node => {
-                    const pos = positions[node.id];
-                    if (!pos) return null;
-                    const isInput = node.layer === 0;
-                    const isOutput = node.layer === Math.max(...layers);
-                    const r = isInput || isOutput ? 8 : 5;
-                    const fill = isOutput
-                        ? '#f59e0b'
-                        : isInput
-                            ? '#3b82f6'
-                            : '#64748b';
-
-                    return (
-                        <g key={node.id}>
-                            <circle cx={pos.x} cy={pos.y} r={r} fill={fill} opacity={0.85} />
-                            {node.label && (
-                                <text
-                                    x={isInput ? pos.x - 12 : pos.x + 12}
-                                    y={pos.y + 3}
-                                    textAnchor={isInput ? 'end' : 'start'}
-                                    fontSize={7}
-                                    fill="var(--muted-foreground)"
-                                    fontWeight="bold"
-                                >
-                                    {node.label}
-                                </text>
-                            )}
-                        </g>
-                    );
-                })}
-            </svg>
+        <div className="flex flex-col items-center gap-2">
+            <span className="text-[9px] uppercase font-bold tracking-[0.3em] text-muted-foreground">
+                Network Weights — Live
+            </span>
+            <canvas
+                ref={canvasRef}
+                width={300}
+                height={320}
+                className="bg-black/20 rounded-xl border border-white/5 shadow-inner"
+                aria-label="Vacuum neural network weight visualization"
+            />
+            <div className="flex gap-4 mt-1">
+                <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-0.5 rounded-full bg-emerald-500 opacity-70 inline-block" />
+                    <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Positive</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-0.5 rounded-full bg-rose-500 opacity-70 inline-block" />
+                    <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Negative</span>
+                </div>
+            </div>
         </div>
     );
 };
