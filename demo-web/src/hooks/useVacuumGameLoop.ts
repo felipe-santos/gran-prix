@@ -15,7 +15,7 @@ import {
     VacuumGameState,
     VacuumStats,
     VacuumObstacle,
-} from '../types';
+} from '../types/vacuum';
 
 // ─── Environment Helpers ─────────────────────────────────────────────────────
 

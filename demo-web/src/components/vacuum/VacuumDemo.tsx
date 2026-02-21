@@ -12,8 +12,9 @@ import {
     VACUUM_OUTPUTS,
     VACUUM_MAX_FRAMES,
     VacuumStats,
-} from '../../types';
-import { PerformanceData, PerformanceCharts } from '../PerformanceCharts';
+} from '../../types/vacuum';
+import { PerformanceData } from '../../types/common';
+import { PerformanceCharts } from '../PerformanceCharts';
 import { useVacuumWasm } from '../../hooks/useVacuumWasm';
 import { useVacuumGameLoop } from '../../hooks/useVacuumGameLoop';
 

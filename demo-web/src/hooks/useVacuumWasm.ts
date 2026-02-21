@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as wasm from '../wasm/pkg/gran_prix_wasm';
-import { VACUUM_POPULATION_SIZE, VACUUM_INPUTS, VACUUM_HIDDEN, VACUUM_OUTPUTS } from '../types';
+import { VACUUM_POPULATION_SIZE, VACUUM_INPUTS, VACUUM_HIDDEN, VACUUM_OUTPUTS } from '../types/vacuum';
 import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 /**
