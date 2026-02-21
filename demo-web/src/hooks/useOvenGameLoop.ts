@@ -86,6 +86,7 @@ export function useOvenGameLoop({
         }));
 
         state.frame = 0;
+        state.restingFrames = 0;
         setStats(s => ({ 
             ...s, 
             bestCoreTemp: OVEN_AMBIENT_TEMP,
@@ -238,9 +239,9 @@ export function useOvenGameLoop({
                     // Base points for heating up the core
                     let fit = (agent.coreTemp - OVEN_AMBIENT_TEMP);
 
-                    // Severe penalty if burnt
+                    // Severe penalty if burnt, but preserve gradient
                     if (agent.burnt) {
-                        fit -= 200;
+                        fit = fit * 0.1;
                     }
 
                     // Reward if cooked perfectly without burning

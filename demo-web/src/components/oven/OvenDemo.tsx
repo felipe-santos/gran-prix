@@ -434,7 +434,7 @@ export function OvenDemo() {
                                         ['+(T-25)', 'Pontos base = Temp Core alcançada'],
                                         ['+500', 'Bônus se cozinhar perfeitamente (atingiu Target, sem queimar)'],
                                         ['+Moist', 'Bônus por preservar umidade'],
-                                        ['-200', 'Penalidade fatal caso queime (Surface > BurnTemp)'],
+                                        ['-90%', 'Perde quase todos os pontos se queimar (mantém gradiente!)'],
                                         ['-Time', 'Penalidade por demorar demais'],
                                         ['-Energy', 'Penalidade por desperdício elétrico'],
                                     ].map(([reward, desc]) => (
