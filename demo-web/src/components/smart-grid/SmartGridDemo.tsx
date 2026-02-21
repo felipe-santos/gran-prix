@@ -354,9 +354,8 @@ export function SmartGridDemo() {
     const [isPlaying, setIsPlaying] = useState(false);
     const [stats, setStats] = useState<GridStats>({ generation: 1, best: 0, avgCost: 0, avgFitness: 0 });
     const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
-    const [brainSnapshot, setBrainSnapshot] = useState<any>(null);
 
-    const { population, initGridWasm, computeGrid, evolveGrid, getGridBestSnapshot } = useSmartGridWasm();
+    const { population, initGridWasm, computeGrid, evolveGrid } = useSmartGridWasm();
 
     const evolve = useCallback((
         fitnessScores: number[],
@@ -394,17 +393,6 @@ export function SmartGridDemo() {
         }
     }, [initGridWasm, population, resetGrid]);
 
-    // Update brain snapshot periodically
-    useEffect(() => {
-        if (!isPlaying) return;
-        const interval = setInterval(() => {
-            const state = gameState.current;
-            const fitnessArr = Float32Array.from(state.agents.map(a => a.fitness));
-            const snap = getGridBestSnapshot(fitnessArr);
-            setBrainSnapshot(snap);
-        }, 2000);
-        return () => clearInterval(interval);
-    }, [isPlaying, getGridBestSnapshot, gameState]);
 
     // Render
     const render = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -546,7 +534,10 @@ export function SmartGridDemo() {
                     <PerformanceCharts data={performanceHistory} />
                 </div>
                 <div className="w-full lg:w-80">
-                    <SmartGridNetworkViz snapshot={brainSnapshot} />
+                    <SmartGridNetworkViz 
+                        population={population} 
+                        fitnessScores={Float32Array.from(gameState.current.agents.map(a => a.fitness))} 
+                    />
                 </div>
             </div>
         </div>

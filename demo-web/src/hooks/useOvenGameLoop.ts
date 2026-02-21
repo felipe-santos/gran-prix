@@ -71,6 +71,7 @@ export function useOvenGameLoop({
         state.agents = Array.from({ length: OVEN_POPULATION_SIZE }, (_, i) => ({
             id: i,
             fitness: 0,
+            dead: false,
             airTemp: OVEN_AMBIENT_TEMP,
             surfaceTemp: OVEN_AMBIENT_TEMP,
             coreTemp: OVEN_AMBIENT_TEMP,

@@ -6,18 +6,20 @@ import { NetworkViz } from '../shared/NetworkViz';
 interface DroneNetworkVizProps {
     population: wasm.Population | null;
     fitnessScores: Float32Array;
+    hidden?: number[];
 }
 
 export const DroneNetworkViz: React.FC<DroneNetworkVizProps> = ({
     population,
     fitnessScores,
+    hidden = DRONE_HIDDEN,
 }) => {
     return (
         <NetworkViz
             population={population}
             fitnessScores={fitnessScores}
             inputs={DRONE_INPUTS}
-            hidden={DRONE_HIDDEN}
+            hidden={hidden}
             outputs={DRONE_OUTPUTS}
             height={200}
             width={280}

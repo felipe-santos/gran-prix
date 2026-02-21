@@ -11,6 +11,8 @@ interface PredatorPreyNetworkVizProps {
     preyPopulation: wasm.Population | null;
     predatorFitness: Float32Array;
     preyFitness: Float32Array;
+    predatorHidden?: number[];
+    preyHidden?: number[];
 }
 
 export const PredatorPreyNetworkViz: React.FC<PredatorPreyNetworkVizProps> = ({
@@ -18,6 +20,8 @@ export const PredatorPreyNetworkViz: React.FC<PredatorPreyNetworkVizProps> = ({
     preyPopulation,
     predatorFitness,
     preyFitness,
+    predatorHidden = PREDATOR_HIDDEN,
+    preyHidden = PREY_HIDDEN,
 }) => {
     return (
         <div className="grid grid-cols-2 gap-4">
@@ -25,7 +29,7 @@ export const PredatorPreyNetworkViz: React.FC<PredatorPreyNetworkVizProps> = ({
                 population={predatorPopulation}
                 fitnessScores={predatorFitness}
                 inputs={PREDATOR_INPUTS}
-                hidden={PREDATOR_HIDDEN}
+                hidden={predatorHidden}
                 outputs={PREDATOR_OUTPUTS}
                 height={200}
                 width={200}
@@ -34,7 +38,7 @@ export const PredatorPreyNetworkViz: React.FC<PredatorPreyNetworkVizProps> = ({
                 population={preyPopulation}
                 fitnessScores={preyFitness}
                 inputs={PREY_INPUTS}
-                hidden={PREY_HIDDEN}
+                hidden={preyHidden}
                 outputs={PREY_OUTPUTS}
                 height={200}
                 width={200}

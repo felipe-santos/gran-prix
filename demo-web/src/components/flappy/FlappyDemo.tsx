@@ -193,9 +193,6 @@ export const FlappyDemo: React.FC = () => {
                         <FlappyNetworkViz
                             population={population}
                             fitnessScores={fitnessRef.current}
-                            inputSize={5}
-                            hiddenSize={8}
-                            outputSize={1}
                         />
 
                         {/* Input legend */}

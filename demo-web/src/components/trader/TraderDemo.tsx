@@ -285,9 +285,8 @@ export function TraderDemo() {
         generation: 1, bestROI: 1, avgROI: 1, bestDrawdown: 0, alive: TRADER_POPULATION_SIZE,
     });
     const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
-    const [brainSnapshot, setBrainSnapshot] = useState<any>(null);
 
-    const { population, initTraderWasm, computeTrader, evolveTrader, getTraderBestSnapshot } = useTraderWasm();
+    const { population, initTraderWasm, computeTrader, evolveTrader } = useTraderWasm();
 
     const evolve = useCallback((
         fitnessScores: number[],
@@ -325,17 +324,6 @@ export function TraderDemo() {
         }
     }, [initTraderWasm, population, resetTrader]);
 
-    // Update brain snapshot periodically
-    useEffect(() => {
-        if (!isPlaying) return;
-        const interval = setInterval(() => {
-            const state = gameState.current;
-            const fitnessArr = Float32Array.from(state.agents.map(a => a.fitness));
-            const snap = getTraderBestSnapshot(fitnessArr);
-            setBrainSnapshot(snap);
-        }, 2000);
-        return () => clearInterval(interval);
-    }, [isPlaying, getTraderBestSnapshot, gameState]);
 
     // Render
     const render = useCallback((ctx: CanvasRenderingContext2D) => {
@@ -413,7 +401,10 @@ export function TraderDemo() {
                     <PerformanceCharts data={performanceHistory} />
                 </div>
                 <div className="w-full lg:w-80">
-                    <TraderNetworkViz snapshot={brainSnapshot} />
+                    <TraderNetworkViz 
+                        population={population} 
+                        fitnessScores={Float32Array.from(gameState.current.agents.map(a => a.fitness))} 
+                    />
                 </div>
             </div>
         </div>

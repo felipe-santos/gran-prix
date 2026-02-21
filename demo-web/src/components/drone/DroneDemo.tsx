@@ -169,9 +169,6 @@ export const DroneDemo: React.FC = () => {
                         <DroneNetworkViz
                             population={population}
                             fitnessScores={fitnessRef.current}
-                            inputSize={4}
-                            hiddenSize={8}
-                            outputSize={2}
                         />
                         <div className="mt-5 space-y-1.5 border-t border-border pt-4">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">

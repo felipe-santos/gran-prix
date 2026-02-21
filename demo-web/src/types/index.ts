@@ -38,6 +38,7 @@ export type {
     GameState,
 } from './evolution';
 export {
+    GAME_WIDTH,
     GAME_HEIGHT,
     PLAYER_SIZE,
     POPULATION_SIZE,
