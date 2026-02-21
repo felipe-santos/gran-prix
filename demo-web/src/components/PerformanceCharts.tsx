@@ -41,7 +41,7 @@ export const PerformanceCharts: React.FC<PerformanceChartsProps> = ({ data }) =>
         </div>
       </div>
       
-      <ResponsiveContainer width="100%" height="80%">
+      <ResponsiveContainer width="100%" height={200}>
         <LineChart data={data} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} opacity={0.2} />
           <XAxis 

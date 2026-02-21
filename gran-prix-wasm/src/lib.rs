@@ -13,9 +13,9 @@ extern "C" {
     fn log(s: &str);
 }
 
-macro_rules! console_log {
-    ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
-}
+// macro_rules! console_log {
+//     ($($t:tt)*) => (log(&format_args!($($t)*).to_string()))
+// }
 
 #[wasm_bindgen]
 pub fn init_panic_hook() {
@@ -61,7 +61,7 @@ impl NeuralBrain {
     #[wasm_bindgen(constructor)]
     pub fn new(seed_offset: usize, num_inputs: usize, hidden_size: usize, num_outputs: usize) -> Result<NeuralBrain, JsValue> {
         // init_panic_hook(); 
-        // console_log!("PRIX: Initializing NeuralBrain...");
+        // // console_log!("PRIX: Initializing NeuralBrain...");
         let backend = Box::new(CPUBackend);
         let mut graph = Graph::new(backend);
         let mut gb = GraphBuilder::new(&mut graph);
@@ -92,7 +92,7 @@ impl NeuralBrain {
         let output = gb.add(output, b2);
         let final_output = gb.sigmoid(output); 
 
-        // console_log!("PRIX V4-STABLE: Graph built. Input: {}, Output: {}", input_id.0, final_output.0);
+        // // console_log!("PRIX V4-STABLE: Graph built. Input: {}, Output: {}", input_id.0, final_output.0);
 
         Ok(NeuralBrain {
             graph: RefCell::new(graph),
@@ -107,7 +107,7 @@ impl NeuralBrain {
 
     pub fn compute(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
         if self.magic != BRAIN_MAGIC {
-            console_log!("PRIX CRITICAL: Brain corrupted BEFORE compute! Magic: 0x{:08X}", self.magic);
+            // console_log!("PRIX CRITICAL: Brain corrupted BEFORE compute! Magic: 0x{:08X}", self.magic);
             return Err(JsValue::from_str("Corrupted before compute"));
         }
 
@@ -123,7 +123,7 @@ impl NeuralBrain {
         let result = self.compute_internal(inputs);
 
         if self.magic != BRAIN_MAGIC {
-            console_log!("PRIX CRITICAL: Brain corrupted AFTER compute! Magic: 0x{:08X}", self.magic);
+            // console_log!("PRIX CRITICAL: Brain corrupted AFTER compute! Magic: 0x{:08X}", self.magic);
         }
 
         result
@@ -173,20 +173,20 @@ impl NeuralBrain {
         // RESTORED LOOP WITH LOGGING
         for node_id in order {
             if self.magic != BRAIN_MAGIC {
-                console_log!("PRIX CRITICAL: Corruption detected BEFORE node {}", node_id.0);
+                // console_log!("PRIX CRITICAL: Corruption detected BEFORE node {}", node_id.0);
                 return Err(JsValue::from_str("Heap corruption detected mid-execution"));
             }
             
-            // console_log!("PRIX: Executing Node {}", node_id.0);
+            // // console_log!("PRIX: Executing Node {}", node_id.0);
             
             graph.execute_single_node(node_id)
                 .map_err(|e| {
-                    console_log!("PRIX: Node {} error: {}", node_id.0, e);
+                    // console_log!("PRIX: Node {} error: {}", node_id.0, e);
                     JsValue::from_str(&format!("Node {} execution error: {}", node_id.0, e))
                 })?;
         }
 
-        // console_log!("PRIX: Graph execution complete.");
+        // // console_log!("PRIX: Graph execution complete.");
 
         let values = graph.values();
         let result_tensor = values.get(self.output_node)
@@ -414,7 +414,11 @@ pub struct Population {
 impl Population {
     #[wasm_bindgen(constructor)]
     pub fn new(size: usize, num_inputs: usize, hidden_size: usize, num_outputs: usize) -> Result<Population, JsValue> {
-        console_log!("PRIX: Initializing Population of size {}", size);
+        
+        if size == 0 {
+            return Err(JsValue::from_str("Population size cannot be 0"));
+        }
+
         let mut brains = Vec::with_capacity(size);
         for i in 0..size {
             // Create brain with varied weights based on index
@@ -431,7 +435,6 @@ impl Population {
             hidden_size,
             num_outputs,
         };
-        console_log!("PRIX: Population created at {:p}", &pop);
         Ok(pop)
     }
 
@@ -456,16 +459,14 @@ impl Population {
     }
 
     pub fn evolve(&mut self, fitness_scores: &[f32], mutation_rate: f32, mutation_scale: f32, strategy: MutationStrategy) -> Result<(), JsValue> {
-        if fitness_scores.len() != self.brains.len() {
-             return Err(JsValue::from_str("Fitness array length mismatch"));
+        let prev_len = self.brains.len();
+        if fitness_scores.len() != prev_len {
+             return Err(JsValue::from_str(&format!("Fitness array length mismatch. Expected {}, got {}", prev_len, fitness_scores.len())));
         }
 
-        let strat_name = match strategy {
-            MutationStrategy::Additive => "ADDITIVE",
-            MutationStrategy::Multiplicative => "MULTIPLICATIVE",
-            MutationStrategy::Reset => "RESET",
-        };
-        console_log!("PRIX: Evolution Strategy: {} | Rate: {} | Scale: {}", strat_name, mutation_rate, mutation_scale);
+        if prev_len == 0 {
+            return Err(JsValue::from_str("Cannot evolve an empty population"));
+        }
 
         // Find best brain
         let mut best_idx = 0;
@@ -478,12 +479,10 @@ impl Population {
             }
         }
 
-        console_log!("PRIX: Best Brain index: {} with score: {:.2}", best_idx, best_score);
-
         let best_brain = &self.brains[best_idx];
         let best_weights = best_brain.export_weights()?;
 
-        let mut new_brains = Vec::with_capacity(self.brains.len());
+        let mut new_brains = Vec::with_capacity(prev_len);
         
         // 1. ELITE: First brain is explicit copy of best
         let elite = NeuralBrain::new(0, self.num_inputs, self.hidden_size, self.num_outputs)?;
@@ -493,7 +492,7 @@ impl Population {
         // 2. OFFSPRING: Rest are mutated copies
         let rng = &mut self.rng;
         
-        for i in 1..self.brains.len() {
+        for i in 1..prev_len {
             let offspring = NeuralBrain::new(i + (self.generation as usize * 1000), self.num_inputs, self.hidden_size, self.num_outputs)?;
             offspring.import_weights(&best_weights)?;
             
@@ -504,9 +503,12 @@ impl Population {
             new_brains.push(offspring);
         }
 
+        if new_brains.is_empty() {
+             return Err(JsValue::from_str("Evolution resulted in 0 brains"));
+        }
+
         self.brains = new_brains;
         self.generation += 1;
-        console_log!("PRIX: Generation {} ready. (Self: {:p})", self.generation, self);
 
         Ok(())
     }

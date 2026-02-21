@@ -6,17 +6,10 @@ import {
     WALKER_HIDDEN,
     WALKER_OUTPUTS,
 } from '../types';
+import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 /**
  * Manages an isolated WASM Population specifically for the Bipedal Walker demo.
- *
- * Kept separate from `useWasmPopulation` (Cars) and `useFlappyWasm` (Flappy) because:
- * - Different network shape: 10 inputs → 12 hidden → 4 outputs
- * - Different fitness semantics (distance-based continuous reward)
- * - Shared instance would corrupt state across demos
- *
- * Mirrors the same ref-based pattern from `useFlappyWasm` to ensure
- * compute callbacks never go stale due to closure captures.
  */
 export function useWalkerWasm() {
     const [population, setPopulation] = useState<wasm.Population | null>(null);
@@ -34,9 +27,8 @@ export function useWalkerWasm() {
         initialized.current = true;
 
         try {
-            console.log('WALKER: Initializing WASM Population...');
-            await wasm.default();
-            wasm.init_panic_hook();
+            console.log('WALKER: Requesting WASM Load...');
+            await ensureWasmLoaded();
 
             const pop = new wasm.Population(
                 WALKER_POPULATION_SIZE,
@@ -52,6 +44,7 @@ export function useWalkerWasm() {
             return pop;
         } catch (e) {
             console.error('WALKER: Failed to initialize WASM:', e);
+            initialized.current = false;
             throw e;
         }
     }, []);

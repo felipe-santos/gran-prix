@@ -6,6 +6,7 @@ import {
     PREY_HIDDEN,
     PREY_OUTPUTS,
 } from '../types';
+import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 /**
  * Manages an isolated WASM Population specifically for the Prey (Rabbits).
@@ -25,9 +26,8 @@ export function usePreyWasm() {
         initialized.current = true;
 
         try {
-            console.log('PREY: Initializing WASM Population...');
-            await wasm.default();
-            wasm.init_panic_hook();
+            console.log('PREY: Requesting WASM Load...');
+            await ensureWasmLoaded();
 
             const pop = new wasm.Population(
                 PREY_POPULATION_SIZE,
@@ -42,6 +42,7 @@ export function usePreyWasm() {
             return pop;
         } catch (e) {
             console.error('PREY: Failed to initialize WASM:', e);
+            initialized.current = false;
             throw e;
         }
     }, []);

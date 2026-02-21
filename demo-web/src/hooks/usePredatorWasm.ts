@@ -6,10 +6,10 @@ import {
     PREDATOR_HIDDEN,
     PREDATOR_OUTPUTS,
 } from '../types';
+import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 /**
  * Manages an isolated WASM Population specifically for the Predators (Foxes).
- * Keeps weights and evolution distinct from Prey and other demos.
  */
 export function usePredatorWasm() {
     const [population, setPopulation] = useState<wasm.Population | null>(null);
@@ -26,9 +26,8 @@ export function usePredatorWasm() {
         initialized.current = true;
 
         try {
-            console.log('PREDATOR: Initializing WASM Population...');
-            await wasm.default();
-            wasm.init_panic_hook();
+            console.log('PREDATOR: Requesting WASM Load...');
+            await ensureWasmLoaded();
 
             const pop = new wasm.Population(
                 PREDATOR_POPULATION_SIZE,
@@ -43,6 +42,7 @@ export function usePredatorWasm() {
             return pop;
         } catch (e) {
             console.error('PREDATOR: Failed to initialize WASM:', e);
+            initialized.current = false;
             throw e;
         }
     }, []);

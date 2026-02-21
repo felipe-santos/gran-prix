@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as wasm from '../wasm/pkg/gran_prix_wasm';
 import { POPULATION_SIZE } from '../types';
+import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 export function useWasmPopulation() {
     const [population, setPopulation] = useState<wasm.Population | null>(null);
@@ -17,9 +18,8 @@ export function useWasmPopulation() {
         initialized.current = true;
 
         try {
-            console.log("PRIX: Initializing WASM...");
-            await wasm.default();
-            wasm.init_panic_hook();
+            console.log("PRIX: Requesting Global WASM Load (Main App)...");
+            await ensureWasmLoaded();
             
             const pop = new wasm.Population(POPULATION_SIZE, 5, 8, 1);
             setPopulation(pop);
@@ -27,6 +27,7 @@ export function useWasmPopulation() {
             return pop;
         } catch (e) {
             console.error("Failed to load WASM:", e);
+            initialized.current = false;
             throw e;
         }
     }, []);

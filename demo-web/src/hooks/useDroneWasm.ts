@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as wasm from '../wasm/pkg/gran_prix_wasm';
 import { DRONE_POPULATION_SIZE, DRONE_INPUTS, DRONE_HIDDEN, DRONE_OUTPUTS } from '../types';
+import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 /**
  * Manages an isolated WASM Population specifically for the Drone Stabilizer demo.
@@ -21,40 +22,31 @@ export function useDroneWasm() {
         initialized.current = true;
 
         try {
-            console.log('DRONE: Initializing WASM Population...');
-            await wasm.default();
-            wasm.init_panic_hook();
-
             const size = DRONE_POPULATION_SIZE || 200;
             const ins = DRONE_INPUTS || 4;
             const hids = DRONE_HIDDEN || 8;
             const outs = DRONE_OUTPUTS || 2;
 
-            if (!DRONE_POPULATION_SIZE) {
-                console.warn('DRONE: Constants derived from types.ts are undefined. Using literal fallbacks to avoid WASM 0-size initialization.');
-            }
+            await ensureWasmLoaded();
 
-            const pop = new wasm.Population(
-                size, 
-                ins, 
-                hids, 
-                outs
-            );
+            const pop = new wasm.Population(size, ins, hids, outs);
             setPopulation(pop);
-            console.log(`DRONE: Population Online — size=${pop.count()}, inputs=${ins}, outputs=${outs}`);
+            console.log(`DRONE: Population Ready (size=${pop.count()})`);
             return pop;
         } catch (e) {
-            console.error('DRONE: Failed to initialize WASM Error Details:', String(e), e);
+            console.error('DRONE: Initialization failed:', e);
+            initialized.current = false;
             throw e;
         }
     }, []);
 
     const computeDrone = useCallback((inputs: Float32Array): Float32Array | null => {
-        if (!popRef.current) return null;
+        const pop = popRef.current;
+        if (!pop) return null;
         try {
-            return popRef.current.compute_all(inputs);
+            return pop.compute_all(inputs);
         } catch (e) {
-            console.error('DRONE: compute_all error:', e);
+            console.error(`DRONE: compute_all error:`, e);
             return null;
         }
     }, []);

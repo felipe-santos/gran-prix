@@ -1,17 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as wasm from '../wasm/pkg/gran_prix_wasm';
 import { FLAPPY_POPULATION_SIZE, FLAPPY_INPUTS } from '../types';
+import { ensureWasmLoaded } from '../lib/wasmLoader';
 
 /**
  * Manages an isolated WASM Population specifically for the Flappy Bird demo.
- *
- * Kept separate from `useWasmPopulation` (used by Cars) because:
- * - Different network input size: 4 (Flappy) vs 5 (Cars)
- * - Different fitness semantics
- * - Shared instance would corrupt state across demos
- *
- * Mirror's the same ref-based pattern from `useWasmPopulation` to ensure
- * compute callbacks never go stale due to closure captures.
  */
 export function useFlappyWasm() {
     const [population, setPopulation] = useState<wasm.Population | null>(null);
@@ -29,11 +22,8 @@ export function useFlappyWasm() {
         initialized.current = true;
 
         try {
-            console.log('FLAPPY: Initializing WASM Population...');
-            // The wasm module is already initialized by the Cars demo if it ran first,
-            // but calling default() is idempotent — safe to call again.
-            await wasm.default();
-            wasm.init_panic_hook();
+            console.log('FLAPPY: Requesting WASM Load...');
+            await ensureWasmLoaded();
 
             const pop = new wasm.Population(FLAPPY_POPULATION_SIZE, FLAPPY_INPUTS, 8, 1);
             setPopulation(pop);
@@ -41,6 +31,7 @@ export function useFlappyWasm() {
             return pop;
         } catch (e) {
             console.error('FLAPPY: Failed to initialize WASM:', e);
+            initialized.current = false;
             throw e;
         }
     }, []);
