@@ -22,7 +22,7 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { BrainInspector } from './components/BrainInspector'
 import { LearningLab } from './components/LearningLab'
 import { PerformanceCharts, PerformanceData } from './components/PerformanceCharts'
-import { ClassifierDemo } from './components/ClassifierDemo'
+import { ClassifierDemo } from './components/classifier';
 import GoogleTagManager from './components/GoogleTagManager';
 import { FlappyDemo } from './components/flappy';
 import { WalkerDemo } from './components/walker';
