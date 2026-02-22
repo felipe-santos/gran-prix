@@ -22,6 +22,20 @@ pub enum GPError {
     NotImplemented(String),
     #[error("Unknown error: {0}")]
     Unknown(String),
+    #[error("Corrupted Memory: expected magic {expected:08X}, found {found:08X}")]
+    CorruptedMemory { expected: u32, found: u32 },
+    #[error("Re-entrant call detected: component is already in compute mode")]
+    ReentrancyError,
+    #[error("Weights array length mismatch: expected {expected}, found {found}")]
+    WeightLengthMismatch { expected: usize, found: usize },
+    #[error("Invalid population size: {0}")]
+    PopulationSizeError(usize),
+    #[error("Array length mismatch: expected {expected}, found {found}")]
+    ArrayLengthMismatch { expected: usize, found: usize },
+    #[error("Empty population: cannot perform operation")]
+    EmptyPopulation,
+    #[error("Evolution failure: {0}")]
+    EvolutionError(String),
 }
 
 pub type GPResult<T> = Result<T, GPError>;

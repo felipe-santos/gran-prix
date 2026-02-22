@@ -20,6 +20,8 @@ use wasm_bindgen::prelude::*;
 
 use crate::brain::NeuralBrain;
 use crate::mutation::{MutationStrategy, XorShift};
+use crate::errors::IntoJsResult;
+use gran_prix::GPError;
 use std::cell::RefCell;
 
 /// Population of neural network agents
@@ -86,14 +88,24 @@ impl Population {
         hidden_layers: Vec<usize>,
         num_outputs: usize,
     ) -> Result<Population, JsValue> {
+        Self::new_typed(size, num_inputs, hidden_layers, num_outputs).into_js()
+    }
+
+    fn new_typed(
+        size: usize,
+        num_inputs: usize,
+        hidden_layers: Vec<usize>,
+        num_outputs: usize,
+    ) -> Result<Population, GPError> {
         if size == 0 {
-            return Err(JsValue::from_str("Population size cannot be 0"));
+            return Err(GPError::PopulationSizeError(0));
         }
 
         let mut brains = Vec::with_capacity(size);
         for i in 0..size {
             // Create brain with varied weights based on index
-            let brain = NeuralBrain::new(i, num_inputs, hidden_layers.clone(), num_outputs)?;
+            let brain = NeuralBrain::new(i, num_inputs, hidden_layers.clone(), num_outputs)
+                .map_err(|e| GPError::BackendError(format!("Brain creation failed at index {}: {:?}", i, e)))?;
             brains.push(brain);
         }
 
@@ -135,29 +147,32 @@ impl Population {
     ///
     /// This is called every frame for all agents. Optimized for speed.
     pub fn compute_all(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
+        self.compute_all_typed(inputs).into_js()
+    }
+
+    fn compute_all_typed(&self, inputs: &[f32]) -> Result<Vec<f32>, GPError> {
         let expected_len = self.brains.len() * self.num_inputs;
         if inputs.len() != expected_len {
-            return Err(JsValue::from_str(&format!(
-                "Input array length mismatch. Expected {}, got {}",
-                expected_len,
-                inputs.len()
-            )));
+            return Err(GPError::ArrayLengthMismatch { 
+                expected: expected_len, 
+                found: inputs.len() 
+            });
         }
 
         let mut outputs = self.output_buffer.borrow_mut();
         
         // Ensure buffer size is correct (in case of dynamic resizing in future)
-        if outputs.len() != self.brains.len() * self.num_outputs {
-            *outputs = vec![0.0; self.brains.len() * self.num_outputs];
+        let total_outputs = self.brains.len() * self.num_outputs;
+        if outputs.len() != total_outputs {
+            *outputs = vec![0.0; total_outputs];
         }
 
         for (i, brain) in self.brains.iter().enumerate() {
             let in_offset = i * self.num_inputs;
             let out_offset = i * self.num_outputs;
             
-            // Note: compute() still returns a Vec<f32> currently. 
-            // In a future pass, we could implement compute_into to avoid this clone too.
-            let vals = brain.compute(&inputs[in_offset..in_offset + self.num_inputs])?;
+            let vals = brain.compute(&inputs[in_offset..in_offset + self.num_inputs])
+                .map_err(|e| GPError::BackendError(format!("Brain compute failed at index {}: {:?}", i, e)))?;
             
             // Copy results into shared buffer
             for (j, &val) in vals.iter().enumerate() {
@@ -198,17 +213,26 @@ impl Population {
         mutation_scale: f32,
         strategy: MutationStrategy,
     ) -> Result<(), JsValue> {
+        self.evolve_typed(fitness_scores, mutation_rate, mutation_scale, strategy).into_js()
+    }
+
+    fn evolve_typed(
+        &mut self,
+        fitness_scores: &[f32],
+        mutation_rate: f32,
+        mutation_scale: f32,
+        strategy: MutationStrategy,
+    ) -> Result<(), GPError> {
         let prev_len = self.brains.len();
         if fitness_scores.len() != prev_len {
-            return Err(JsValue::from_str(&format!(
-                "Fitness array length mismatch. Expected {}, got {}",
-                prev_len,
-                fitness_scores.len()
-            )));
+            return Err(GPError::ArrayLengthMismatch { 
+                expected: prev_len, 
+                found: fitness_scores.len() 
+            });
         }
 
         if prev_len == 0 {
-            return Err(JsValue::from_str("Cannot evolve an empty population"));
+            return Err(GPError::EmptyPopulation);
         }
 
         // Find best brain by fitness
@@ -223,13 +247,16 @@ impl Population {
         }
 
         let best_brain = &self.brains[best_idx];
-        let best_weights = best_brain.export_weights()?;
+        let best_weights = best_brain.export_weights()
+            .map_err(|e| GPError::BackendError(format!("Weight export failed: {:?}", e)))?;
 
         let mut new_brains = Vec::with_capacity(prev_len);
 
         // 1. ELITE: First brain is exact copy of best
-        let elite = NeuralBrain::new(0, self.num_inputs, self.hidden_layers.clone(), self.num_outputs)?;
-        elite.import_weights(&best_weights)?;
+        let elite = NeuralBrain::new(0, self.num_inputs, self.hidden_layers.clone(), self.num_outputs)
+            .map_err(|e| GPError::BackendError(format!("Elite creation failed: {:?}", e)))?;
+        elite.import_weights(&best_weights)
+             .map_err(|e| GPError::BackendError(format!("Elite weight import failed: {:?}", e)))?;
         new_brains.push(elite);
 
         // 2. OFFSPRING: Rest are mutated copies
@@ -238,8 +265,10 @@ impl Population {
         for i in 1..prev_len {
             // Unique seed per offspring to ensure weight diversity
             let seed = i + (self.generation as usize * 1000);
-            let offspring = NeuralBrain::new(seed, self.num_inputs, self.hidden_layers.clone(), self.num_outputs)?;
-            offspring.import_weights(&best_weights)?;
+            let offspring = NeuralBrain::new(seed, self.num_inputs, self.hidden_layers.clone(), self.num_outputs)
+                .map_err(|e| GPError::BackendError(format!("Offspring {} creation failed: {:?}", e), i))?;
+            offspring.import_weights(&best_weights)
+                 .map_err(|e| GPError::BackendError(format!("Offspring {} weight import failed: {:?}", e), i))?;
 
             // Propagate global kernel to offspring
             offspring.set_kernel(
@@ -249,13 +278,14 @@ impl Population {
             );
 
             // Mutate offspring
-            offspring.mutate(rng, mutation_rate, mutation_scale, strategy)?;
+            offspring.mutate(rng, mutation_rate, mutation_scale, strategy)
+                 .map_err(|e| GPError::EvolutionError(format!("Mutation failed at index {}: {:?}", i, e)))?;
             new_brains.push(offspring);
         }
 
         // Safety check: Ensure we didn't lose the population
         if new_brains.is_empty() {
-            return Err(JsValue::from_str("Evolution resulted in 0 brains"));
+            return Err(GPError::EvolutionError("Evolution resulted in 0 brains".to_string()));
         }
 
         self.brains = new_brains;

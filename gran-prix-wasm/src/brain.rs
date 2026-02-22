@@ -33,6 +33,7 @@ use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
 
 use crate::mutation::{MutationStrategy, XorShift};
+use crate::errors::IntoJsResult;
 
 /// Magic number for corruption detection
 ///
@@ -196,16 +197,24 @@ impl NeuralBrain {
     /// - Single borrow of `RefCell` per phase
     /// - Minimal error handling overhead
     pub fn compute(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
+        self.compute_typed(inputs).into_js()
+    }
+
+    /// Internal compute logic returning structured errors
+    fn compute_typed(&self, inputs: &[f32]) -> Result<Vec<f32>, GPError> {
         // Corruption check BEFORE any work
         if self.magic != BRAIN_MAGIC {
-            return Err(JsValue::from_str("Corrupted before compute"));
+            return Err(GPError::CorruptedMemory { 
+                expected: BRAIN_MAGIC, 
+                found: self.magic 
+            });
         }
 
         // Re-entrancy protection (RAII guard)
         let _guard = {
             let mut computing = self.computing.borrow_mut();
             if *computing {
-                return Err(JsValue::from_str("Re-entrant call detected"));
+                return Err(GPError::ReentrancyError);
             }
             *computing = true;
             ComputingGuard(&self.computing)
@@ -215,8 +224,10 @@ impl NeuralBrain {
 
         // Corruption check AFTER computation
         if self.magic != BRAIN_MAGIC {
-            // Brain corrupted during execution (serious bug!)
-            return Err(JsValue::from_str("Corrupted after compute"));
+            return Err(GPError::CorruptedMemory { 
+                expected: BRAIN_MAGIC, 
+                found: self.magic 
+            });
         }
 
         result
@@ -234,7 +245,7 @@ impl NeuralBrain {
     /// # Panics
     ///
     /// Should not panic in normal operation. Uses `?` for error propagation.
-    fn compute_internal(&self, inputs: &[f32]) -> Result<Vec<f32>, JsValue> {
+    fn compute_internal(&self, inputs: &[f32]) -> Result<Vec<f32>, GPError> {
         let num_inputs = inputs.len();
         let mut input_buffer = self.input_tensor.borrow_mut();
 
@@ -243,7 +254,7 @@ impl NeuralBrain {
         {
             let mut view = input_buffer
                 .try_view_mut()
-                .map_err(|e| JsValue::from_str(&format!("Buffer view error: {}", e)))?;
+                .map_err(|e| GPError::TensorError(e.to_string()))?;
 
             let kernel = self.custom_kernel.borrow();
 
@@ -262,31 +273,31 @@ impl NeuralBrain {
         }
 
         let mut graph = self.graph.borrow_mut();
-        graph.sync_params().map_err(|e| JsValue::from_str(&format!("Sync error: {}", e)))?;
+        graph.sync_params().map_err(|e| GPError::BackendError(e.to_string()))?;
 
         // ── Inject input into graph ───────────────────────────────────────────
         {
             let nodes = graph.nodes_mut();
             if let Some(gran_prix::graph::Node::Input(ref mut t)) = nodes.get_mut(self.input_node) {
                 t.copy_from(&input_buffer)
-                    .map_err(|e| JsValue::from_str(&format!("Copy error: {}", e)))?;
+                    .map_err(|e| GPError::TensorError(e.to_string()))?;
             }
         }
 
         let output_id = gran_prix::NodeId(self.output_node);
         let order = graph
             .topological_sort(output_id)
-            .map_err(|e| JsValue::from_str(&format!("Sort error: {}", e)))?;
+            .map_err(|e| GPError::BackendError(e.to_string()))?;
 
         // ── Execute Graph ──────────────────────────────────────────────────────
         for node_id in order {
             if self.magic != BRAIN_MAGIC {
-                return Err(JsValue::from_str("Heap corruption detected mid-execution"));
+                return Err(GPError::CorruptedMemory { expected: BRAIN_MAGIC, found: self.magic });
             }
 
             graph
                 .execute_single_node(node_id)
-                .map_err(|e| JsValue::from_str(&format!("Node {} execution error: {}", node_id.0, e)))?;
+                .map_err(|e| GPError::BackendError(format!("Node {} execution error: {}", node_id.0, e)))?;
         }
 
         // ── Extract Output Efficiently ─────────────────────────────────────────
@@ -294,15 +305,15 @@ impl NeuralBrain {
         let result_tensor = values
             .get(self.output_node)
             .and_then(|t: &Option<Tensor>| t.as_ref())
-            .ok_or_else(|| JsValue::from_str("Output not found"))?;
+            .ok_or_else(|| GPError::InferenceError("Output not found".to_string()))?;
 
         let mut out_buffer = self.output_tensor.borrow_mut();
         out_buffer.copy_from(result_tensor)
-            .map_err(|e| JsValue::from_str(&format!("Extract error: {}", e)))?;
+            .map_err(|e| GPError::TensorError(e.to_string()))?;
 
         let cpu_view = out_buffer
             .as_cpu()
-            .map_err(|e| JsValue::from_str(&format!("Failed to get CPU view: {}", e)))?;
+            .map_err(|e| GPError::TensorError(format!("Failed to get CPU view: {}", e)))?;
 
         Ok(cpu_view.iter().cloned().collect())
     }
@@ -345,16 +356,29 @@ impl NeuralBrain {
     ///
     /// Used by evolution to extract parent weights for offspring.
     pub fn export_weights(&self) -> Result<Vec<f32>, JsValue> {
+        self.export_weights_typed().into_js()
+    }
+
+    fn export_weights_typed(&self) -> Result<Vec<f32>, GPError> {
         let graph = self.graph.borrow();
         let nodes = graph.nodes();
 
-        let mut weights = Vec::new();
+        // 1. Pre-calculate total capacity to avoid continuous reallocation during push
+        let mut total_size = 0;
+        for node in nodes.iter() {
+            if let gran_prix::graph::Node::Param(t) = node {
+                total_size += t.len();
+            }
+        }
+
+        // 2. Allocate exact needed space once
+        let mut weights = Vec::with_capacity(total_size);
 
         for node in nodes.iter() {
             if let gran_prix::graph::Node::Param(t) = node {
                 let view = t
                     .as_cpu()
-                    .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                    .map_err(|e| GPError::TensorError(e.to_string()))?;
                 weights.extend(view.iter());
             }
         }
@@ -381,6 +405,10 @@ impl NeuralBrain {
     /// This works correctly when called on a **fresh brain** (newly constructed).
     /// If called on an already-run brain, you must call `reset()` to clear cached values.
     pub fn import_weights(&self, weights: &[f32]) -> Result<(), JsValue> {
+        self.import_weights_typed(weights).into_js()
+    }
+
+    fn import_weights_typed(&self, weights: &[f32]) -> Result<(), GPError> {
         let mut graph = self.graph.borrow_mut();
         let nodes = graph.nodes_mut();
 
@@ -392,7 +420,10 @@ impl NeuralBrain {
                 let count = t.len();
 
                 if w_idx + count > weights.len() {
-                    return Err(JsValue::from_str("Weights array too short"));
+                    return Err(GPError::WeightLengthMismatch { 
+                        expected: w_idx + count, 
+                        found: weights.len() 
+                    });
                 }
 
                 let slice = &weights[w_idx..w_idx + count];
