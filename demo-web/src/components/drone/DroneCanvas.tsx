@@ -13,7 +13,7 @@ interface DroneCanvasProps {
 export const DroneCanvas = forwardRef<HTMLCanvasElement, DroneCanvasProps>(
     ({ width, height }, ref) => {
         return (
-            <div className="relative rounded-2xl overflow-hidden border border-border bg-card/50 shadow-2xl backdrop-blur-sm">
+            <div className="relative rounded-2xl overflow-hidden border border-border bg-card/10 dark:bg-card/50 shadow-2xl backdrop-blur-sm">
                 {/* Hardware accelerated layer */}
                 <canvas
                     ref={ref}

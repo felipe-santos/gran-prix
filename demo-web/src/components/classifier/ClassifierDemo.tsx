@@ -5,7 +5,6 @@ import { ClassifierCanvas } from './ClassifierCanvas';
 import { ClassifierStatsBar } from './ClassifierStatsBar';
 import { ClassifierControls } from './ClassifierControls';
 import { NetworkViz } from '../shared/NetworkViz';
-import { BrainPersistence } from '../shared/BrainPersistence';
 import { GameControls } from '../GameControls';
 import { PerformanceCharts, PerformanceData } from '../PerformanceCharts';
 
@@ -237,14 +236,6 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
                                 outputNames={['CLASS']}
                                 width={280}
                                 height={260}
-                            />
-
-                            <BrainPersistence
-                                weights={trainer?.get_weights() || null}
-                                hiddenLayers={hiddenLayers}
-                                inputDim={2}
-                                title="Brain Persistence"
-                                subtitle="Import/Export weights"
                                 onImport={(newWeights: Float32Array) => {
                                     if (!trainer) return;
                                     trainer.import_weights(newWeights);

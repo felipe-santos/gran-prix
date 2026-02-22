@@ -5,7 +5,6 @@ import * as wasm from '../../wasm/pkg/gran_prix_wasm';
 import { PlaygroundCanvas, DataPoint } from './PlaygroundCanvas';
 import { PlaygroundControls } from './PlaygroundControls';
 import { NetworkViz } from '../shared/NetworkViz';
-import { BrainPersistence } from '../shared/BrainPersistence';
 import { PlaygroundExplanation } from './PlaygroundExplanation';
 import { PRESETS } from './PlaygroundPresets';
 import { generateCCode } from './exportCode';
@@ -289,12 +288,7 @@ export const NeuralPlayground: React.FC = () => {
                         inputs={activeFeatures.length}
                         outputs={1}
                         inputNames={activeFeatures.map(f => f.toUpperCase())}
-                    />
-                    <BrainPersistence
-                        weights={weights}
-                        hiddenLayers={hiddenLayers}
-                        inputDim={activeFeatures.length}
-                        onImport={(newWeights) => {
+                        onImport={(newWeights: Float32Array) => {
                             if (!trainerRef.current) return;
                             trainerRef.current.import_weights(newWeights);
                             setWeights(trainerRef.current.get_weights());

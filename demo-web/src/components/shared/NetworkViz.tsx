@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { Download, Upload, Code } from 'lucide-react';
 
 interface NetworkVizProps {
     population?: any;
@@ -11,6 +12,8 @@ interface NetworkVizProps {
     outputNames?: string[];
     width?: number;
     height?: number;
+    onImport?: (weights: Float32Array) => void;
+    onExportCCode?: () => void;
 }
 
 export const NetworkViz: React.FC<NetworkVizProps> = ({
@@ -24,9 +27,44 @@ export const NetworkViz: React.FC<NetworkVizProps> = ({
     outputNames = [],
     width = 300,
     height = 340,
+    onImport,
+    onExportCCode,
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const rafRef = useRef<number | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const activeWeightsRef = useRef<Float32Array | null>(null);
+
+    const handleExportJSON = () => {
+        if (!activeWeightsRef.current) return;
+        const blob = new Blob([JSON.stringify(Array.from(activeWeightsRef.current))], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `neural_weights_${new Date().getTime()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !onImport) return;
+
+        try {
+            const text = await file.text();
+            const arr = JSON.parse(text);
+            if (!Array.isArray(arr)) throw new Error("Invalid format");
+            onImport(new Float32Array(arr));
+        } catch (err) {
+            console.error("Import failed:", err);
+            alert("Failed to import weights JSON file.");
+        }
+        e.target.value = '';
+    };
 
     useEffect(() => {
         if (!canvasRef.current || (!population && !weights)) return;
@@ -68,6 +106,7 @@ export const NetworkViz: React.FC<NetworkVizProps> = ({
                     activeWeights = null;
                 }
             }
+            activeWeightsRef.current = activeWeights;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -156,26 +195,72 @@ export const NetworkViz: React.FC<NetworkVizProps> = ({
     }, [population, fitnessScores, weights, inputs, hidden, outputs, inputNames, outputNames]);
 
     return (
-        <div className="flex flex-col items-center gap-2">
-            <span className="text-[9px] uppercase font-bold tracking-[0.3em] text-muted-foreground">
-                Network Weights
-            </span>
+        <div className="flex flex-col items-center gap-4">
+            <div className="w-full flex items-center justify-between">
+                <h3 className="text-xs font-black text-foreground uppercase tracking-[0.2em] flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Neural Weights
+                </h3>
+                {activeWeightsRef.current && (
+                    <div className="text-[8px] font-mono text-muted-foreground uppercase opacity-50">
+                        {activeWeightsRef.current.length} Params
+                    </div>
+                )}
+            </div>
+
             <canvas
                 ref={canvasRef}
                 width={width}
                 height={height}
-                className="bg-black/20 rounded-xl border border-white/5 shadow-inner"
+                className="w-full h-auto dark:bg-black/10 bg-gray-100 rounded-xl border-[0.5px] border-border/50"
             />
-            <div className="flex gap-4 mt-1">
+
+            <div className="flex gap-4">
                 <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-0.5 rounded-full bg-emerald-500 opacity-70 inline-block" />
-                    <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Positive</span>
+                    <span className="w-2 h-0.5 rounded-full bg-emerald-500 opacity-70 inline-block" />
+                    <span className="text-[7px] text-muted-foreground uppercase tracking-widest font-bold">Positive</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-0.5 rounded-full bg-rose-500 opacity-70 inline-block" />
-                    <span className="text-[8px] text-muted-foreground uppercase tracking-widest">Negative</span>
+                    <span className="w-2 h-0.5 rounded-full bg-rose-500 opacity-70 inline-block" />
+                    <span className="text-[7px] text-muted-foreground uppercase tracking-widest font-bold">Negative</span>
                 </div>
             </div>
+
+            <div className="w-full grid grid-cols-2 gap-2">
+                <button
+                    onClick={handleExportJSON}
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-muted/40 hover:bg-muted/60 rounded-lg border border-border/50 transition-all group"
+                >
+                    <Download size={12} className="text-blue-400" />
+                    <span className="text-[8px] font-bold uppercase tracking-wider">Export</span>
+                </button>
+
+                <button
+                    onClick={handleImportClick}
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-muted/40 hover:bg-muted/60 rounded-lg border border-border/50 transition-all group"
+                >
+                    <Upload size={12} className="text-amber-400" />
+                    <span className="text-[8px] font-bold uppercase tracking-wider">Import</span>
+                </button>
+
+                {onExportCCode && (
+                    <button
+                        onClick={onExportCCode}
+                        className="col-span-2 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg border border-emerald-500/20 transition-all group"
+                    >
+                        <Code size={12} className="text-emerald-500" />
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-emerald-500">Generate Hardware C Code</span>
+                    </button>
+                )}
+            </div>
+
+            <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".json"
+                className="hidden"
+            />
         </div>
     );
 };
