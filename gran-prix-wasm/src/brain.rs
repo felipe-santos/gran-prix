@@ -28,7 +28,8 @@ use wasm_bindgen::prelude::*;
 use serde::Serialize;
 use ndarray::{Array, IxDyn};
 
-use gran_prix::{Tensor, GPError};
+use gran_prix::{Tensor, GPError, Layer};
+use gran_prix::layers::{Linear, Activation, ActivationType};
 use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
 
@@ -145,22 +146,29 @@ impl NeuralBrain {
         let mut current_size = num_inputs;
         let mut last_node = input_id;
 
-        // Build Hidden Layers
+        // Build Hidden Layers using Composable Layers
         for (i, &hidden_size) in hidden_layers.iter().enumerate() {
-            let w = gb.param(alternating_tensor(current_size, hidden_size, seed_offset + i * 100));
-            let b = gb.param(Tensor::new_zeros(&[1, hidden_size]));
-            let layer = gb.matmul(last_node, w);
-            let layer = gb.add(layer, b);
-            last_node = gb.relu(layer);
+            let mut linear = Linear::new(current_size, hidden_size);
+            linear.weights = alternating_tensor(current_size, hidden_size, seed_offset + i * 100);
+            linear.biases = Tensor::new_zeros(&[1, hidden_size]);
+            
+            let layer_out = linear.forward(last_node, &mut gb);
+            
+            let mut relu = Activation::new(ActivationType::ReLU);
+            last_node = relu.forward(layer_out, &mut gb);
+            
             current_size = hidden_size;
         }
 
-        // Final Output Layer
-        let w_final = gb.param(alternating_tensor(current_size, num_outputs, seed_offset + 1000));
-        let b_final = gb.param(Tensor::new_zeros(&[1, num_outputs]));
-        let output = gb.matmul(last_node, w_final);
-        let output = gb.add(output, b_final);
-        let final_output = gb.sigmoid(output);
+        // Final Output Layer using Composable Layers
+        let mut linear_final = Linear::new(current_size, num_outputs);
+        linear_final.weights = alternating_tensor(current_size, num_outputs, seed_offset + 1000);
+        linear_final.biases = Tensor::new_zeros(&[1, num_outputs]);
+        
+        let out_layer = linear_final.forward(last_node, &mut gb);
+        
+        let mut sigmoid = Activation::new(ActivationType::Sigmoid);
+        let final_output = sigmoid.forward(out_layer, &mut gb);
 
         Ok(NeuralBrain {
             graph: RefCell::new(graph),

@@ -1,4 +1,4 @@
-use gran_prix::graph::Graph;
+use gran_prix::graph::{Graph, Node};
 use gran_prix::graph::dsl::GraphBuilder;
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::loss::{Loss, BCEWithLogits};
