@@ -132,18 +132,17 @@ export const WalkerDemo: React.FC = () => {
         };
     }, [isPlaying, gameLoop, isReady]);
 
-    const state = internalState.current!;
-
-    if (!isReady || !stats || !state) {
+    if (!isReady || !internalState.current) {
         return (
             <div className="w-full h-[500px] flex flex-col items-center justify-center gap-4 bg-card/30 rounded-3xl border border-border/50 backdrop-blur-sm">
                 <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
-                <span className="text-[10px] uppercase font-black tracking-[0.3em] text-emerald-500 animate-pulse">
-                    Initializing Physics Engine…
+                <span className="text-[10px] uppercase font-black tracking-[0.3em] text-emerald-500">
+                    Walking WASM Loader…
                 </span>
             </div>
         );
     }
+
 
     return (
         <div className="w-full flex flex-col items-center">

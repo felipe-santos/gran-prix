@@ -2,7 +2,7 @@ import React from 'react';
 import { GridStats } from '../../types';
 
 interface SmartGridStatsBarProps {
-    stats: GridStats;
+    stats: GridStats | null;
     solarOutput: number;
     batterySoC: number;
     gridPrice: number;
@@ -16,6 +16,7 @@ export const SmartGridStatsBar: React.FC<SmartGridStatsBarProps> = ({
     gridPrice,
     hour,
 }) => {
+    if (!stats) return null;
     const hourStr = `${Math.floor(hour).toString().padStart(2, '0')}:${(Math.floor((hour % 1) * 60)).toString().padStart(2, '0')}`;
     const isNight = hour < 6 || hour > 20;
 

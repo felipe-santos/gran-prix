@@ -2,7 +2,7 @@ import React from 'react';
 import { WalkerStats, WALKER_POPULATION_SIZE } from '../../types';
 
 interface WalkerStatsBarProps {
-    stats: WalkerStats;
+    stats: WalkerStats | null;
 }
 
 /** Stat cell — pure presentational, no logic. */
@@ -30,6 +30,7 @@ const Divider = () => <div className="h-8 w-px bg-foreground/[0.05]" />;
  * Mirrors FlappyStatsBar structure — same Feng-Shui rhythm of spacing & alignment.
  */
 export const WalkerStatsBar: React.FC<WalkerStatsBarProps> = ({ stats }) => {
+    if (!stats) return null;
     return (
         <div className="w-full max-w-5xl mb-6 px-10 py-5 bg-foreground/[0.01] rounded-xl border border-foreground/[0.05] flex items-center justify-between">
             <StatItem

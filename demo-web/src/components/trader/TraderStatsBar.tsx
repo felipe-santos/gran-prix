@@ -1,7 +1,7 @@
 import { TraderStats } from '../../types';
 
 interface TraderStatsBarProps {
-    stats: TraderStats;
+    stats: TraderStats | null;
     currentPrice: number;
     rsi: number;
     tick: number;
@@ -13,6 +13,7 @@ export const TraderStatsBar = ({
     rsi,
     tick,
 }: TraderStatsBarProps) => {
+    if (!stats) return null;
     const roiColor = stats.bestROI >= 1 ? 'text-emerald-500' : 'text-red-400';
     const rsiColor = rsi > 70 ? 'text-red-400' : rsi < 30 ? 'text-emerald-500' : 'text-foreground';
 

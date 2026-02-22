@@ -2,7 +2,7 @@ import React from 'react';
 import { DroneStats, DRONE_POPULATION_SIZE } from '../../types';
 
 interface DroneStatsBarProps {
-    stats: DroneStats;
+    stats: DroneStats | null;
 }
 
 const StatItem = ({ label, value, color }: { label: string; value: string | number; color: string }) => (
@@ -17,6 +17,7 @@ const StatItem = ({ label, value, color }: { label: string; value: string | numb
 const Divider = () => <div className="h-8 w-px bg-foreground/[0.05]" />;
 
 export const DroneStatsBar: React.FC<DroneStatsBarProps> = ({ stats }) => {
+    if (!stats) return null;
     return (
         <div className="w-full max-w-5xl mb-6 px-10 py-5 bg-foreground/[0.01] rounded-xl border border-foreground/[0.05] flex items-center justify-between">
             <StatItem

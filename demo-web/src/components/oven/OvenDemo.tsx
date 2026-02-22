@@ -31,7 +31,8 @@ export function OvenDemo() {
         performanceHistory,
         isPlaying, 
         setIsPlaying, 
-        reset 
+        reset,
+        isReady,
     } = useSimulation<OvenAgent, OvenSimulationState, OvenStats>(ovenSimulationConfig, {
         currentFoodType: OvenFoodType.Cake,
         restingFrames: 0
@@ -64,12 +65,12 @@ export function OvenDemo() {
     }, [isPlaying, engine, render]);
 
     useEffect(() => {
-        if (isPlaying && !isLoopActive.current) {
+        if (isPlaying && !isLoopActive.current && isReady) {
             isLoopActive.current = true;
             rafId.current = requestAnimationFrame(gameLoop);
         }
         return () => { if (rafId.current) cancelAnimationFrame(rafId.current); isLoopActive.current = false; };
-    }, [isPlaying, gameLoop]);
+    }, [isPlaying, gameLoop, isReady]);
 
     const handleReset = useCallback(() => {
         setIsPlaying(false);
@@ -77,7 +78,7 @@ export function OvenDemo() {
     }, [reset, setIsPlaying]);
 
     // ── Loading guard ─────────────────────────────────────────────────────────
-    if (!engine) {
+    if (!isReady || !stats || !internalState.current) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
@@ -166,7 +167,7 @@ export function OvenDemo() {
                 {/* Centre — canvas + stats + controls + chart */}
                 <div className="flex flex-col items-center flex-shrink-0">
                     <OvenStatsBar
-                        stats={stats!}
+                        stats={stats}
                         frame={state.frame}
                         currentFood={state.currentFoodType}
                         bestAir={bestAgent?.airTemp || OVEN_AMBIENT_TEMP}

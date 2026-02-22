@@ -2,7 +2,7 @@ import React from 'react';
 import { PredatorPreyStats, PREDATOR_POPULATION_SIZE, PREY_POPULATION_SIZE } from '../../types';
 
 interface PredatorPreyStatsBarProps {
-    stats: PredatorPreyStats;
+    stats: PredatorPreyStats | null;
 }
 
 const StatItem = ({
@@ -25,6 +25,7 @@ const StatItem = ({
 const Divider = () => <div className="h-8 w-px bg-foreground/[0.05]" />;
 
 export const PredatorPreyStatsBar: React.FC<PredatorPreyStatsBarProps> = ({ stats }) => {
+    if (!stats) return null;
     return (
         <div className="w-full max-w-5xl mb-6 px-10 py-5 bg-foreground/[0.01] rounded-xl border border-foreground/[0.05] flex items-center justify-between">
             <StatItem

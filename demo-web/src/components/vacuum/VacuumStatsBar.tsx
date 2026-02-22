@@ -2,7 +2,7 @@ import React from 'react';
 import { VacuumStats, VACUUM_MAX_FRAMES } from '../../types';
 
 interface VacuumStatsBarProps {
-    stats: VacuumStats;
+    stats: VacuumStats | null;
     battery: number;
     dustProgress: number;
     frame: number;
@@ -14,6 +14,7 @@ export const VacuumStatsBar: React.FC<VacuumStatsBarProps> = ({
     dustProgress,
     frame,
 }) => {
+    if (!stats) return null;
     return (
         <div className="w-full flex flex-wrap items-center justify-center gap-6 mb-4 px-4">
             <Stat label="Generation" value={`${stats.generation}`} />

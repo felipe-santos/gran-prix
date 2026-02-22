@@ -2,10 +2,11 @@ import React from 'react';
 import { GameStats, POPULATION_SIZE } from '../types';
 
 interface StatsBarProps {
-    stats: GameStats;
+    stats: GameStats | null;
 }
 
 export const StatsBar: React.FC<StatsBarProps> = ({ stats }) => {
+    if (!stats) return null;
     return (
         <div className="w-full max-w-5xl mb-6 px-10 py-5 bg-foreground/[0.01] rounded-xl border border-foreground/[0.05] flex items-center justify-between">
             <StatItem label="Generation" value={stats.generation} color="text-amber-500" />

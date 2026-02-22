@@ -2,7 +2,7 @@ import React from 'react';
 import { OvenStats, OvenFoodType, OVEN_MAX_FRAMES } from '../../types';
 
 interface OvenStatsBarProps {
-    stats: OvenStats;
+    stats: OvenStats | null;
     frame: number;
     currentFood: OvenFoodType;
     bestAir: number;
@@ -31,6 +31,8 @@ export const OvenStatsBar: React.FC<OvenStatsBarProps> = ({ stats, frame, curren
             default: return '🥘';
         }
     };
+    if (!stats) return null;
+
 
     return (
         <div className="flex flex-wrap items-center justify-center gap-2 mb-4 w-full">

@@ -218,7 +218,7 @@ export const TraderDemo: React.FC = () => {
         };
     }, [isPlaying, gameLoop, isReady]);
 
-    if (!isReady || !stats || !internalState.current) {
+    if (!isReady || !internalState.current) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />

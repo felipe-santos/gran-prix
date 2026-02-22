@@ -79,7 +79,7 @@ export const FlappyDemo: React.FC = () => {
     }, [isPlaying, gameLoop, isReady]);
 
     // ── Loading guard ─────────────────────────────────────────────────────────
-    if (!isReady || !stats || !internalState.current) {
+    if (!isReady || !internalState.current) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-sky-500/20 border-t-sky-500 rounded-full animate-spin" />

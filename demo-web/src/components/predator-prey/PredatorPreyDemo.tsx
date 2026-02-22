@@ -143,9 +143,7 @@ export const PredatorPreyDemo: React.FC = () => {
     }, [isPlaying, gameLoop, isReady]);
 
     // ── Loading guard ─────────────────────────────────────────────────────────
-    const state = internalState.current!;
-
-    if (!isReady || !stats || !state) {
+    if (!isReady || !internalState.current) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
@@ -155,6 +153,7 @@ export const PredatorPreyDemo: React.FC = () => {
             </div>
         );
     }
+
 
     return (
         <div className="w-full flex flex-col items-center gap-0">

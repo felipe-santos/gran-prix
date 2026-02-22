@@ -2,7 +2,7 @@ import React from 'react';
 import { FlappyStats, FLAPPY_POPULATION_SIZE } from '../../types';
 
 interface FlappyStatsBarProps {
-    stats: FlappyStats;
+    stats: FlappyStats | null;
 }
 
 /** Stat cell — pure presentational, no logic. */
@@ -30,6 +30,7 @@ const Divider = () => <div className="h-8 w-px bg-foreground/[0.05]" />;
  * Mirrors StatsBar.tsx structure — same Feng-Shui rhythm of spacing & alignment.
  */
 export const FlappyStatsBar: React.FC<FlappyStatsBarProps> = ({ stats }) => {
+    if (!stats) return null;
     return (
         <div className="w-full max-w-5xl mb-6 px-10 py-5 bg-foreground/[0.01] rounded-xl border border-foreground/[0.05] flex items-center justify-between">
             <StatItem
