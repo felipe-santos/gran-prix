@@ -266,9 +266,9 @@ impl Population {
             // Unique seed per offspring to ensure weight diversity
             let seed = i + (self.generation as usize * 1000);
             let offspring = NeuralBrain::new(seed, self.num_inputs, self.hidden_layers.clone(), self.num_outputs)
-                .map_err(|e| GPError::BackendError(format!("Offspring {} creation failed: {:?}", e), i))?;
+                .map_err(|e| GPError::BackendError(format!("Offspring {} creation failed: {:?}", i, e)))?;
             offspring.import_weights(&best_weights)
-                 .map_err(|e| GPError::BackendError(format!("Offspring {} weight import failed: {:?}", e), i))?;
+                 .map_err(|e| GPError::BackendError(format!("Offspring {} weight import failed: {:?}", i, e)))?;
 
             // Propagate global kernel to offspring
             offspring.set_kernel(

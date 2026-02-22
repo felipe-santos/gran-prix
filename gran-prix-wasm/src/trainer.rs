@@ -5,7 +5,8 @@
 
 use wasm_bindgen::prelude::*;
 use std::cell::RefCell;
-use gran_prix::{Tensor, GPError};
+use gran_prix::{Tensor, GPError, Layer};
+use gran_prix::layers::{Linear, Activation, ActivationType};
 use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::loss::Loss;
@@ -39,32 +40,26 @@ impl Trainer {
 
         // Build Hidden Layers dynamically
         for &hidden_size in hidden_layers.iter() {
-            let w_init = Tensor::new_random(&[current_size, hidden_size]);
-            let mut w_t = w_init;
+            let mut linear = Linear::new(current_size, hidden_size);
+            
+            // Xavier/He-like initialization scaling
             let scale = (6.0 / (current_size as f32 + hidden_size as f32)).sqrt();
-            w_t.as_cpu_mut().unwrap().map_inplace(|v| *v *= scale);
+            linear.weights.as_cpu_mut().unwrap().map_inplace(|v| *v *= scale);
             
-            let w = gb.param(w_t);
-            let b = gb.param(Tensor::new_zeros(&[1, hidden_size]));
+            let h = linear.forward(last_node, &mut gb);
             
-            let h = gb.matmul(last_node, w);
-            let h = gb.add(h, b);
-            last_node = gb.tanh(h);
+            let mut tanh = Activation::new(ActivationType::Tanh);
+            last_node = tanh.forward(h, &mut gb);
             
             current_size = hidden_size;
         }
 
         // Final Output Layer (1 neuron)
-        let w_out_init = Tensor::new_random(&[current_size, 1]);
-        let mut w_out_t = w_out_init;
+        let mut linear_out = Linear::new(current_size, 1);
         let scale_out = (6.0 / (current_size as f32 + 1.0)).sqrt();
-        w_out_t.as_cpu_mut().unwrap().map_inplace(|v| *v *= scale_out);
+        linear_out.weights.as_cpu_mut().unwrap().map_inplace(|v| *v *= scale_out);
         
-        let w_out = gb.param(w_out_t);
-        let b_out = gb.param(Tensor::new_zeros(&[1, 1]));
-        
-        let out = gb.matmul(last_node, w_out);
-        let final_out = gb.add(out, b_out);
+        let final_out = linear_out.forward(last_node, &mut gb);
 
         Ok(Trainer {
             graph: RefCell::new(graph),
