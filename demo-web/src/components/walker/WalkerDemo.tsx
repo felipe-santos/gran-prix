@@ -4,112 +4,44 @@ import React, {
     useState,
     useCallback,
 } from 'react';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
-
 import {
     WALKER_WIDTH,
     WALKER_HEIGHT,
-    WALKER_POPULATION_SIZE,
-    WALKER_INPUTS,
-    WALKER_HIDDEN,
-    WALKER_OUTPUTS,
     WalkerStats,
 } from '../../types/walker';
-import { PerformanceData } from '../PerformanceCharts';
-import { useWalkerWasm } from '../../hooks/useWalkerWasm';
-import { useWalkerGameLoop } from '../../hooks/useWalkerGameLoop';
+import { useSimulation } from '../../hooks/useSimulation';
+import { 
+    walkerSimulationConfig, 
+    WalkerSimulationState, 
+    WalkerAgent 
+} from '../../demos/walker/walkerSimulation';
 import {
     drawWalker,
     drawGround,
     PX_PER_METER,
 } from '../../lib/walkerPhysics';
-import { WALKER_EVOLUTION_CONFIG } from '../../config/walker.config';
 
 import { WalkerCanvas } from './WalkerCanvas';
 import { WalkerStatsBar } from './WalkerStatsBar';
 import { WalkerControls } from './WalkerControls';
 import { WalkerNetworkViz } from './WalkerNetworkViz';
-import { WalkerFitnessChart } from './WalkerFitnessChart';
+import { PerformanceCharts } from '../PerformanceCharts';
 import { drawBackground, drawHUD } from './renderers';
 
-/**
- * WalkerDemo — main orchestrator for the Bipedal Walker neuro-evolution frame.
- *
- * Responsibilities:
- * - Owns WASM lifecycle via useWalkerWasm
- * - Owns physics via useWalkerGameLoop (planck.js world)
- * - Drives the imperative canvas render loop via requestAnimationFrame
- * - Camera follows the farthest-traveling walker
- * - Composes all sub-components (stats, controls, network viz, fitness chart)
- *
- * Separation of concerns:
- * - All mutable simulation state lives in refs (no frame-rate React state)
- * - Only aggregated stats flow through useState
- * - Canvas rendering is 100% imperative
- */
 export const WalkerDemo: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const rafRef = useRef<number | null>(null);
     const isLoopActive = useRef(false);
 
     const [isPlaying, setIsPlaying] = useState(false);
-    const [stats, setStats] = useState<WalkerStats>({
-        generation: 1,
-        alive: 0,
-        best: 0,
-        avgDistance: 0,
-    });
-    const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
-    const fitnessRef = useRef<Float32Array>(new Float32Array(WALKER_POPULATION_SIZE));
+    
+    // Unified Simulation Engine
+    const { internalState, stats, performanceHistory, isReady, update, reset, engine } = useSimulation<WalkerAgent, WalkerSimulationState, WalkerStats>(walkerSimulationConfig);
 
-    // WASM — isolated population for Walker
-    const { population, initWalkerWasm, computeWalker, evolveWalker } = useWalkerWasm();
-
-    /** Called by useWalkerGameLoop after every generation to record chart data. */
-    const handleGenerationEnd = useCallback(
-        (maxFitness: number, avgFitness: number) => {
-            setPerformanceHistory(prev => {
-                const nextGen = prev.length > 0 ? prev[prev.length - 1].generation + 1 : 1;
-                const updated = [...prev, { generation: nextGen, max: maxFitness, avg: avgFitness }];
-                return updated.slice(-60);
-            });
-        },
-        [],
-    );
-
-    /** Wrapped evolve that also forwards fitness array reference for the viz. */
-    const evolveWithTracking = useCallback(
-        (
-            fitnessScores: number[],
-            rate: number,
-            scale: number,
-            strategy: wasm.MutationStrategy,
-        ) => {
-            fitnessRef.current = Float32Array.from(fitnessScores);
-            evolveWalker(fitnessScores, rate, scale, strategy);
-        },
-        [evolveWalker],
-    );
-
-    const { gameState, walkersRef, resetWalker, updateWalkerPhysics } = useWalkerGameLoop({
-        computeWalker,
-        evolve: evolveWithTracking,
-        setStats,
-        mutationRate: WALKER_EVOLUTION_CONFIG.mutationRate,
-        mutationScale: WALKER_EVOLUTION_CONFIG.mutationScale,
-        mutationStrategy: WALKER_EVOLUTION_CONFIG.mutationStrategy,
-        onGenerationEnd: handleGenerationEnd,
-    });
-
-    // ── Init WASM and seed walkers ──────────────────────────────────────────
-    useEffect(() => {
-        if (!population) {
-            initWalkerWasm().then(() => {
-                resetWalker();
-                setStats(s => ({ ...s, alive: WALKER_POPULATION_SIZE }));
-            });
-        }
-    }, [initWalkerWasm, population, resetWalker]);
+    const handleReset = useCallback(() => {
+        setIsPlaying(false);
+        reset();
+    }, [reset]);
 
     // ── Canvas render (imperative — no React state involved) ──────────────────
     const render = useCallback(() => {
@@ -118,8 +50,9 @@ export const WalkerDemo: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const state = gameState.current;
-        const walkers = walkersRef.current;
+        const state = internalState.current;
+        if (!state) return;
+        const walkers = state.walkers;
         const isDark =
             document.documentElement.getAttribute('data-theme') !== 'light' &&
             !document.documentElement.classList.contains('light');
@@ -175,21 +108,21 @@ export const WalkerDemo: React.FC = () => {
             ctx.textAlign = 'right';
             ctx.fillText(`BEST: ${dist.toFixed(2)}m`, WALKER_WIDTH - 12, 20);
         }
-    }, [gameState, walkersRef]);
+    }, [internalState]);
 
     // ── Game loop ─────────────────────────────────────────────────────────────
     const gameLoop = useCallback(() => {
-        if (!isPlaying) {
+        if (!isPlaying || !isReady) {
             isLoopActive.current = false;
             return;
         }
-        updateWalkerPhysics();
+        update();
         render();
         rafRef.current = requestAnimationFrame(gameLoop);
-    }, [isPlaying, updateWalkerPhysics, render]);
+    }, [isPlaying, update, render, isReady]);
 
     useEffect(() => {
-        if (isPlaying && !isLoopActive.current) {
+        if (isPlaying && !isLoopActive.current && isReady) {
             isLoopActive.current = true;
             rafRef.current = requestAnimationFrame(gameLoop);
         }
@@ -197,227 +130,146 @@ export const WalkerDemo: React.FC = () => {
             if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
             isLoopActive.current = false;
         };
-    }, [isPlaying, gameLoop]);
+    }, [isPlaying, gameLoop, isReady]);
 
-    // ── Handlers ──────────────────────────────────────────────────────────────
-    const handleReset = useCallback(() => {
-        setIsPlaying(false);
-        resetWalker();
-        setStats({ generation: 1, alive: WALKER_POPULATION_SIZE, best: 0, avgDistance: 0 });
-        setPerformanceHistory([]);
-        fitnessRef.current = new Float32Array(WALKER_POPULATION_SIZE);
-    }, [resetWalker]);
+    const state = internalState.current!;
 
-    // ── Loading guard ─────────────────────────────────────────────────────────
-    if (!population) {
+    if (!isReady || !stats || !state) {
         return (
-            <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
+            <div className="w-full h-[500px] flex flex-col items-center justify-center gap-4 bg-card/30 rounded-3xl border border-border/50 backdrop-blur-sm">
                 <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
-                <span className="text-[10px] uppercase font-black tracking-[0.3em] text-emerald-500">
-                    Initializing WASM Engine…
+                <span className="text-[10px] uppercase font-black tracking-[0.3em] text-emerald-500 animate-pulse">
+                    Initializing Physics Engine…
                 </span>
             </div>
         );
     }
 
     return (
-        <div className="w-full flex flex-col items-center gap-0">
-            {/* ── Header ───────────────────────────────────────────────────── */}
-            <div className="flex flex-col items-center mb-8">
-                <h2 className="text-2xl font-black bg-gradient-to-br from-orange-400 to-rose-400 bg-clip-text text-transparent uppercase tracking-[0.3em]">
+        <div className="w-full flex flex-col items-center">
+            <div className="flex flex-col items-center mb-10">
+                <h2 className="text-3xl font-black bg-gradient-to-br from-emerald-400 to-teal-400 bg-clip-text text-transparent uppercase tracking-[0.4em] drop-shadow-sm">
                     Bipedal Walker
                 </h2>
-                <p className="text-[9px] text-muted-foreground uppercase tracking-[0.3em] mt-2 font-bold">
-                    Motor Synergy · {WALKER_POPULATION_SIZE} Agents · Continuous Control · planck.js
-                </p>
+                <div className="flex items-center gap-3 mt-3">
+                    <span className="h-px w-8 bg-emerald-500/30" />
+                    <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-[0.3em]">
+                        Neural Motor Coordination
+                    </p>
+                    <span className="h-px w-8 bg-emerald-500/30" />
+                </div>
             </div>
 
-            {/* ── Main layout: left panel | canvas | right panel ───────────── */}
-            <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8">
-
-                {/* Left panel — network viz */}
-                <div className="flex flex-col gap-6 flex-shrink-0 w-80">
-                    <div className="bg-card/50 border border-border rounded-2xl overflow-hidden backdrop-blur-md p-6">
-                        <div className="border-b border-border pb-3 mb-5">
-                            <h3 className="text-sm font-bold text-foreground uppercase tracking-tighter">
-                                Brain Inspector
+            <div className="w-full max-w-7xl flex flex-col xl:flex-row items-center xl:items-start justify-center gap-10">
+                <div className="flex flex-col gap-8 flex-shrink-0 w-[340px]">
+                    <div className="bg-card/40 border border-border/50 rounded-[2rem] overflow-hidden backdrop-blur-xl shadow-2xl shadow-emerald-500/5">
+                        <div className="p-6 border-b border-border/50 bg-card/60">
+                            <h3 className="text-xs font-black text-foreground uppercase tracking-[0.2em] flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                Neural Architecture
                             </h3>
-                            <p className="text-[9px] text-muted-foreground font-mono mt-0.5">
-                                BEST_AGENT · LIVE_WEIGHTS
-                            </p>
                         </div>
-                        <WalkerNetworkViz
-                            population={population}
-                            fitnessScores={fitnessRef.current}
-                        />
-
-                        {/* Input legend */}
-                        <div className="mt-5 space-y-1.5 border-t border-border pt-4">
-                            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
-                                Input Schema (10 sensors)
-                            </p>
-                            {[
-                                ['I₁', 'body_θ', 'Torso tilt angle'],
-                                ['I₂', 'body_ω', 'Torso angular velocity'],
-                                ['I₃', 'hip_L_θ', 'Left hip angle'],
-                                ['I₄', 'hip_L_ω', 'Left hip velocity'],
-                                ['I₅', 'knee_L_θ', 'Left knee angle'],
-                                ['I₆', 'knee_L_ω', 'Left knee velocity'],
-                                ['I₇', 'hip_R_θ', 'Right hip angle'],
-                                ['I₈', 'hip_R_ω', 'Right hip velocity'],
-                                ['I₉', 'knee_R_θ', 'Right knee angle'],
-                                ['I₁₀', 'knee_R_ω', 'Right knee velocity'],
-                            ].map(([id, name, desc]) => (
-                                <div key={id} className="flex items-start gap-2">
-                                    <span className="text-[7px] font-mono text-emerald-500 w-5 flex-shrink-0 pt-px">
-                                        {id}
-                                    </span>
-                                    <div>
-                                        <span className="text-[7px] font-bold text-foreground/70 font-mono">
-                                            {name}
-                                        </span>
-                                        <p className="text-[6px] text-muted-foreground leading-tight">
-                                            {desc}
-                                        </p>
+                        <div className="p-8">
+                            <WalkerNetworkViz
+                                population={(engine as any)?.populations.get('walkers')}
+                                fitnessScores={engine?.fitnessScores.get('walkers')}
+                            />
+                            
+                            <div className="mt-8 space-y-4 pt-6 border-t border-border/50">
+                                <div>
+                                    <label className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground block mb-3">
+                                        Sensor Inputs (10)
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                        {[
+                                            'Torso Angle', 'Angular Vel',
+                                            'Hip L Angle', 'Hip L Vel',
+                                            'Knee L Angle', 'Knee L Vel',
+                                            'Hip R Angle', 'Hip R Vel',
+                                            'Knee R Angle', 'Knee R Vel'
+                                        ].map((label, i) => (
+                                            <div key={label} className="flex items-center gap-2 opacity-70">
+                                                <span className="text-[8px] font-mono text-emerald-500">I{i}</span>
+                                                <span className="text-[9px] font-medium">{label}</span>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-                            ))}
-                            <div className="mt-3 pt-3 border-t border-border">
-                                <p className="text-[8px] text-muted-foreground">
-                                    <span className="text-orange-400 font-mono font-bold">4 outputs</span>
-                                    {' '}→ continuous motor torques [-1, 1]
+                                
+                                <div className="pt-2">
+                                    <label className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground block mb-3">
+                                        Motor Outputs (4)
+                                    </label>
+                                    <div className="flex gap-4">
+                                        {['Leg L', 'Knee L', 'Leg R', 'Knee R'].map((label, i) => (
+                                            <div key={label} className="flex flex-col items-center">
+                                                <span className="text-[8px] font-mono text-emerald-500">O{i}</span>
+                                                <span className="text-[8px] font-bold uppercase mt-1">{label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex flex-col items-center flex-grow max-w-[800px]">
+                    <WalkerStatsBar stats={stats} />
+                    <WalkerCanvas ref={canvasRef} width={WALKER_WIDTH} height={WALKER_HEIGHT} />
+                    <div className="w-full mt-6 bg-card/30 border border-border/50 rounded-2xl p-4 backdrop-blur-sm">
+                        <WalkerControls
+                            isPlaying={isPlaying}
+                            onTogglePlay={() => setIsPlaying(p => !p)}
+                            onReset={handleReset}
+                        />
+                    </div>
+                    
+                    <div className="w-full mt-8 grid grid-cols-1 gap-6">
+                         <div className="bg-card/40 border border-border/50 rounded-3xl p-6 backdrop-blur-md">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-4 px-2">
+                                Evolution Progress
+                            </h3>
+                            <PerformanceCharts data={performanceHistory} />
+                        </div>
+                    </div>
+                </div>
+
+                <div className="hidden xl:flex flex-col gap-6 flex-shrink-0 w-80">
+                    <div className="bg-card/40 border border-border/50 rounded-[2rem] p-8 backdrop-blur-md">
+                        <h3 className="text-xs font-black text-emerald-500 uppercase tracking-[0.2em] mb-6 border-b border-border/50 pb-4">
+                            Training Goal
+                        </h3>
+                        <div className="space-y-6">
+                            <div className="space-y-2">
+                                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                    Agents are rewarded for <span className="text-emerald-400 font-bold">horizontal distance</span> traveled without falling.
                                 </p>
                             </div>
-                        </div>
-                    </div>
-                </div>
+                            
+                            <div className="bg-zinc-950/40 rounded-2xl p-4 border border-border/30">
+                                <h4 className="text-[9px] font-black uppercase tracking-[0.1em] text-emerald-500/70 mb-3">
+                                    Fitness Calculation
+                                </h4>
+                                <ul className="space-y-2">
+                                    <li className="flex items-center gap-2 text-[10px]">
+                                        <div className="w-1 h-1 rounded-full bg-emerald-500" />
+                                        <span>Distance × 100</span>
+                                    </li>
+                                    <li className="flex items-center gap-2 text-[10px]">
+                                        <div className="w-1 h-1 rounded-full bg-emerald-500" />
+                                        <span>Survival Bonus (0.1/frame)</span>
+                                    </li>
+                                    <li className="flex items-center gap-2 text-[10px] text-rose-500/70">
+                                        <div className="w-1 h-1 rounded-full bg-rose-500" />
+                                        <span>Death = Termination</span>
+                                    </li>
+                                </ul>
+                            </div>
 
-                {/* Centre — canvas + stats + controls + chart */}
-                <div className="flex flex-col items-center flex-shrink-0">
-                    <WalkerStatsBar stats={stats} />
-                    <WalkerCanvas
-                        ref={canvasRef}
-                        width={WALKER_WIDTH}
-                        height={WALKER_HEIGHT}
-                    />
-                    <WalkerControls
-                        isPlaying={isPlaying}
-                        onTogglePlay={() => setIsPlaying(p => !p)}
-                        onReset={handleReset}
-                    />
-                    <div className="w-full mt-8">
-                        <WalkerFitnessChart data={performanceHistory} />
-                    </div>
-                </div>
-
-                {/* Right panel — evolution & reward info */}
-                <div className="flex flex-col gap-6 flex-shrink-0 w-80">
-                    <div className="bg-card/50 border border-border rounded-2xl overflow-hidden backdrop-blur-md">
-                        <div className="p-4 border-b border-border bg-card/80">
-                            <h3 className="text-sm font-bold text-foreground uppercase tracking-tighter">
-                                Evolution Config
-                            </h3>
-                            <p className="text-[9px] text-muted-foreground font-mono mt-0.5">
-                                MOTOR_SYNERGY_PROTOCOL
+                            <p className="text-[11px] text-muted-foreground leading-relaxed italic opacity-80">
+                                Watching them fall is part of the process. Coordination emerges after ~20 generations.
                             </p>
-                        </div>
-                        <div className="p-5 space-y-5">
-                            {/* Strategy */}
-                            <div className="space-y-2">
-                                <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground block">
-                                    Mutation Strategy
-                                </label>
-                                <div className="flex items-center gap-2 px-3 py-2 bg-orange-500/10 border border-orange-500/30 rounded-lg">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.5)]" />
-                                    <span className="text-[10px] font-bold text-orange-400 uppercase tracking-wider">
-                                        Additive
-                                    </span>
-                                </div>
-                                <div className="bg-orange-500/5 border border-orange-500/10 p-3 rounded-lg mt-2">
-                                    <p className="text-[9px] font-mono text-orange-500/80 mb-1">
-                                        w_next = w + random(-s, s)
-                                    </p>
-                                    <p className="text-[8px] text-muted-foreground italic">
-                                        Refinamento local — preserva coordenação motora aprendida.
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Rates */}
-                            <div className="space-y-3 pt-2 border-t border-border">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                                        Mutation Rate
-                                    </span>
-                                    <span className="text-sm font-mono font-bold text-orange-400">
-                                        {(WALKER_EVOLUTION_CONFIG.mutationRate * 100).toFixed(0)}%
-                                    </span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                                        Mutation Scale
-                                    </span>
-                                    <span className="text-sm font-mono font-bold text-orange-400">
-                                        {WALKER_EVOLUTION_CONFIG.mutationScale.toFixed(2)}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                                        Population
-                                    </span>
-                                    <span className="text-sm font-mono font-bold text-foreground/70">
-                                        {WALKER_POPULATION_SIZE}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                                        Network
-                                    </span>
-                                    <span className="text-sm font-mono font-bold text-foreground/70">
-                                        {WALKER_INPUTS} → {WALKER_HIDDEN} → {WALKER_OUTPUTS}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                                        Gen Length
-                                    </span>
-                                    <span className="text-sm font-mono font-bold text-foreground/70">
-                                        600 frames
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Reward info */}
-                            <div className="space-y-2 pt-2 border-t border-border">
-                                <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground block">
-                                    Reward Function
-                                </label>
-                                <div className="space-y-1.5">
-                                    {[
-                                        ['+100×d', 'Horizontal distance (d) in metres'],
-                                        ['+0.1/f', 'Per frame survived'],
-                                        ['death', 'Torso below 0.7m or tilt > 80°'],
-                                    ].map(([reward, desc]) => (
-                                        <div key={reward} className="flex items-center gap-2">
-                                            <span
-                                                className={`text-[9px] font-mono font-bold w-12 text-right ${reward.startsWith('+')
-                                                        ? 'text-orange-400'
-                                                        : 'text-rose-500'
-                                                    }`}
-                                            >
-                                                {reward}
-                                            </span>
-                                            <span className="text-[8px] text-muted-foreground">
-                                                {desc}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-3 bg-muted/50 border-t border-border text-[8px] text-muted-foreground font-mono text-center tracking-widest">
-                            STRATEGY_PRIX_v2 • BIPEDAL_WALKER_ACTIVE
                         </div>
                     </div>
                 </div>

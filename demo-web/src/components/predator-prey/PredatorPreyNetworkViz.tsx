@@ -9,8 +9,8 @@ import { NetworkViz } from '../shared/NetworkViz';
 interface PredatorPreyNetworkVizProps {
     predatorPopulation: wasm.Population | null;
     preyPopulation: wasm.Population | null;
-    predatorFitness: Float32Array;
-    preyFitness: Float32Array;
+    predatorFitness?: Float32Array;
+    preyFitness?: Float32Array;
     predatorHidden?: number[];
     preyHidden?: number[];
 }
@@ -27,7 +27,7 @@ export const PredatorPreyNetworkViz: React.FC<PredatorPreyNetworkVizProps> = ({
         <div className="grid grid-cols-2 gap-4">
             <NetworkViz
                 population={predatorPopulation}
-                fitnessScores={predatorFitness}
+                fitnessScores={predatorFitness || new Float32Array()}
                 inputs={PREDATOR_INPUTS}
                 hidden={predatorHidden}
                 outputs={PREDATOR_OUTPUTS}
@@ -36,7 +36,7 @@ export const PredatorPreyNetworkViz: React.FC<PredatorPreyNetworkVizProps> = ({
             />
             <NetworkViz
                 population={preyPopulation}
-                fitnessScores={preyFitness}
+                fitnessScores={preyFitness || new Float32Array()}
                 inputs={PREY_INPUTS}
                 hidden={preyHidden}
                 outputs={PREY_OUTPUTS}

@@ -90,7 +90,8 @@ function App() {
             y: GAME_HEIGHT - 50,
             dead: false,
             fitness: 0,
-            color: `hsl(${Math.random() * 360}, 80%, 60%)`
+            color: `hsl(${Math.random() * 360}, 80%, 60%)`,
+            popId: 'main'
           });
         }
         gameState.current.cars = cars;

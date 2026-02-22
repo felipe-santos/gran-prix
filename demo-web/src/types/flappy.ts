@@ -11,23 +11,16 @@ import { BaseAgent } from './common';
  * Flappy bird agent
  */
 export interface FlappyBird extends BaseAgent {
-    /** Vertical centre of the bird (0 = top of canvas) */
+    x: number;
     y: number;
-    /** Vertical velocity (positive = falling) */
     vy: number;
+    color: string;
 }
 
-/**
- * Pipe obstacle with gap
- */
 export interface FlappyPipe {
-    /** Left edge x-position */
     x: number;
-    /** Bottom of the top pipe */
-    gapTop: number;
-    /** Top of the bottom pipe */
-    gapBottom: number;
-    /** Whether this pipe has been passed (for bonus scoring) */
+    width: number;
+    topHeight: number;
     passed: boolean;
 }
 
@@ -62,7 +55,7 @@ export const FLAPPY_PIPE_WIDTH = 60;
 /** Vertical gap between top and bottom pipes */
 export const FLAPPY_GAP_SIZE = 130;
 
-/** Number of WASM inputs per bird: [dy_top, dy_bottom, bird_y_norm, vy_norm] */
-export const FLAPPY_INPUTS = 4;
+export const FLAPPY_INPUTS = 5;
+export const FLAPPY_OUTPUTS = 1;
 export const FLAPPY_HIDDEN = [8];
 export const FLAPPY_POPULATION_SIZE = 200;

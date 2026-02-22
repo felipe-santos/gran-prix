@@ -70,6 +70,8 @@ pub struct NeuralBrain {
     output_node: usize,
     /// Pre-allocated input tensor (avoid allocation in compute)
     input_tensor: RefCell<Tensor>,
+    /// Pre-allocated output tensor (avoid allocation in compute)
+    output_tensor: RefCell<Tensor>,
     /// Magic number for corruption detection
     magic: u32,
     /// Re-entrancy protection flag
@@ -164,6 +166,7 @@ impl NeuralBrain {
             input_node: input_id.0,
             output_node: final_output.0,
             input_tensor: RefCell::new(Tensor::new_zeros(&[1, num_inputs])),
+            output_tensor: RefCell::new(Tensor::new_zeros(&[1, num_outputs])),
             magic: BRAIN_MAGIC,
             computing: RefCell::new(false),
             custom_kernel: RefCell::new(vec![0.0, 1.0, 0.0]), // Identity kernel
@@ -235,34 +238,32 @@ impl NeuralBrain {
         let num_inputs = inputs.len();
         let mut input_buffer = self.input_tensor.borrow_mut();
 
-        // Apply manual 1D convolution (kernel size = 3)
+        // ── Optimized 1D Convolution ───────────────────────────────────────────
+        // Apply kernel in-place to the pre-allocated input_buffer to avoid Vec alloc.
         {
             let mut view = input_buffer
                 .try_view_mut()
                 .map_err(|e| JsValue::from_str(&format!("Buffer view error: {}", e)))?;
 
             let kernel = self.custom_kernel.borrow();
-            let mut processed = vec![0.0; num_inputs];
 
             for i in 0..num_inputs {
+                let mut acc = 0.0;
                 for k in 0..3 {
                     let idx = i as i32 + k as i32 - 1;
                     if idx >= 0 && idx < num_inputs as i32 {
-                        processed[i] += inputs[idx as usize] * kernel[k];
+                        acc += inputs[idx as usize] * kernel[k];
                     }
                 }
-            }
-
-            for i in 0..num_inputs {
                 if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, i])) {
-                    *v = processed[i];
+                    *v = acc;
                 }
             }
         }
 
         let mut graph = self.graph.borrow_mut();
 
-        // Inject input into graph
+        // ── Inject input into graph ───────────────────────────────────────────
         {
             let nodes = graph.nodes_mut();
             if let Some(gran_prix::graph::Node::Input(ref mut t)) = nodes.get_mut(self.input_node) {
@@ -276,9 +277,8 @@ impl NeuralBrain {
             .topological_sort(output_id)
             .map_err(|e| JsValue::from_str(&format!("Sort error: {}", e)))?;
 
-        // Execute graph in topological order
+        // ── Execute Graph ──────────────────────────────────────────────────────
         for node_id in order {
-            // Additional corruption check during execution
             if self.magic != BRAIN_MAGIC {
                 return Err(JsValue::from_str("Heap corruption detected mid-execution"));
             }
@@ -288,28 +288,22 @@ impl NeuralBrain {
                 .map_err(|e| JsValue::from_str(&format!("Node {} execution error: {}", node_id.0, e)))?;
         }
 
-        // Extract output
+        // ── Extract Output Efficiently ─────────────────────────────────────────
         let values = graph.values();
         let result_tensor = values
             .get(self.output_node)
             .and_then(|t: &Option<Tensor>| t.as_ref())
             .ok_or_else(|| JsValue::from_str("Output not found"))?;
 
-        let cpu_view = result_tensor
+        let mut out_buffer = self.output_tensor.borrow_mut();
+        out_buffer.copy_from(result_tensor)
+            .map_err(|e| JsValue::from_str(&format!("Extract error: {}", e)))?;
+
+        let cpu_view = out_buffer
             .as_cpu()
             .map_err(|e| JsValue::from_str(&format!("Failed to get CPU view: {}", e)))?;
 
-        // Output shape is [1, num_outputs]
-        let num_outputs = cpu_view.shape()[1];
-        let mut outputs = Vec::with_capacity(num_outputs);
-        for i in 0..num_outputs {
-            let val = *cpu_view
-                .get(ndarray::IxDyn(&[0, i]))
-                .ok_or_else(|| JsValue::from_str("Failed to get result value"))?;
-            outputs.push(val);
-        }
-
-        Ok(outputs)
+        Ok(cpu_view.iter().cloned().collect())
     }
 
     /// Reset cached values and gradients in the graph

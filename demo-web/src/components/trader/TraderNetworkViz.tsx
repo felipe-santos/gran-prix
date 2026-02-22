@@ -5,7 +5,7 @@ import { NetworkViz } from '../shared/NetworkViz';
 
 interface TraderNetworkVizProps {
     population: wasm.Population | null;
-    fitnessScores: Float32Array;
+    fitnessScores?: Float32Array;
     hidden?: number[];
 }
 
@@ -19,7 +19,7 @@ export const TraderNetworkViz: React.FC<TraderNetworkVizProps> = ({
     return (
         <NetworkViz
             population={population}
-            fitnessScores={fitnessScores}
+            fitnessScores={fitnessScores || new Float32Array()}
             inputs={TRADER_INPUTS}
             hidden={hidden}
             outputs={TRADER_OUTPUTS}

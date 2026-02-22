@@ -5,7 +5,7 @@ import { NetworkViz } from '../shared/NetworkViz';
 
 interface VacuumNetworkVizProps {
     population: wasm.Population | null;
-    fitnessScores: Float32Array;
+    fitnessScores?: Float32Array;
     hidden?: number[];
 }
 
@@ -25,7 +25,7 @@ export const VacuumNetworkViz: React.FC<VacuumNetworkVizProps> = ({
     return (
         <NetworkViz
             population={population}
-            fitnessScores={fitnessScores}
+            fitnessScores={fitnessScores || new Float32Array()}
             inputs={VACUUM_INPUTS}
             hidden={hidden}
             outputs={VACUUM_OUTPUTS}

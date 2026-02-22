@@ -83,10 +83,12 @@ export function useFlappyGameLoop({
         state.birds = Array.from({ length: FLAPPY_POPULATION_SIZE }, (_, i) => ({
             id: i,
             y: FLAPPY_HEIGHT / 2,
+            x: 50,
             vy: 0,
             dead: false,
             fitness: 0,
             color: `hsl(${(i / FLAPPY_POPULATION_SIZE) * 360}, 75%, 60%)`,
+            popId: 'main',
         }));
         state.pipes = [];
         state.score = 0;
@@ -145,11 +147,11 @@ export function useFlappyGameLoop({
 
         // Spawn a new pipe pair at regular intervals
         if (frameCount.current % PIPE_SPAWN_INTERVAL === 0) {
-            const { gapTop, gapBottom } = randomGap();
+            const { gapTop } = randomGap();
             state.pipes.push({
                 x: FLAPPY_WIDTH + FLAPPY_PIPE_WIDTH,
-                gapTop,
-                gapBottom,
+                width: FLAPPY_PIPE_WIDTH,
+                topHeight: gapTop,
                 passed: false,
             });
         }
@@ -171,10 +173,10 @@ export function useFlappyGameLoop({
             if (bird.dead) return;
 
             const dyTop = nextPipe
-                ? (bird.y - nextPipe.gapTop) / FLAPPY_HEIGHT
+                ? (bird.y - nextPipe.topHeight) / FLAPPY_HEIGHT
                 : 0.0;
             const dyBot = nextPipe
-                ? (nextPipe.gapBottom - bird.y) / FLAPPY_HEIGHT
+                ? (nextPipe.topHeight + FLAPPY_GAP_SIZE - bird.y) / FLAPPY_HEIGHT
                 : 1.0;
 
             inputs[idx * FLAPPY_INPUTS + 0] = dyTop;
@@ -236,7 +238,7 @@ export function useFlappyGameLoop({
                 if (bRight < pLeft || bLeft > pRight) continue;
 
                 // Y-axis: hit if outside gap
-                if (bTop < pipe.gapTop || bBottom > pipe.gapBottom) {
+                if (bTop < pipe.topHeight || bBottom > pipe.topHeight + FLAPPY_GAP_SIZE) {
                     bird.dead = true;
                     break;
                 }

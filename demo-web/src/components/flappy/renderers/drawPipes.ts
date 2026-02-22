@@ -14,9 +14,12 @@ import { FLAPPY_PIPE_WIDTH, FLAPPY_HEIGHT } from '../../../types/flappy';
  */
 export function drawPipes(
     ctx: CanvasRenderingContext2D,
-    pipes: { x: number; gapTop: number; gapBottom: number }[],
+    pipes: { x: number; topHeight: number }[],
 ): void {
+    const GAP_HEIGHT = 160;
     pipes.forEach(pipe => {
+        const gapTop = pipe.topHeight;
+        const gapBottom = pipe.topHeight + GAP_HEIGHT;
         // Top pipe
         const grad = ctx.createLinearGradient(pipe.x, 0, pipe.x + FLAPPY_PIPE_WIDTH, 0);
         grad.addColorStop(0, '#15803d');
@@ -25,13 +28,13 @@ export function drawPipes(
 
         // Top pipe body
         ctx.beginPath();
-        ctx.roundRect(pipe.x, 0, FLAPPY_PIPE_WIDTH, pipe.gapTop - 12, [0, 0, 6, 6]);
+        ctx.roundRect(pipe.x, 0, FLAPPY_PIPE_WIDTH, gapTop - 12, [0, 0, 6, 6]);
         ctx.fill();
 
         // Top pipe cap
         ctx.fillStyle = '#22c55e';
         ctx.beginPath();
-        ctx.roundRect(pipe.x - 4, pipe.gapTop - 20, FLAPPY_PIPE_WIDTH + 8, 20, [4, 4, 4, 4]);
+        ctx.roundRect(pipe.x - 4, gapTop - 20, FLAPPY_PIPE_WIDTH + 8, 20, [4, 4, 4, 4]);
         ctx.fill();
 
         // Bottom pipe body
@@ -41,13 +44,13 @@ export function drawPipes(
         ctx.fillStyle = grad2;
 
         ctx.beginPath();
-        ctx.roundRect(pipe.x, pipe.gapBottom + 12, FLAPPY_PIPE_WIDTH, FLAPPY_HEIGHT - pipe.gapBottom - 12, [6, 6, 0, 0]);
+        ctx.roundRect(pipe.x, gapBottom + 12, FLAPPY_PIPE_WIDTH, FLAPPY_HEIGHT - gapBottom - 12, [6, 6, 0, 0]);
         ctx.fill();
 
         // Bottom pipe cap
         ctx.fillStyle = '#22c55e';
         ctx.beginPath();
-        ctx.roundRect(pipe.x - 4, pipe.gapBottom, FLAPPY_PIPE_WIDTH + 8, 20, [4, 4, 4, 4]);
+        ctx.roundRect(pipe.x - 4, gapBottom, FLAPPY_PIPE_WIDTH + 8, 20, [4, 4, 4, 4]);
         ctx.fill();
     });
 }

@@ -5,7 +5,7 @@ import { NetworkViz } from '../shared/NetworkViz';
 
 interface FlappyNetworkVizProps {
     population: wasm.Population | null;
-    fitnessScores: Float32Array;
+    fitnessScores?: Float32Array;
     inputs?: number;
     hidden?: number[];
     outputs?: number;
@@ -21,7 +21,7 @@ export const FlappyNetworkViz: React.FC<FlappyNetworkVizProps> = ({
     return (
         <NetworkViz
             population={population}
-            fitnessScores={fitnessScores}
+            fitnessScores={fitnessScores || new Float32Array()}
             inputs={inputs}
             hidden={hidden}
             outputs={outputs}

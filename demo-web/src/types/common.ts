@@ -43,6 +43,7 @@ export interface Obstacle {
  */
 export interface BaseAgent {
     id: number;
+    popId: string; // Added for multi-population support
     fitness: number;
     dead: boolean;
     color: string;

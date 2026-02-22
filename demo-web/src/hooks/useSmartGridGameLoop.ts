@@ -111,6 +111,7 @@ export function useSmartGridGameLoop({
             fitness: 0,
             dead: false,
             color: `hsl(${(i / GRID_POPULATION_SIZE) * 120 + 100}, 70%, 55%)`, // Green-cyan palette
+            popId: 'grid',
         }));
 
         state.env = {

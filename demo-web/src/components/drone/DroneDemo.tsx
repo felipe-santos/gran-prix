@@ -1,16 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
-
 import {
     DRONE_WIDTH,
     DRONE_HEIGHT,
-    DRONE_POPULATION_SIZE,
     DroneStats,
-} from '../../types/drone';
-import { PerformanceData, PerformanceCharts } from '../PerformanceCharts';
-import { useDroneWasm } from '../../hooks/useDroneWasm';
-import { useDroneGameLoop } from '../../hooks/useDroneGameLoop';
-import { DRONE_EVOLUTION_CONFIG } from '../../config/drone.config';
+} from '../../types';
+import { PerformanceCharts } from '../PerformanceCharts';
+import { useSimulation } from '../../hooks/useSimulation';
+import { droneSimulationConfig, DroneSimulationState } from '../../demos/drone/droneSimulation';
 
 import { DroneCanvas } from './DroneCanvas';
 import { DroneStatsBar } from './DroneStatsBar';
@@ -30,59 +26,14 @@ export const DroneDemo: React.FC = () => {
     const isLoopActive = useRef(false);
 
     const [isPlaying, setIsPlaying] = useState(false);
-    const [stats, setStats] = useState<DroneStats>({
-        generation: 1,
-        best: 0,
-        alive: 0,
-        avgFitness: 0,
-    });
-    const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
-    const fitnessRef = useRef<Float32Array>(new Float32Array(DRONE_POPULATION_SIZE));
+    
+    // Unified Simulation Engine
+    const { internalState, stats, performanceHistory, isReady, update, reset, engine } = useSimulation<any, DroneSimulationState, DroneStats>(droneSimulationConfig);
 
-    const { population, initDroneWasm, computeDrone, evolveDrone } = useDroneWasm();
-
-    const handleGenerationEnd = useCallback(
-        (maxFitness: number, avgFitness: number) => {
-            setPerformanceHistory(prev => {
-                const nextGen = prev.length > 0 ? prev[prev.length - 1].generation + 1 : 1;
-                const updated = [...prev, { generation: nextGen, max: maxFitness, avg: avgFitness }];
-                return updated.slice(-60);
-            });
-        },
-        [],
-    );
-
-    const evolveWithTracking = useCallback(
-        (
-            fitnessScores: number[],
-            rate: number,
-            scale: number,
-            strategy: wasm.MutationStrategy,
-        ) => {
-            fitnessRef.current = Float32Array.from(fitnessScores);
-            evolveDrone(fitnessScores, rate, scale, strategy);
-        },
-        [evolveDrone],
-    );
-
-    const { gameState, resetDrone, updateDronePhysics } = useDroneGameLoop({
-        computeDrone,
-        evolve: evolveWithTracking,
-        setStats,
-        mutationRate: DRONE_EVOLUTION_CONFIG.mutationRate,
-        mutationScale: DRONE_EVOLUTION_CONFIG.mutationScale,
-        mutationStrategy: DRONE_EVOLUTION_CONFIG.mutationStrategy,
-        onGenerationEnd: handleGenerationEnd,
-    });
-
-    useEffect(() => {
-        if (!population) {
-            initDroneWasm().then(() => {
-                resetDrone();
-                setStats(s => ({ ...s, alive: DRONE_POPULATION_SIZE }));
-            });
-        }
-    }, [initDroneWasm, population, resetDrone]);
+    const handleReset = useCallback(() => {
+        setIsPlaying(false);
+        reset();
+    }, [reset]);
 
     const render = useCallback(() => {
         const canvas = canvasRef.current;
@@ -90,32 +41,34 @@ export const DroneDemo: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const state = gameState.current;
+        const state = internalState.current;
+        if (!state) return;
+
         const isDark =
             document.documentElement.getAttribute('data-theme') !== 'light' &&
             !document.documentElement.classList.contains('light');
 
         drawBackground(ctx, isDark);
         drawTarget(ctx, state.targetX, state.targetY);
-        drawDrones(ctx, state.drones, isDark);
-        drawPidDrone(ctx, state.pidDrone);
+        drawDrones(ctx, state.agents, isDark);
+        if (state.pidDrone) {
+            drawPidDrone(ctx, state.pidDrone);
+        }
         drawWindIndicator(ctx, state.windX, state.windY);
-    }, [gameState]);
+    }, [internalState]);
 
     const gameLoop = useCallback(() => {
-        if (!isPlaying) {
+        if (!isPlaying || !isReady) {
             isLoopActive.current = false;
             return;
         }
-        // Run physics multiple times per render frame to speed up learning? 
-        // For physics logic visual demo, 1 tick per frame is better.
-        updateDronePhysics();
+        update();
         render();
         rafRef.current = requestAnimationFrame(gameLoop);
-    }, [isPlaying, updateDronePhysics, render]);
+    }, [isPlaying, update, render, isReady]);
 
     useEffect(() => {
-        if (isPlaying && !isLoopActive.current) {
+        if (isPlaying && !isLoopActive.current && isReady) {
             isLoopActive.current = true;
             rafRef.current = requestAnimationFrame(gameLoop);
         }
@@ -123,17 +76,11 @@ export const DroneDemo: React.FC = () => {
             if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
             isLoopActive.current = false;
         };
-    }, [isPlaying, gameLoop]);
+    }, [isPlaying, gameLoop, isReady]);
 
-    const handleReset = useCallback(() => {
-        setIsPlaying(false);
-        resetDrone();
-        setStats({ generation: 1, best: 0, alive: DRONE_POPULATION_SIZE, avgFitness: 0 });
-        setPerformanceHistory([]);
-        fitnessRef.current = new Float32Array(DRONE_POPULATION_SIZE);
-    }, [resetDrone]);
+    const state = internalState.current!;
 
-    if (!population) {
+    if (!isReady || !stats || !state) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
@@ -167,8 +114,8 @@ export const DroneDemo: React.FC = () => {
                             </p>
                         </div>
                         <DroneNetworkViz
-                            population={population}
-                            fitnessScores={fitnessRef.current}
+                            population={(engine as any)?.populations.get('drones')}
+                            fitnessScores={engine?.fitnessScores.get('drones')}
                         />
                         <div className="mt-5 space-y-1.5 border-t border-border pt-4">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
@@ -196,7 +143,7 @@ export const DroneDemo: React.FC = () => {
                 </div>
 
                 <div className="flex flex-col items-center flex-shrink-0">
-                    <DroneStatsBar stats={stats} />
+                    <DroneStatsBar stats={stats || { generation: 1, best: 0, alive: 0, avgFitness: 0 }} />
                     <DroneCanvas ref={canvasRef} width={DRONE_WIDTH} height={DRONE_HEIGHT} />
                     <GameControls
                         isPlaying={isPlaying}

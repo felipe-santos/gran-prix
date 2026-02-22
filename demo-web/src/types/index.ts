@@ -61,6 +61,7 @@ export {
     FLAPPY_PIPE_WIDTH,
     FLAPPY_GAP_SIZE,
     FLAPPY_INPUTS,
+    FLAPPY_OUTPUTS,
     FLAPPY_HIDDEN,
     FLAPPY_POPULATION_SIZE,
 } from './flappy';

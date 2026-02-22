@@ -15,6 +15,7 @@ export interface DroneAgent extends BaseAgent {
     y: number;
     vx: number;
     vy: number;
+    color: string;
 }
 
 /**

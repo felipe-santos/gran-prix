@@ -86,7 +86,8 @@ export function usePredatorPreyGameLoop({
             energy: 1.0,
             fitness: 0,
             dead: false,
-            color: `hsl(15, 80%, ${50 + Math.random() * 20}%)` // Orange/Red foxes
+            color: `hsl(15, 80%, ${50 + Math.random() * 20}%)`, // Orange/Red foxes
+            popId: 'predators',
         }));
 
         state.prey = Array.from({ length: PREY_POPULATION_SIZE }, (_, i) => ({
@@ -98,7 +99,8 @@ export function usePredatorPreyGameLoop({
             energy: 1.0,
             fitness: 0,
             dead: false,
-            color: `hsl(210, 20%, ${70 + Math.random() * 30}%)` // White/Grey/Blue rabbits
+            color: `hsl(210, 20%, ${70 + Math.random() * 30}%)`, // White/Grey/Blue rabbits
+            popId: 'prey',
         }));
 
         state.frame = 0;

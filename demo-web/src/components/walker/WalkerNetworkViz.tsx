@@ -5,7 +5,7 @@ import { NetworkViz } from '../shared/NetworkViz';
 
 interface WalkerNetworkVizProps {
     population: wasm.Population | null;
-    fitnessScores: Float32Array;
+    fitnessScores?: Float32Array;
     hidden?: number[];
 }
 
@@ -17,7 +17,7 @@ export const WalkerNetworkViz: React.FC<WalkerNetworkVizProps> = ({
     return (
         <NetworkViz
             population={population}
-            fitnessScores={fitnessScores}
+            fitnessScores={fitnessScores || new Float32Array()}
             inputs={WALKER_INPUTS}
             hidden={hidden}
             outputs={WALKER_OUTPUTS}

@@ -5,7 +5,7 @@ import { NetworkViz } from '../shared/NetworkViz';
 
 interface OvenNetworkVizProps {
     population: wasm.Population | null;
-    fitnessScores: Float32Array;
+    fitnessScores?: Float32Array;
 }
 
 const INPUT_NAMES = [
@@ -21,7 +21,7 @@ export const OvenNetworkViz: React.FC<OvenNetworkVizProps> = ({
     return (
         <NetworkViz
             population={population}
-            fitnessScores={fitnessScores}
+            fitnessScores={fitnessScores || new Float32Array()}
             inputs={OVEN_INPUTS}
             hidden={OVEN_HIDDEN}
             outputs={OVEN_OUTPUTS}

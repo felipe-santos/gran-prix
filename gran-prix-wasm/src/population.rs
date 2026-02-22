@@ -55,6 +55,8 @@ pub struct Population {
     num_inputs: usize,
     hidden_layers: Vec<usize>,
     num_outputs: usize,
+    /// Pre-allocated output buffer to avoid per-frame allocations
+    output_buffer: RefCell<Vec<f32>>,
 }
 
 #[wasm_bindgen]
@@ -102,6 +104,7 @@ impl Population {
             num_inputs,
             hidden_layers,
             num_outputs,
+            output_buffer: RefCell::new(vec![0.0; size * num_outputs]),
         };
 
         Ok(pop)
@@ -140,15 +143,28 @@ impl Population {
             )));
         }
 
-        let mut outputs = Vec::with_capacity(self.brains.len() * self.num_outputs);
-
-        for (i, brain) in self.brains.iter().enumerate() {
-            let offset = i * self.num_inputs;
-            let vals = brain.compute(&inputs[offset..offset + self.num_inputs])?;
-            outputs.extend(vals);
+        let mut outputs = self.output_buffer.borrow_mut();
+        
+        // Ensure buffer size is correct (in case of dynamic resizing in future)
+        if outputs.len() != self.brains.len() * self.num_outputs {
+            *outputs = vec![0.0; self.brains.len() * self.num_outputs];
         }
 
-        Ok(outputs)
+        for (i, brain) in self.brains.iter().enumerate() {
+            let in_offset = i * self.num_inputs;
+            let out_offset = i * self.num_outputs;
+            
+            // Note: compute() still returns a Vec<f32> currently. 
+            // In a future pass, we could implement compute_into to avoid this clone too.
+            let vals = brain.compute(&inputs[in_offset..in_offset + self.num_inputs])?;
+            
+            // Copy results into shared buffer
+            for (j, &val) in vals.iter().enumerate() {
+                outputs[out_offset + j] = val;
+            }
+        }
+
+        Ok(outputs.clone())
     }
 
     /// Evolve population based on fitness scores

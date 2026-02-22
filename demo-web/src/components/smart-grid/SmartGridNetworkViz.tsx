@@ -5,7 +5,7 @@ import { NetworkViz } from '../shared/NetworkViz';
 
 interface SmartGridNetworkVizProps {
     population: wasm.Population | null;
-    fitnessScores: Float32Array;
+    fitnessScores?: Float32Array;
     hidden?: number[];
 }
 
@@ -17,7 +17,7 @@ export const SmartGridNetworkViz: React.FC<SmartGridNetworkVizProps> = ({
     return (
         <NetworkViz
             population={population}
-            fitnessScores={fitnessScores}
+            fitnessScores={fitnessScores || new Float32Array()}
             inputs={GRID_INPUTS}
             hidden={hidden}
             outputs={GRID_OUTPUTS}

@@ -162,6 +162,7 @@ export function useTraderGameLoop({
             fitness: 0,
             dead: false,
             color: `hsl(${(i / TRADER_POPULATION_SIZE) * 60 + 200}, 70%, 55%)`, // Blue-purple palette
+            popId: 'traders',
         }));
 
         state.env = {

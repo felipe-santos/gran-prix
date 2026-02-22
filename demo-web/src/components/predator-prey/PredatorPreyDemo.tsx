@@ -1,6 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
-
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import {
     PREDATOR_PREY_WIDTH,
     PREDATOR_PREY_HEIGHT,
@@ -10,10 +8,8 @@ import {
     PREY_SIZE,
     PredatorPreyStats,
 } from '../../types';
-import { PerformanceData } from '../PerformanceCharts';
-import { usePredatorWasm } from '../../hooks/usePredatorWasm';
-import { usePreyWasm } from '../../hooks/usePreyWasm';
-import { usePredatorPreyGameLoop } from '../../hooks/usePredatorPreyGameLoop';
+import { useSimulation } from '../../hooks/useSimulation';
+import { predatorPreySimulationConfig, PredatorPreySimulationState } from '../../demos/predator-prey/predatorPreySimulation';
 
 import { PredatorPreyCanvas } from './PredatorPreyCanvas';
 import { PredatorPreyStatsBar } from './PredatorPreyStatsBar';
@@ -21,8 +17,7 @@ import { PredatorPreyControls } from './PredatorPreyControls';
 import { PredatorPreyFitnessChart } from './PredatorPreyFitnessChart';
 import { PredatorPreyNetworkViz } from './PredatorPreyNetworkViz';
 
-const DEFAULT_MUTATION_RATE = 0.15;
-const DEFAULT_MUTATION_SCALE = 0.4;
+
 
 // ── Canvas render helpers ─────────────────────────────────────────────────────
 
@@ -91,56 +86,18 @@ function drawHUD(
 
 export const PredatorPreyDemo: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const rafRef = useRef<number | null>(null);
+    const rafId = useRef<number | null>(null);
     const isLoopActive = useRef(false);
 
     const [isPlaying, setIsPlaying] = useState(false);
-    const [stats, setStats] = useState<PredatorPreyStats>({
-        predatorsAlive: 0,
-        preyAlive: 0,
-        generation: 1,
-        predatorBest: 0,
-        preyBest: 0
-    });
-    const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
 
-    const { predatorPopulation, initPredatorWasm, computePredator, evolvePredator } = usePredatorWasm();
-    const { preyPopulation, initPreyWasm, computePrey, evolvePrey } = usePreyWasm();
+    // Unified Simulation Engine (Co-Evolution)
+    const { internalState, stats, performanceHistory, isReady, reset, engine, update } = useSimulation<any, PredatorPreySimulationState, PredatorPreyStats>(predatorPreySimulationConfig);
 
-    const handleGenerationEnd = useCallback(
-        (predMax: number, predAvg: number, _preyMax: number, _preyAvg: number) => {
-            setPerformanceHistory(prev => {
-                const nextGen = prev.length > 0 ? prev[prev.length - 1].generation + 1 : 1;
-                // Currently PerformanceCharts supports single max/avg series
-                // We'll plot the predator's curve for the main graph for visibility, 
-                // but one could extend PerformanceData to support multiple series.
-                const updated = [...prev, { generation: nextGen, max: predMax, avg: predAvg }];
-                return updated.slice(-60);
-            });
-        },
-        [],
-    );
-
-    const { gameState, resetSimulation, updatePhysics } = usePredatorPreyGameLoop({
-        computePredator,
-        computePrey,
-        evolvePredator,
-        evolvePrey,
-        setStats,
-        mutationRate: DEFAULT_MUTATION_RATE,
-        mutationScale: DEFAULT_MUTATION_SCALE,
-        mutationStrategy: wasm.MutationStrategy.Additive,
-        onGenerationEnd: handleGenerationEnd,
-    });
-
-    // ── Init WASM ─────────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (!predatorPopulation || !preyPopulation) {
-            Promise.all([initPredatorWasm(), initPreyWasm()]).then(() => {
-                resetSimulation();
-            });
-        }
-    }, [initPredatorWasm, initPreyWasm, predatorPopulation, preyPopulation, resetSimulation]);
+    const handleReset = useCallback(() => {
+        setIsPlaying(false);
+        reset();
+    }, [reset]);
 
     // ── Canvas render ─────────────────────────────────────────────────────────
     const render = useCallback(() => {
@@ -149,45 +106,46 @@ export const PredatorPreyDemo: React.FC = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        const state = gameState.current;
+        const state = internalState.current;
+        if (!state) return;
+
         const isDark = document.documentElement.getAttribute('data-theme') !== 'light' && !document.documentElement.classList.contains('light');
 
         drawBackground(ctx, isDark);
-        drawAgents(ctx, state.prey, PREY_SIZE, isDark);
-        drawAgents(ctx, state.predators, PREDATOR_SIZE, isDark);
-        drawHUD(ctx, state.generation, state.predators.filter(p => !p.dead).length, state.prey.filter(p => !p.dead).length);
-    }, [gameState]);
+        
+        const prey = state.agents.filter(a => a.popId === 'prey');
+        const predators = state.agents.filter(a => a.popId === 'predators');
+        
+        drawAgents(ctx, prey, PREY_SIZE, isDark);
+        drawAgents(ctx, predators, PREDATOR_SIZE, isDark);
+        drawHUD(ctx, state.generation, predators.filter(p => !p.dead).length, prey.filter(p => !p.dead).length);
+    }, [internalState]);
 
-    // ── Game loop ─────────────────────────────────────────────────────────────
     const gameLoop = useCallback(() => {
         if (!isPlaying) {
             isLoopActive.current = false;
             return;
         }
-        updatePhysics();
+        update();
         render();
-        rafRef.current = requestAnimationFrame(gameLoop);
-    }, [isPlaying, updatePhysics, render]);
+        rafId.current = requestAnimationFrame(gameLoop);
+    }, [isPlaying, update, render]);
 
     useEffect(() => {
-        if (isPlaying && !isLoopActive.current) {
+        if (isPlaying && !isLoopActive.current && isReady) {
             isLoopActive.current = true;
-            rafRef.current = requestAnimationFrame(gameLoop);
+            rafId.current = requestAnimationFrame(gameLoop);
         }
         return () => {
-            if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+            if (rafId.current != null) cancelAnimationFrame(rafId.current);
             isLoopActive.current = false;
         };
-    }, [isPlaying, gameLoop]);
-
-    const handleReset = useCallback(() => {
-        setIsPlaying(false);
-        resetSimulation();
-        setPerformanceHistory([]);
-    }, [resetSimulation]);
+    }, [isPlaying, gameLoop, isReady]);
 
     // ── Loading guard ─────────────────────────────────────────────────────────
-    if (!predatorPopulation || !preyPopulation) {
+    const state = internalState.current!;
+
+    if (!isReady || !stats || !state) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
@@ -210,18 +168,17 @@ export const PredatorPreyDemo: React.FC = () => {
             </div>
 
             <div className="w-full max-w-[1400px] flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8">
-                {/* ── Left Panel: Predator Brain ── */}
                 <div className="hidden lg:flex flex-col gap-8 w-72 mt-20">
                     <PredatorPreyNetworkViz
-                        predatorPopulation={predatorPopulation}
-                        predatorFitness={Float32Array.from(gameState.current.predators.map(p => p.fitness))}
-                        preyPopulation={preyPopulation}
-                        preyFitness={Float32Array.from(gameState.current.prey.map(p => p.fitness))}
+                        predatorPopulation={engine?.populations.get('predators') || null}
+                        predatorFitness={engine?.fitnessScores.get('predators')}
+                        preyPopulation={engine?.populations.get('prey') || null}
+                        preyFitness={engine?.fitnessScores.get('prey')}
                     />
                 </div>
 
                 <div className="flex flex-col items-center w-full max-w-[800px]">
-                    <PredatorPreyStatsBar stats={stats} />
+                    <PredatorPreyStatsBar stats={stats || { generation: 1, predatorBest: 0, preyBest: 0, predatorsAlive: 0, preyAlive: 0 }} />
                     <PredatorPreyCanvas
                         ref={canvasRef}
                         width={PREDATOR_PREY_WIDTH}

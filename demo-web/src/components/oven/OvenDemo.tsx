@@ -1,82 +1,50 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
-
+import { useEffect, useRef, useCallback } from 'react';
 import {
     OVEN_POPULATION_SIZE,
+    OVEN_MAX_TEMP,
+    OVEN_AMBIENT_TEMP,
+    OvenStats,
+    OvenFoodType,
+    OvenAgent,
     OVEN_INPUTS,
     OVEN_HIDDEN,
     OVEN_OUTPUTS,
     OVEN_MAX_FRAMES,
-    OVEN_MAX_TEMP,
-    OVEN_AMBIENT_TEMP,
-    OvenStats,
-    OvenFoodType
 } from '../../types/oven';
-import { PerformanceData, PerformanceCharts } from '../PerformanceCharts';
-import { useOvenWasm } from '../../hooks/useOvenWasm';
-import { useOvenGameLoop } from '../../hooks/useOvenGameLoop';
+import { PerformanceCharts } from '../PerformanceCharts';
+
+import { useSimulation } from '../../hooks/useSimulation';
+import { ovenSimulationConfig, OvenSimulationState } from '../../demos/oven/ovenSimulation';
 
 import { OvenCanvas } from './OvenCanvas';
 import { OvenStatsBar } from './OvenStatsBar';
 import { OvenNetworkViz } from './OvenNetworkViz';
 import { GameControls } from '../GameControls';
-import { OVEN_EVOLUTION_CONFIG } from '../../config/oven.config';
 import { drawOven } from './renderers';
-
-// ─── Main Component ────────────────────────────────────────────────────────────
 
 export function OvenDemo() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [stats, setStats] = useState<OvenStats>({
-        generation: 1, bestFitness: 0, avgFitness: 0, bestCoreTemp: 0, successRates: {
-            [OvenFoodType.Cake]: 0,
-            [OvenFoodType.Bread]: 0,
-            [OvenFoodType.Turkey]: 0,
-            [OvenFoodType.Pizza]: 0,
-        }
+    const { 
+        engine, 
+        internalState, 
+        stats, 
+        performanceHistory,
+        isPlaying, 
+        setIsPlaying, 
+        reset 
+    } = useSimulation<OvenAgent, OvenSimulationState, OvenStats>(ovenSimulationConfig, {
+        currentFoodType: OvenFoodType.Cake,
+        restingFrames: 0
     });
-    const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
-    const fitnessRef = useRef<Float32Array>(new Float32Array(OVEN_POPULATION_SIZE));
-
-    const { population, initOvenWasm, computeOven, evolveOven } = useOvenWasm();
-
-    const evolve = useCallback((
-        fitnessScores: number[], rate: number, scale: number, strategy: wasm.MutationStrategy,
-    ) => {
-        fitnessRef.current = Float32Array.from(fitnessScores);
-        evolveOven(fitnessScores, rate, scale, strategy);
-    }, [evolveOven]);
-
-    const onGenerationEnd = useCallback((maxFitness: number, avgFitness: number) => {
-        setPerformanceHistory(prev => {
-            const nextGen = prev.length > 0 ? prev[prev.length - 1].generation + 1 : 1;
-            const newHistory = [...prev, { generation: nextGen, avg: avgFitness, max: maxFitness }];
-            return newHistory.slice(-60);
-        });
-    }, []);
-
-    const { gameState, resetOven, updatePhysics } = useOvenGameLoop({
-        computeOven, evolve, setStats,
-        mutationRate: OVEN_EVOLUTION_CONFIG.mutationRate,
-        mutationScale: OVEN_EVOLUTION_CONFIG.mutationScale,
-        mutationStrategy: OVEN_EVOLUTION_CONFIG.mutationStrategy,
-        onGenerationEnd,
-    });
-
-    useEffect(() => {
-        if (!population) {
-            initOvenWasm().then(() => resetOven());
-        }
-    }, [initOvenWasm, population, resetOven]);
 
     const render = useCallback((ctx: CanvasRenderingContext2D) => {
-        const state = gameState.current;
+        const state = internalState.current;
+        if (!state) return;
         const sorted = [...state.agents].sort((a, b) => b.fitness - a.fitness);
         const bestAgent = sorted[0] || null;
 
         drawOven(ctx, bestAgent, OVEN_AMBIENT_TEMP, OVEN_MAX_TEMP);
-    }, [gameState]);
+    }, [internalState]);
 
     // Game loop
     const rafId = useRef<number | null>(null);
@@ -89,11 +57,11 @@ export function OvenDemo() {
         if (!ctx) return;
 
         // Run multiple ticks per frame to speed up the slow heating process a bit
-        for (let i = 0; i < 3; i++) updatePhysics();
+        for (let i = 0; i < 3; i++) engine?.tick();
 
         render(ctx);
         rafId.current = requestAnimationFrame(gameLoop);
-    }, [isPlaying, updatePhysics, render]);
+    }, [isPlaying, engine, render]);
 
     useEffect(() => {
         if (isPlaying && !isLoopActive.current) {
@@ -105,21 +73,11 @@ export function OvenDemo() {
 
     const handleReset = useCallback(() => {
         setIsPlaying(false);
-        resetOven();
-        setStats({
-            generation: 1, bestFitness: 0, avgFitness: 0, bestCoreTemp: 0, successRates: {
-                [OvenFoodType.Cake]: 0,
-                [OvenFoodType.Bread]: 0,
-                [OvenFoodType.Turkey]: 0,
-                [OvenFoodType.Pizza]: 0,
-            }
-        });
-        setPerformanceHistory([]);
-        fitnessRef.current = new Float32Array(OVEN_POPULATION_SIZE);
-    }, [resetOven]);
+        reset();
+    }, [reset, setIsPlaying]);
 
     // ── Loading guard ─────────────────────────────────────────────────────────
-    if (!population) {
+    if (!engine) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
@@ -130,7 +88,7 @@ export function OvenDemo() {
         );
     }
 
-    const state = gameState.current;
+    const state = internalState.current!;
     const sorted = [...state.agents].sort((a, b) => b.fitness - a.fitness);
     const bestAgent = sorted[0];
 
@@ -161,7 +119,10 @@ export function OvenDemo() {
                                 BEST_AGENT · IOT_WEIGHTS
                             </p>
                         </div>
-                        <OvenNetworkViz population={population} fitnessScores={fitnessRef.current} />
+                        <OvenNetworkViz 
+                            population={engine?.populations.get('ovens') || null} 
+                            fitnessScores={engine?.fitnessScores.get('ovens')} 
+                        />
 
                         {/* Input legend */}
                         <div className="mt-5 space-y-1.5 border-t border-border pt-4">
@@ -205,7 +166,7 @@ export function OvenDemo() {
                 {/* Centre — canvas + stats + controls + chart */}
                 <div className="flex flex-col items-center flex-shrink-0">
                     <OvenStatsBar
-                        stats={stats}
+                        stats={stats!}
                         frame={state.frame}
                         currentFood={state.currentFoodType}
                         bestAir={bestAgent?.airTemp || OVEN_AMBIENT_TEMP}
@@ -255,25 +216,24 @@ export function OvenDemo() {
                                 </div>
                             </div>
 
-                            {/* Rates */}
-                            <div className="space-y-3 pt-2 border-t border-border">
-                                {[
-                                    ['Mutation Rate', `${(OVEN_EVOLUTION_CONFIG.mutationRate * 100).toFixed(0)}%`, true],
-                                    ['Mutation Scale', OVEN_EVOLUTION_CONFIG.mutationScale.toFixed(2), true],
-                                    ['Population', `${OVEN_POPULATION_SIZE}`, false],
-                                    ['Network', `${OVEN_INPUTS} → ${OVEN_HIDDEN} → ${OVEN_OUTPUTS}`, false],
-                                    ['Max Frames', `${OVEN_MAX_FRAMES}`, false],
-                                ].map(([label, value, accent]) => (
-                                    <div key={label as string} className="flex justify-between items-center">
-                                        <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                                            {label}
-                                        </span>
-                                        <span className={`text-sm font-mono font-bold ${accent ? 'text-orange-400' : 'text-foreground/70'}`}>
-                                            {value}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
+                                <div className="space-y-3 pt-2 border-t border-border">
+                                    {[
+                                        ['Mutation Rate', `${(ovenSimulationConfig.mutationRate! * 100).toFixed(0)}%`, true],
+                                        ['Mutation Scale', ovenSimulationConfig.mutationScale!.toFixed(2), true],
+                                        ['Population', `${OVEN_POPULATION_SIZE}`, false],
+                                        ['Network', `${OVEN_INPUTS} → ${OVEN_HIDDEN.join(', ')} → ${OVEN_OUTPUTS}`, false],
+                                        ['Max Frames', `${OVEN_MAX_FRAMES}`, false],
+                                    ].map(([label, value, accent]) => (
+                                        <div key={label as string} className="flex justify-between items-center">
+                                            <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                                {label}
+                                            </span>
+                                            <span className={`text-sm font-mono font-bold ${accent ? 'text-orange-400' : 'text-foreground/70'}`}>
+                                                {value}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
 
                             {/* Reward info */}
                             <div className="space-y-2 pt-2 border-t border-border">

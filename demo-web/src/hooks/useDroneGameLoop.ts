@@ -94,6 +94,7 @@ export function useDroneGameLoop({
             dead: false,
             fitness: 0,
             color: `hsl(${(i / DRONE_POPULATION_SIZE) * 360}, 75%, 60%)`,
+            popId: 'drones',
         }));
 
         state.pidDrone = {
