@@ -148,7 +148,7 @@ export const PredatorPreyDemo: React.FC = () => {
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-rose-500/20 border-t-rose-500 rounded-full animate-spin" />
                 <span className="text-[10px] uppercase font-black tracking-[0.3em] text-rose-500">
-                    Initializing Multi-Agent WASM...
+                    Initializing Predator-Prey WASM…
                 </span>
             </div>
         );

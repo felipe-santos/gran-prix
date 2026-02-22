@@ -22,7 +22,8 @@ const NetworkVisualization: React.FC<{ trainer: wasm.Trainer | null, hiddenSize:
             const weights = trainer.get_weights();
             if (!weights) return;
 
-            const { width, height } = canvasRef.current!;
+            if (!canvasRef.current) return;
+            const { width, height } = canvasRef.current;
             ctx.clearRect(0, 0, width, height);
 
             const layers = [2, hiddenSize, 1];

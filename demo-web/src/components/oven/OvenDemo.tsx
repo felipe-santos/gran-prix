@@ -78,12 +78,12 @@ export function OvenDemo() {
     }, [reset, setIsPlaying]);
 
     // ── Loading guard ─────────────────────────────────────────────────────────
-    if (!isReady || !stats || !internalState.current) {
+    if (!isReady || !internalState.current) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-orange-500/20 border-t-orange-500 rounded-full animate-spin" />
                 <span className="text-[10px] uppercase font-black tracking-[0.3em] text-orange-500">
-                    Initializing Thermocouples WASM…
+                    Initializing Smart Oven WASM…
                 </span>
             </div>
         );

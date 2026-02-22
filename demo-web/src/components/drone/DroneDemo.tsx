@@ -83,7 +83,7 @@ export const DroneDemo: React.FC = () => {
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
                 <span className="text-[10px] uppercase font-black tracking-[0.3em] text-emerald-500">
-                    Initializing WASM Engine…
+                    Initializing Drone WASM…
                 </span>
             </div>
         );

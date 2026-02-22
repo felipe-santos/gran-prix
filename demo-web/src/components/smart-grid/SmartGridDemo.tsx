@@ -171,7 +171,7 @@ export function SmartGridDemo() {
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-yellow-500/20 border-t-yellow-500 rounded-full animate-spin" />
                 <span className="text-[10px] uppercase font-black tracking-[0.3em] text-yellow-600">
-                    Initializing Grid WASM…
+                    Initializing Smart Grid WASM…
                 </span>
             </div>
         );

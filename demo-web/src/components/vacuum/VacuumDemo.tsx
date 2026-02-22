@@ -93,12 +93,12 @@ export function VacuumDemo() {
         };
     }, [isPlaying, gameLoop, isReady]);
 
-    if (!isReady || !stats || !internalState.current) {
+    if (!isReady || !internalState.current) {
         return (
             <div className="w-full flex flex-col items-center justify-center py-24 gap-4">
                 <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
                 <span className="text-[10px] uppercase font-black tracking-[0.3em] text-emerald-500">
-                    Initializing Vacuum WASM…
+                    Initializing Smart Vacuum WASM…
                 </span>
             </div>
         );
