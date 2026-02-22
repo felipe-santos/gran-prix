@@ -4,7 +4,8 @@ import * as wasm from '../../wasm/pkg/gran_prix_wasm';
 // Components
 import { PlaygroundCanvas, DataPoint } from './PlaygroundCanvas';
 import { PlaygroundControls } from './PlaygroundControls';
-import { WeightsViewer } from './WeightsViewer';
+import { NetworkViz } from '../shared/NetworkViz';
+import { BrainPersistence } from '../shared/BrainPersistence';
 import { PlaygroundExplanation } from './PlaygroundExplanation';
 import { PRESETS } from './PlaygroundPresets';
 import { generateCCode } from './exportCode';
@@ -280,9 +281,28 @@ export const NeuralPlayground: React.FC = () => {
             {/* Main layout: left panel | canvas | right panel */}
             <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 px-4">
 
-                {/* Left Column: Network Visualization */}
+                {/* Left Column: Network Visualization & Persistence */}
                 <div className="flex flex-col gap-6 flex-shrink-0 w-full lg:w-80">
-                    <WeightsViewer weights={weights} hiddenLayers={hiddenLayers} inputDim={activeFeatures.length} />
+                    <NetworkViz
+                        weights={weights}
+                        hidden={hiddenLayers}
+                        inputs={activeFeatures.length}
+                        outputs={1}
+                        inputNames={activeFeatures.map(f => f.toUpperCase())}
+                    />
+                    <BrainPersistence
+                        weights={weights}
+                        hiddenLayers={hiddenLayers}
+                        inputDim={activeFeatures.length}
+                        onImport={(newWeights) => {
+                            if (!trainerRef.current) return;
+                            trainerRef.current.import_weights(newWeights);
+                            setWeights(trainerRef.current.get_weights());
+                            const featureMap = (x: number, y: number) => expandFeatures(x, y, activeFeatures);
+                            setDecisionBoundary(Array.from(trainerRef.current.get_decision_boundary(RESOLUTION, featureMap)));
+                        }}
+                        onExportCCode={handleExportCCode}
+                    />
                 </div>
 
                 {/* Center Column: Interaction Canvas */}

@@ -4,7 +4,8 @@ import * as wasm from '../../wasm/pkg/gran_prix_wasm';
 import { ClassifierCanvas } from './ClassifierCanvas';
 import { ClassifierStatsBar } from './ClassifierStatsBar';
 import { ClassifierControls } from './ClassifierControls';
-import { ClassifierNetworkViz } from './ClassifierNetworkViz';
+import { NetworkViz } from '../shared/NetworkViz';
+import { BrainPersistence } from '../shared/BrainPersistence';
 import { GameControls } from '../GameControls';
 import { PerformanceCharts, PerformanceData } from '../PerformanceCharts';
 
@@ -225,7 +226,31 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
                                 GRADIENT_DESCENT · LIVE_WEIGHTS
                             </p>
                         </div>
-                        <ClassifierNetworkViz trainer={trainer} hiddenLayers={hiddenLayers} inputDim={2} />
+
+                        <div className="flex flex-col gap-6">
+                            <NetworkViz
+                                weights={trainer?.get_weights()}
+                                hidden={hiddenLayers}
+                                inputs={2}
+                                outputs={1}
+                                inputNames={['X_COORD', 'Y_COORD']}
+                                outputNames={['CLASS']}
+                                width={280}
+                                height={260}
+                            />
+
+                            <BrainPersistence
+                                weights={trainer?.get_weights() || null}
+                                hiddenLayers={hiddenLayers}
+                                inputDim={2}
+                                title="Brain Persistence"
+                                subtitle="Import/Export weights"
+                                onImport={(newWeights: Float32Array) => {
+                                    if (!trainer) return;
+                                    trainer.import_weights(newWeights);
+                                }}
+                            />
+                        </div>
 
                         <div className="mt-5 space-y-1.5 border-t border-border pt-4">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">

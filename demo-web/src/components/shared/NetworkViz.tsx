@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
 
 interface NetworkVizProps {
-    population: any;
-    fitnessScores: Float32Array;
+    population?: any;
+    fitnessScores?: Float32Array;
+    weights?: Float32Array | null;
     inputs: number;
     hidden: number[];
     outputs: number;
@@ -15,6 +16,7 @@ interface NetworkVizProps {
 export const NetworkViz: React.FC<NetworkVizProps> = ({
     population,
     fitnessScores,
+    weights,
     inputs,
     hidden,
     outputs,
@@ -27,39 +29,44 @@ export const NetworkViz: React.FC<NetworkVizProps> = ({
     const rafRef = useRef<number | null>(null);
 
     useEffect(() => {
-        if (!population || !canvasRef.current) return;
+        if (!canvasRef.current || (!population && !weights)) return;
 
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         const draw = () => {
-            let snapshot: any;
-            try {
-                snapshot = population.get_best_brain_snapshot(fitnessScores);
-            } catch {
-                rafRef.current = requestAnimationFrame(draw);
-                return;
-            }
+            let activeWeights: Float32Array | null = null;
 
-            if (!snapshot) {
-                rafRef.current = requestAnimationFrame(draw);
-                return;
-            }
+            if (weights) {
+                activeWeights = weights;
+            } else if (population && fitnessScores) {
+                let snapshot: any;
+                try {
+                    snapshot = population.get_best_brain_snapshot(fitnessScores);
+                } catch {
+                    rafRef.current = requestAnimationFrame(draw);
+                    return;
+                }
 
-            let weights: Float32Array | null = null;
-            try {
-                const flat: number[] = [];
-                if (Array.isArray(snapshot)) {
-                    for (const node of snapshot) {
-                        if (node.value) {
-                            for (const v of node.value) flat.push(v);
+                if (!snapshot) {
+                    rafRef.current = requestAnimationFrame(draw);
+                    return;
+                }
+
+                try {
+                    const flat: number[] = [];
+                    if (Array.isArray(snapshot)) {
+                        for (const node of snapshot) {
+                            if (node.value) {
+                                for (const v of node.value) flat.push(v);
+                            }
                         }
                     }
+                    activeWeights = flat.length > 0 ? new Float32Array(flat) : null;
+                } catch {
+                    activeWeights = null;
                 }
-                weights = flat.length > 0 ? new Float32Array(flat) : null;
-            } catch {
-                weights = null;
             }
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -80,7 +87,7 @@ export const NetworkViz: React.FC<NetworkVizProps> = ({
                     const y1 = (canvas.height / (curNodes + 1)) * (i + 1);
                     for (let j = 0; j < nextNodes; j++) {
                         const y2 = (canvas.height / (nextNodes + 1)) * (j + 1);
-                        const weight = weights ? (weights[wIdx] ?? 0) : 0;
+                        const weight = activeWeights ? (activeWeights[wIdx] ?? 0) : 0;
                         wIdx++;
 
                         const mag = Math.min(Math.abs(weight), 1.5);
@@ -146,7 +153,7 @@ export const NetworkViz: React.FC<NetworkVizProps> = ({
         return () => {
             if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
         };
-    }, [population, fitnessScores, inputs, hidden, outputs, inputNames, outputNames]);
+    }, [population, fitnessScores, weights, inputs, hidden, outputs, inputNames, outputNames]);
 
     return (
         <div className="flex flex-col items-center gap-2">
