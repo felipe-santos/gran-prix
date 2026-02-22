@@ -20,6 +20,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::brain::NeuralBrain;
 use crate::mutation::{MutationStrategy, XorShift};
+use std::cell::RefCell;
 
 /// Population of neural network agents
 ///

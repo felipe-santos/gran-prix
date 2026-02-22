@@ -24,7 +24,7 @@ pub struct Trainer {
 #[wasm_bindgen]
 impl Trainer {
     #[wasm_bindgen(constructor)]
-    pub fn new(hidden_size: usize) -> Result<Trainer, JsValue> {
+    pub fn new(hidden_layers: Vec<usize>) -> Result<Trainer, JsValue> {
         let backend = Box::new(CPUBackend);
         let mut graph = Graph::new(backend);
         let mut gb = GraphBuilder::new(&mut graph);
@@ -33,27 +33,37 @@ impl Trainer {
         let input_tensor = Tensor::new_zeros(&[1, 2]);
         let input_id = gb.val(input_tensor);
 
-        // Layer 1: Hidden (Xavier/Glorot Initialization)
-        let w1_init = Tensor::new_random(&[2, hidden_size]);
-        let mut w1_t = w1_init;
-        let scale1 = (6.0 / (2.0 + hidden_size as f32)).sqrt();
-        w1_t.as_cpu_mut().unwrap().map_inplace(|v| *v *= scale1);
-        let w1 = gb.param(w1_t);
-        let b1 = gb.param(Tensor::new_zeros(&[1, hidden_size]));
-        let h1 = gb.matmul(input_id, w1);
-        let h1 = gb.add(h1, b1);
-        let h1 = gb.tanh(h1);
+        let mut current_size = 2;
+        let mut last_node = input_id;
 
-        // Layer 2: Output
-        let w2_init = Tensor::new_random(&[hidden_size, 1]);
-        let mut w2_t = w2_init;
-        let scale2 = (6.0 / (hidden_size as f32 + 1.0)).sqrt();
-        w2_t.as_cpu_mut().unwrap().map_inplace(|v| *v *= scale2);
-        let w2 = gb.param(w2_t);
-        let b2 = gb.param(Tensor::new_zeros(&[1, 1]));
-        let out = gb.matmul(h1, w2);
-        let out = gb.add(out, b2);
-        let final_out = out;
+        // Build Hidden Layers dynamically
+        for &hidden_size in hidden_layers.iter() {
+            let w_init = Tensor::new_random(&[current_size, hidden_size]);
+            let mut w_t = w_init;
+            let scale = (6.0 / (current_size as f32 + hidden_size as f32)).sqrt();
+            w_t.as_cpu_mut().unwrap().map_inplace(|v| *v *= scale);
+            
+            let w = gb.param(w_t);
+            let b = gb.param(Tensor::new_zeros(&[1, hidden_size]));
+            
+            let h = gb.matmul(last_node, w);
+            let h = gb.add(h, b);
+            last_node = gb.tanh(h);
+            
+            current_size = hidden_size;
+        }
+
+        // Final Output Layer (1 neuron)
+        let w_out_init = Tensor::new_random(&[current_size, 1]);
+        let mut w_out_t = w_out_init;
+        let scale_out = (6.0 / (current_size as f32 + 1.0)).sqrt();
+        w_out_t.as_cpu_mut().unwrap().map_inplace(|v| *v *= scale_out);
+        
+        let w_out = gb.param(w_out_t);
+        let b_out = gb.param(Tensor::new_zeros(&[1, 1]));
+        
+        let out = gb.matmul(last_node, w_out);
+        let final_out = gb.add(out, b_out);
 
         Ok(Trainer {
             graph: RefCell::new(graph),
@@ -74,6 +84,36 @@ impl Trainer {
             }
         }
         Ok(weights)
+    }
+
+    pub fn import_weights(&self, weights: &[f32]) -> Result<(), JsValue> {
+        let mut graph = self.graph.borrow_mut();
+        let nodes = graph.nodes_mut();
+
+        let mut w_idx = 0;
+
+        for node in nodes.iter_mut() {
+            if let gran_prix::graph::Node::Param(ref mut t) = node {
+                let shape = t.shape().to_vec();
+                let count = t.len();
+
+                if w_idx + count > weights.len() {
+                    return Err(JsValue::from_str("Weights array too short"));
+                }
+
+                let slice = &weights[w_idx..w_idx + count];
+                // SAFETY: Shape matches count by construction (count = t.len())
+                let new_tensor = Tensor::new_cpu(
+                    Array::from_shape_vec(IxDyn(&shape), slice.to_vec())
+                        .map_err(|e| JsValue::from_str(&e.to_string()))?
+                );
+                *t = new_tensor;
+
+                w_idx += count;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn train_batch(&self, inputs_x: Vec<f32>, inputs_y: Vec<f32>, targets: Vec<f32>, lr: f32) -> Result<f32, JsValue> {

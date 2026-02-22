@@ -488,10 +488,23 @@ export class Trainer {
         return v1;
     }
     /**
-     * @param {number} hidden_size
+     * @param {Float32Array} weights
      */
-    constructor(hidden_size) {
-        const ret = wasm.trainer_new(hidden_size);
+    import_weights(weights) {
+        const ptr0 = passArrayF32ToWasm0(weights, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_import_weights(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Uint32Array} hidden_layers
+     */
+    constructor(hidden_layers) {
+        const ptr0 = passArray32ToWasm0(hidden_layers, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_new(ptr0, len0);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }

@@ -9,7 +9,8 @@ import {
     Bird,
     CarFront,
     BrainCircuit,
-    LucideIcon
+    LucideIcon,
+    Network
 } from 'lucide-react';
 
 export type DemoId =
@@ -23,7 +24,8 @@ export type DemoId =
     | 'flappy'
     | 'evolution'
     | 'training'
-    | 'turret';
+    | 'turret'
+    | 'playground';
 
 export interface DemoMetadata {
     id: DemoId;
@@ -116,6 +118,15 @@ export const DEMOS: DemoMetadata[] = [
         tags: ['Physics', 'Ballistics', 'Tracking'],
         icon: Navigation,
         color: 'from-cyan-500 to-blue-600',
+    },
+    {
+        id: 'playground',
+        title: 'Neural Playground',
+        subtitle: 'Interactive Model Training',
+        description: 'Train a neural network online, visualize decision boundaries, and export or import network weights via JSON.',
+        tags: ['Backprop', 'Interactive', 'Data'],
+        icon: Network,
+        color: 'from-purple-500 to-pink-500',
     },
     {
         id: 'evolution',
