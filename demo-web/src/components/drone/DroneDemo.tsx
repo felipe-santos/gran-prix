@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
     DRONE_WIDTH,
     DRONE_HEIGHT,
+    DRONE_INPUTS,
+    DRONE_HIDDEN,
+    DRONE_OUTPUTS,
     DroneStats,
 } from '../../types';
 import { PerformanceCharts } from '../PerformanceCharts';
@@ -26,7 +29,7 @@ export const DroneDemo: React.FC = () => {
     const isLoopActive = useRef(false);
 
     const [isPlaying, setIsPlaying] = useState(false);
-    
+
     // Unified Simulation Engine
     const { internalState, stats, performanceHistory, isReady, update, reset, engine } = useSimulation<any, DroneSimulationState, DroneStats>(droneSimulationConfig);
 
@@ -34,6 +37,36 @@ export const DroneDemo: React.FC = () => {
         setIsPlaying(false);
         reset();
     }, [reset]);
+
+    const handleExportCCode = useCallback(() => {
+        const snapshot = engine?.get_best_brain_snapshot('drones');
+        if (!snapshot) return;
+
+        // Simple C header generation
+        let cCode = `#ifndef BRAIN_WEIGHTS_H\n#define BRAIN_WEIGHTS_H\n\n`;
+        cCode += `// PRIX Neural Network Weights - Drone Stabilizer Demo\n`;
+        cCode += `// Architecture: ${DRONE_INPUTS} -> ${DRONE_HIDDEN.join(' -> ')} -> ${DRONE_OUTPUTS}\n\n`;
+
+        const flat: number[] = [];
+        snapshot.forEach((node: any) => {
+            if (node.value) node.value.forEach((v: number) => flat.push(v));
+        });
+
+        cCode += `static const float BRAIN_WEIGHTS[] = {\n    `;
+        flat.forEach((v, i) => {
+            cCode += v.toFixed(6) + "f" + (i === flat.length - 1 ? "" : ", ");
+            if ((i + 1) % 8 === 0) cCode += "\n    ";
+        });
+        cCode += `\n};\n\n#endif\n`;
+
+        const blob = new Blob([cCode], { type: 'text/x-chdr' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'drone_brain_weights.h';
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [engine]);
 
     const render = useCallback(() => {
         const canvas = canvasRef.current;
@@ -115,6 +148,10 @@ export const DroneDemo: React.FC = () => {
                         <DroneNetworkViz
                             population={(engine as any)?.populations.get('drones')}
                             fitnessScores={engine?.fitnessScores.get('drones')}
+                            onImport={(newWeights: Float32Array) => {
+                                (engine as any)?.evolveWithWeights('drones', Array.from(newWeights));
+                            }}
+                            onExportCCode={handleExportCCode}
                         />
                         <div className="mt-5 space-y-1.5 border-t border-border pt-4">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
@@ -169,9 +206,9 @@ export const DroneDemo: React.FC = () => {
                                 The <span className="text-orange-500 font-bold">Orange Drone</span> represents an algorithm based strictly on mathematically-calculated proportional, integral, and derivative equations.
                             </p>
                             <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-xl font-mono text-[9px] text-orange-400">
-                                P = Target - Current<br/>
-                                I = I + P<br/>
-                                D = P - PrevP<br/>
+                                P = Target - Current<br />
+                                I = I + P<br />
+                                D = P - PrevP<br />
                                 F = Kp*P + Ki*I + Kd*D
                             </div>
                             <p className="text-xs text-muted-foreground leading-relaxed">

@@ -6,6 +6,8 @@ import { NetworkViz } from '../shared/NetworkViz';
 interface OvenNetworkVizProps {
     population: wasm.Population | null;
     fitnessScores?: Float32Array;
+    onImport?: (weights: Float32Array) => void;
+    onExportCCode?: () => void;
 }
 
 const INPUT_NAMES = [
@@ -17,6 +19,8 @@ const OUTPUT_NAMES = ['Top🔥', 'Bot🔥', 'Fan🌬️'];
 export const OvenNetworkViz: React.FC<OvenNetworkVizProps> = ({
     population,
     fitnessScores,
+    onImport,
+    onExportCCode,
 }) => {
     return (
         <NetworkViz
@@ -27,6 +31,8 @@ export const OvenNetworkViz: React.FC<OvenNetworkVizProps> = ({
             outputs={OVEN_OUTPUTS}
             inputNames={INPUT_NAMES}
             outputNames={OUTPUT_NAMES}
+            onImport={onImport}
+            onExportCCode={onExportCCode}
         />
     );
 };

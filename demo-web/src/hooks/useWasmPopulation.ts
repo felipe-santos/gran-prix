@@ -3,10 +3,23 @@ import * as wasm from '../wasm/pkg/gran_prix_wasm';
 import { POPULATION_SIZE, EVOLUTION_INPUTS, EVOLUTION_HIDDEN, EVOLUTION_OUTPUTS } from '../types';
 import { ensureWasmLoaded } from '../lib/wasmLoader';
 
-export function useWasmPopulation() {
+export function useWasmPopulation(
+    initialPopSize: number = POPULATION_SIZE,
+    initialInputs: number = EVOLUTION_INPUTS,
+    initialHidden: number[] = EVOLUTION_HIDDEN,
+    initialOutputs: number = EVOLUTION_OUTPUTS
+) {
     const [population, setPopulation] = useState<wasm.Population | null>(null);
     const popRef = useRef<wasm.Population | null>(null);
     const initialized = useRef(false);
+
+    // Store config in refs to use inside stable callbacks
+    const config = useRef({
+        popSize: initialPopSize,
+        inputs: initialInputs,
+        hidden: initialHidden,
+        outputs: initialOutputs
+    });
 
     useEffect(() => {
         popRef.current = population;
@@ -20,15 +33,15 @@ export function useWasmPopulation() {
         try {
             console.log("PRIX: Requesting Global WASM Load (Main App)...");
             await ensureWasmLoaded();
-            
+
             const pop = new wasm.Population(
-                POPULATION_SIZE,
-                EVOLUTION_INPUTS,
-                new Uint32Array(EVOLUTION_HIDDEN),
-                EVOLUTION_OUTPUTS
+                config.current.popSize,
+                config.current.inputs,
+                new Uint32Array(config.current.hidden),
+                config.current.outputs
             );
             setPopulation(pop);
-            console.log(`Gran-Prix Population Online! Size: ${pop.count()}`);
+            console.log(`Gran-Prix Population Online! Size: ${pop.count()} (Config: ${config.current.inputs} IN, [${config.current.hidden}] HID, ${config.current.outputs} OUT)`);
             return pop;
         } catch (e) {
             console.error("Failed to load WASM:", e);

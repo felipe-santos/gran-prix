@@ -6,6 +6,9 @@ import {
     TURRET_WIDTH,
     TURRET_HEIGHT,
     TURRET_POPULATION_SIZE,
+    TURRET_INPUTS,
+    TURRET_HIDDEN,
+    TURRET_OUTPUTS,
     TurretStats
 } from '../../types/turret';
 import { useWasmPopulation } from '../../hooks/useWasmPopulation';
@@ -16,6 +19,7 @@ import { TurretCanvas } from './TurretCanvas';
 import { StatsBar } from '../StatsBar';
 import { GameControls } from '../GameControls';
 import { LearningLab } from '../LearningLab';
+import { NetworkViz } from '../shared/NetworkViz';
 
 export const TurretDemo: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -29,7 +33,12 @@ export const TurretDemo: React.FC = () => {
     const [mutationStrategy, setMutationStrategy] = useState<wasm.MutationStrategy>(wasm.MutationStrategy.Additive);
     const [customKernel, setCustomKernelState] = useState<[number, number, number]>([0, 1, 0]);
 
-    const { population, initWasm, evolve: wasmEvolve, computeAll, setGlobalKernel } = useWasmPopulation();
+    const { population, initWasm, evolve: wasmEvolve, computeAll, getBestBrainSnapshot, setGlobalKernel } = useWasmPopulation(
+        TURRET_POPULATION_SIZE,
+        TURRET_INPUTS,
+        TURRET_HIDDEN,
+        TURRET_OUTPUTS
+    );
 
     const evolve = useCallback((fitnessScores: number[], rate: number, scale: number, strategy: wasm.MutationStrategy) => {
         wasmEvolve(fitnessScores, rate, scale, strategy);
@@ -53,6 +62,36 @@ export const TurretDemo: React.FC = () => {
             initWasm().catch(console.error);
         }
     }, [initWasm, population]);
+
+    const handleExportCCode = useCallback(() => {
+        const snapshot = getBestBrainSnapshot?.(Float32Array.from(gameState.current.agents.map(a => a.fitness)));
+        if (!snapshot) return;
+
+        // Simple C header generation (similar to BrainPersistence logic)
+        let cCode = `#ifndef BRAIN_WEIGHTS_H\n#define BRAIN_WEIGHTS_H\n\n`;
+        cCode += `// PRIX Neural Network Weights - Turret Demo\n`;
+        cCode += `// Architecture: ${TURRET_INPUTS} -> ${TURRET_HIDDEN.join(' -> ')} -> ${TURRET_OUTPUTS}\n\n`;
+
+        const flat: number[] = [];
+        snapshot.forEach((node: any) => {
+            if (node.value) node.value.forEach((v: number) => flat.push(v));
+        });
+
+        cCode += `static const float BRAIN_WEIGHTS[] = {\n    `;
+        flat.forEach((v, i) => {
+            cCode += v.toFixed(6) + "f" + (i === flat.length - 1 ? "" : ", ");
+            if ((i + 1) % 8 === 0) cCode += "\n    ";
+        });
+        cCode += `\n};\n\n#endif\n`;
+
+        const blob = new Blob([cCode], { type: 'text/x-chdr' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'brain_weights.h';
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [gameState, getBestBrainSnapshot]);
 
     const render = useCallback((ctx: CanvasRenderingContext2D) => {
         const state = gameState.current;
@@ -225,21 +264,34 @@ export const TurretDemo: React.FC = () => {
 
     return (
         <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 py-8 transition-all duration-500">
-            <div className="flex flex-col gap-6 flex-shrink-0">
-                <div className="pt-0">
-                    <LearningLab
-                        mutationRate={mutationRate}
-                        setMutationRate={setMutationRate}
-                        mutationScale={mutationScale}
-                        setMutationScale={setMutationScale}
-                        mutationStrategy={mutationStrategy}
-                        setMutationStrategy={setMutationStrategy}
-                        customKernel={customKernel}
-                        setCustomKernel={(k: [number, number, number]) => {
-                            setCustomKernelState(k);
-                            setGlobalKernel(k[0], k[1], k[2]);
-                        }}
-                    />
+            <div className="flex flex-col gap-6 flex-shrink-0 w-80">
+                <div className="bg-card/50 border border-border rounded-2xl overflow-hidden backdrop-blur-md p-6">
+                    <div className="border-b border-border pb-3 mb-5">
+                        <h3 className="text-sm font-bold text-foreground uppercase tracking-tighter">
+                            Neural Brain
+                        </h3>
+                        <p className="text-[9px] text-muted-foreground font-mono mt-0.5">
+                            GRADIENT_DESCENT · LIVE_WEIGHTS
+                        </p>
+                    </div>
+
+                    <div className="flex flex-col gap-6">
+                        <NetworkViz
+                            population={population}
+                            fitnessScores={Float32Array.from(gameState.current.agents.map(a => a.fitness))}
+                            inputs={TURRET_INPUTS}
+                            hidden={TURRET_HIDDEN}
+                            outputs={TURRET_OUTPUTS}
+                            inputNames={['DRONE_X', 'DRONE_Y', 'DRONE_VX', 'WIND', 'ANGLE', 'COOLDOWN']}
+                            outputNames={['POWER', 'FIRE']}
+                            onImport={(newWeights: Float32Array) => {
+                                if (!population) return;
+                                // Evolution-based population import
+                                wasmEvolve(Array.from(newWeights), 1.0, 0.0, wasm.MutationStrategy.Additive);
+                            }}
+                            onExportCCode={handleExportCCode}
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -269,7 +321,24 @@ export const TurretDemo: React.FC = () => {
                 />
             </div>
 
-            <div className="w-80 flex-shrink-0 hidden lg:block opacity-0" />
+            <div className="flex flex-col gap-6 flex-shrink-0 w-80">
+                <div className="pt-0">
+                    <LearningLab
+                        mutationRate={mutationRate}
+                        setMutationRate={setMutationRate}
+                        mutationScale={mutationScale}
+                        setMutationScale={setMutationScale}
+                        mutationStrategy={mutationStrategy}
+                        setMutationStrategy={setMutationStrategy}
+                        customKernel={customKernel}
+                        setCustomKernel={(k: [number, number, number]) => {
+                            setCustomKernelState(k);
+                            setGlobalKernel(k[0], k[1], k[2]);
+                        }}
+                    />
+                </div>
+            </div>
+
         </div>
     );
 };

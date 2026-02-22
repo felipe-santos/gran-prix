@@ -7,12 +7,16 @@ interface DroneNetworkVizProps {
     population: wasm.Population | null;
     fitnessScores?: Float32Array;
     hidden?: number[];
+    onImport?: (weights: Float32Array) => void;
+    onExportCCode?: () => void;
 }
 
 export const DroneNetworkViz: React.FC<DroneNetworkVizProps> = ({
     population,
     fitnessScores,
     hidden = DRONE_HIDDEN,
+    onImport,
+    onExportCCode,
 }) => {
     return (
         <NetworkViz
@@ -23,6 +27,8 @@ export const DroneNetworkViz: React.FC<DroneNetworkVizProps> = ({
             outputs={DRONE_OUTPUTS}
             height={200}
             width={280}
+            onImport={onImport}
+            onExportCCode={onExportCCode}
         />
     );
 };

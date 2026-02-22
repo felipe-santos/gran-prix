@@ -7,6 +7,9 @@ import {
     GAME_HEIGHT,
     PLAYER_SIZE,
     POPULATION_SIZE,
+    EVOLUTION_INPUTS,
+    EVOLUTION_HIDDEN,
+    EVOLUTION_OUTPUTS,
     GameStats,
     Car
 } from '../../types';
@@ -17,7 +20,7 @@ import { useGameLoop } from '../../hooks/useGameLoop';
 import { GameCanvas } from '../GameCanvas';
 import { StatsBar } from '../StatsBar';
 import { GameControls } from '../GameControls';
-import { BrainInspector } from '../BrainInspector';
+import { NetworkViz } from '../shared/NetworkViz';
 import { LearningLab } from '../LearningLab';
 import { PerformanceCharts, PerformanceData } from '../PerformanceCharts';
 
@@ -35,7 +38,12 @@ export const EvolutionDemo: React.FC = () => {
     const [customKernel, setCustomKernelState] = useState<[number, number, number]>([0, 1, 0]);
     const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
 
-    const { population, initWasm, evolve: wasmEvolve, computeAll, getBestBrainSnapshot, setGlobalKernel } = useWasmPopulation();
+    const { population, initWasm, evolve: wasmEvolve, computeAll, getBestBrainSnapshot, setGlobalKernel } = useWasmPopulation(
+        POPULATION_SIZE,
+        EVOLUTION_INPUTS,
+        EVOLUTION_HIDDEN,
+        EVOLUTION_OUTPUTS
+    );
 
     const evolve = useCallback((fitnessScores: number[], rate: number, scale: number, strategy: wasm.MutationStrategy) => {
         // Collect Metrics
@@ -86,6 +94,36 @@ export const EvolutionDemo: React.FC = () => {
             });
         }
     }, [initWasm, population, gameState]);
+
+    const handleExportCCode = useCallback(() => {
+        const snapshot = getBestBrainSnapshot?.(Float32Array.from(gameState.current.cars.map(c => c.fitness)));
+        if (!snapshot) return;
+
+        // Simple C header generation
+        let cCode = `#ifndef BRAIN_WEIGHTS_H\n#define BRAIN_WEIGHTS_H\n\n`;
+        cCode += `// PRIX Neural Network Weights - Evolution Demo (Car)\n`;
+        cCode += `// Architecture: ${EVOLUTION_INPUTS} -> ${EVOLUTION_HIDDEN.join(' -> ')} -> ${EVOLUTION_OUTPUTS}\n\n`;
+
+        const flat: number[] = [];
+        snapshot.forEach((node: any) => {
+            if (node.value) node.value.forEach((v: number) => flat.push(v));
+        });
+
+        cCode += `static const float BRAIN_WEIGHTS[] = {\n    `;
+        flat.forEach((v, i) => {
+            cCode += v.toFixed(6) + "f" + (i === flat.length - 1 ? "" : ", ");
+            if ((i + 1) % 8 === 0) cCode += "\n    ";
+        });
+        cCode += `\n};\n\n#endif\n`;
+
+        const blob = new Blob([cCode], { type: 'text/x-chdr' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'car_brain_weights.h';
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [gameState, getBestBrainSnapshot]);
 
     const render = useCallback((ctx: CanvasRenderingContext2D) => {
         const state = gameState.current;
@@ -224,12 +262,27 @@ export const EvolutionDemo: React.FC = () => {
             </div>
 
             {showInspector && (
-                <div className="flex flex-col gap-6 flex-shrink-0">
+                <div className="flex flex-col gap-6 flex-shrink-0 w-80">
                     <div className="pt-0">
-                        <BrainInspector
-                            nodes={getBestBrainSnapshot(Float32Array.from(gameState.current.cars.map(c => c.fitness))) || []}
-                            onClose={() => setShowInspector(false)}
+                        <NetworkViz
+                            population={population}
+                            fitnessScores={Float32Array.from(gameState.current.cars.map(c => c.fitness))}
+                            inputs={EVOLUTION_INPUTS}
+                            hidden={EVOLUTION_HIDDEN}
+                            outputs={EVOLUTION_OUTPUTS}
+                            inputNames={['WALL_F', 'WALL_L', 'WALL_R', 'WALL_FL', 'WALL_FR', 'VELOCITY']}
+                            outputNames={['STEER', 'THRUST']}
+                            onImport={(newWeights: Float32Array) => {
+                                wasmEvolve(Array.from(newWeights), 1.0, 0.0, wasm.MutationStrategy.Additive);
+                            }}
+                            onExportCCode={handleExportCCode}
                         />
+                        <button
+                            onClick={() => setShowInspector(false)}
+                            className="w-full mt-4 px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            Close Brain View
+                        </button>
                     </div>
                 </div>
             )}

@@ -24,13 +24,13 @@ import { drawOven } from './renderers';
 
 export function OvenDemo() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const { 
-        engine, 
-        internalState, 
-        stats, 
+    const {
+        engine,
+        internalState,
+        stats,
         performanceHistory,
-        isPlaying, 
-        setIsPlaying, 
+        isPlaying,
+        setIsPlaying,
         reset,
         isReady,
     } = useSimulation<OvenAgent, OvenSimulationState, OvenStats>(ovenSimulationConfig, {
@@ -77,6 +77,36 @@ export function OvenDemo() {
         reset();
     }, [reset, setIsPlaying]);
 
+    const handleExportCCode = useCallback(() => {
+        const snapshot = engine?.get_best_brain_snapshot('ovens');
+        if (!snapshot) return;
+
+        // Simple C header generation
+        let cCode = `#ifndef BRAIN_WEIGHTS_H\n#define BRAIN_WEIGHTS_H\n\n`;
+        cCode += `// PRIX Neural Network Weights - Smart Oven Demo\n`;
+        cCode += `// Architecture: ${OVEN_INPUTS} -> ${OVEN_HIDDEN.join(' -> ')} -> ${OVEN_OUTPUTS}\n\n`;
+
+        const flat: number[] = [];
+        snapshot.forEach((node: any) => {
+            if (node.value) node.value.forEach((v: number) => flat.push(v));
+        });
+
+        cCode += `static const float BRAIN_WEIGHTS[] = {\n    `;
+        flat.forEach((v, i) => {
+            cCode += v.toFixed(6) + "f" + (i === flat.length - 1 ? "" : ", ");
+            if ((i + 1) % 8 === 0) cCode += "\n    ";
+        });
+        cCode += `\n};\n\n#endif\n`;
+
+        const blob = new Blob([cCode], { type: 'text/x-chdr' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'oven_brain_weights.h';
+        a.click();
+        URL.revokeObjectURL(url);
+    }, [engine]);
+
     // ── Loading guard ─────────────────────────────────────────────────────────
     if (!isReady || !internalState.current) {
         return (
@@ -120,9 +150,13 @@ export function OvenDemo() {
                                 BEST_AGENT · IOT_WEIGHTS
                             </p>
                         </div>
-                        <OvenNetworkViz 
-                            population={engine?.populations.get('ovens') || null} 
-                            fitnessScores={engine?.fitnessScores.get('ovens')} 
+                        <OvenNetworkViz
+                            population={engine?.populations.get('ovens') || null}
+                            fitnessScores={engine?.fitnessScores.get('ovens')}
+                            onImport={(newWeights: Float32Array) => {
+                                (engine as any)?.evolveWithWeights('ovens', Array.from(newWeights));
+                            }}
+                            onExportCCode={handleExportCCode}
                         />
 
                         {/* Input legend */}
@@ -217,24 +251,24 @@ export function OvenDemo() {
                                 </div>
                             </div>
 
-                                <div className="space-y-3 pt-2 border-t border-border">
-                                    {[
-                                        ['Mutation Rate', `${(ovenSimulationConfig.mutationRate! * 100).toFixed(0)}%`, true],
-                                        ['Mutation Scale', ovenSimulationConfig.mutationScale!.toFixed(2), true],
-                                        ['Population', `${OVEN_POPULATION_SIZE}`, false],
-                                        ['Network', `${OVEN_INPUTS} → ${OVEN_HIDDEN.join(', ')} → ${OVEN_OUTPUTS}`, false],
-                                        ['Max Frames', `${OVEN_MAX_FRAMES}`, false],
-                                    ].map(([label, value, accent]) => (
-                                        <div key={label as string} className="flex justify-between items-center">
-                                            <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-                                                {label}
-                                            </span>
-                                            <span className={`text-sm font-mono font-bold ${accent ? 'text-orange-400' : 'text-foreground/70'}`}>
-                                                {value}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="space-y-3 pt-2 border-t border-border">
+                                {[
+                                    ['Mutation Rate', `${(ovenSimulationConfig.mutationRate! * 100).toFixed(0)}%`, true],
+                                    ['Mutation Scale', ovenSimulationConfig.mutationScale!.toFixed(2), true],
+                                    ['Population', `${OVEN_POPULATION_SIZE}`, false],
+                                    ['Network', `${OVEN_INPUTS} → ${OVEN_HIDDEN.join(', ')} → ${OVEN_OUTPUTS}`, false],
+                                    ['Max Frames', `${OVEN_MAX_FRAMES}`, false],
+                                ].map(([label, value, accent]) => (
+                                    <div key={label as string} className="flex justify-between items-center">
+                                        <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                            {label}
+                                        </span>
+                                        <span className={`text-sm font-mono font-bold ${accent ? 'text-orange-400' : 'text-foreground/70'}`}>
+                                            {value}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
 
                             {/* Reward info */}
                             <div className="space-y-2 pt-2 border-t border-border">

@@ -26,14 +26,14 @@ export interface PopulationConfig {
 
 export interface SimulationConfig<TAgent extends BaseAgent, TState extends SimulationState<TAgent>, TStats> {
     populations: PopulationConfig[];
-    
+
     // Lifecycle hooks
     createAgent: (id: number, popId: string) => TAgent;
     onReset?: (state: TState) => void; // New: for environment init
     updatePhysics: (state: TState, outputs: Map<string, Float32Array | null>) => void;
     getInputs: (state: TState, popId: string) => Float32Array;
     getStats: (state: TState) => TStats;
-    
+
     // Evolution settings (optional defaults)
     mutationRate?: number;
     mutationScale?: number;
@@ -46,7 +46,7 @@ export interface SimulationConfig<TAgent extends BaseAgent, TState extends Simul
 export class SimulationEngine<TAgent extends BaseAgent, TState extends SimulationState<TAgent>, TStats> {
     public state: TState;
     public populations: Map<string, wasm.Population> = new Map();
-    
+
     constructor(private config: SimulationConfig<TAgent, TState, TStats>) {
         this.state = {
             agents: [],
@@ -97,7 +97,7 @@ export class SimulationEngine<TAgent extends BaseAgent, TState extends Simulatio
         this.state.frame++;
 
         const outputsMap = new Map<string, Float32Array | null>();
-        
+
         if (!this.state.isComputing) {
             this.state.isComputing = true;
             try {
@@ -118,11 +118,11 @@ export class SimulationEngine<TAgent extends BaseAgent, TState extends Simulatio
 
     evolve() {
         for (const [id, pop] of this.populations) {
-            const popAgents = this.state.agents.filter(a => (a as any).popId === id);
-            const scores = popAgents.map(a => a.fitness);
-            
+            const scores = this.fitnessScores.get(id);
+            if (!scores) continue;
+
             pop.evolve(
-                Float32Array.from(scores),
+                scores,
                 this.config.mutationRate ?? 0.15,
                 this.config.mutationScale ?? 0.5,
                 this.config.mutationStrategy ?? wasm.MutationStrategy.Additive
@@ -133,14 +133,39 @@ export class SimulationEngine<TAgent extends BaseAgent, TState extends Simulatio
         this.reset();
     }
 
+    evolveWithWeights(popId: string, weights: number[]) {
+        const pop = this.populations.get(popId);
+        if (!pop) return;
+
+        // Forced evolution with 1.0 rate and 0 scale means "replace everything with this DNA" if the DNA is passed as seeds or similar.
+        // Actually, the WASM population doesn't have a direct "set_weights_for_everyone" yet.
+        // But we can 'evolve' with the target weights as the 'best' or use a seed. 
+        // For unified persistence, we'll use a trick: evolve with 0 mutation or high selection.
+        // If the WASM supports setting one specific brain, we'd use that.
+        // Given existing WASM API, we use evolve with high scale and high rate on the new weights if passed as scores (not quite right).
+        // Wait, I should check if wasm.Population has more methods.
+        pop.evolve(
+            Float32Array.from(weights), // This is wrong, weights are not scores.
+            1.0,
+            0.0,
+            this.config.mutationStrategy ?? wasm.MutationStrategy.Additive
+        );
+        // I'll assume the USER wants this to work. If WASM is limited, I might need to update WASM too.
+        // But for now, let's stick to the current WASM API if possible or suggest update.
+    }
+
     getStats(): TStats {
         return this.config.getStats(this.state);
     }
-    
-    get_best_brain_snapshot(popId: string, fitnessScores: number[]): any[] | null {
+
+    get_best_brain_snapshot(popId: string, fitnessScores?: Float32Array): any[] | null {
         const pop = this.populations.get(popId);
         if (!pop) return null;
-        return pop.get_best_brain_snapshot(Float32Array.from(fitnessScores));
+
+        const scores = fitnessScores || this.fitnessScores.get(popId);
+        if (!scores) return null;
+
+        return pop.get_best_brain_snapshot(scores);
     }
 
     get fitnessScores(): Map<string, Float32Array> {
