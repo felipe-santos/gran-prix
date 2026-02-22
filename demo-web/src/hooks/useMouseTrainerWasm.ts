@@ -40,8 +40,8 @@ export function useMouseTrainerWasm() {
         try {
             await ensureWasmLoaded();
 
-            trainerXRef.current = new wasm.Trainer(HIDDEN_SIZE);
-            trainerYRef.current = new wasm.Trainer(HIDDEN_SIZE);
+            trainerXRef.current = new wasm.Trainer(2, new Uint32Array([HIDDEN_SIZE]));
+            trainerYRef.current = new wasm.Trainer(2, new Uint32Array([HIDDEN_SIZE]));
 
             setIsReady(true);
         } catch (err) {
@@ -70,14 +70,14 @@ export function useMouseTrainerWasm() {
             let lossY = 0;
 
             try {
-                const resultX = trainerXRef.current.train_step(dx, dy, targetX, LEARNING_RATE);
+                const resultX = trainerXRef.current.train_step(new Float32Array([dx, dy]), targetX, LEARNING_RATE);
                 lossX = resultX;
             } catch (e) {
                 console.warn('[MouseHero] trainerX train_step error:', e);
             }
 
             try {
-                const resultY = trainerYRef.current.train_step(dx, dy, targetY, LEARNING_RATE);
+                const resultY = trainerYRef.current.train_step(new Float32Array([dx, dy]), targetY, LEARNING_RATE);
                 lossY = resultY;
             } catch (e) {
                 console.warn('[MouseHero] trainerY train_step error:', e);
@@ -99,8 +99,8 @@ export function useMouseTrainerWasm() {
 
         try {
             // Output is sigmoid [0,1] → map back to [-1,1]
-            const rawX = trainerXRef.current.predict(dx, dy);
-            const rawY = trainerYRef.current.predict(dx, dy);
+            const rawX = trainerXRef.current.predict(new Float32Array([dx, dy]));
+            const rawY = trainerYRef.current.predict(new Float32Array([dx, dy]));
 
             return {
                 predDx: rawX * 2 - 1,

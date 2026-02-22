@@ -320,13 +320,13 @@ export class Population {
 export class Trainer {
     free(): void;
     [Symbol.dispose](): void;
-    get_decision_boundary(resolution: number): Float32Array;
+    get_decision_boundary(resolution: number, feature_map: Function): Float32Array;
     get_weights(): Float32Array;
     import_weights(weights: Float32Array): void;
-    constructor(hidden_layers: Uint32Array);
-    predict(x: number, y: number): number;
-    train_batch(inputs_x: Float32Array, inputs_y: Float32Array, targets: Float32Array, lr: number): number;
-    train_step(x: number, y: number, target_val: number, lr: number): number;
+    constructor(input_dim: number, hidden_layers: Uint32Array);
+    predict(features: Float32Array): number;
+    train_batch(inputs: Float32Array, targets: Float32Array, lr: number): number;
+    train_step(features: Float32Array, target_val: number, lr: number): number;
 }
 
 export function init_panic_hook(): void;
@@ -345,12 +345,12 @@ export interface InitOutput {
     readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
     readonly __wbg_trainer_free: (a: number, b: number) => void;
-    readonly trainer_get_decision_boundary: (a: number, b: number) => [number, number, number, number];
+    readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
     readonly trainer_get_weights: (a: number) => [number, number, number, number];
     readonly trainer_import_weights: (a: number, b: number, c: number) => [number, number];
-    readonly trainer_new: (a: number, b: number) => [number, number, number];
+    readonly trainer_new: (a: number, b: number, c: number) => [number, number, number];
     readonly trainer_predict: (a: number, b: number, c: number) => [number, number, number];
-    readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+    readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly __wbg_population_free: (a: number, b: number) => void;
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];

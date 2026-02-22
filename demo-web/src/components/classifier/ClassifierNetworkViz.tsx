@@ -4,6 +4,7 @@ import * as wasm from '../../wasm/pkg/gran_prix_wasm';
 interface ClassifierNetworkVizProps {
     trainer: wasm.Trainer | null;
     hiddenSize: number;
+    inputDim?: number;
 }
 
 export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trainer, hiddenSize }) => {
@@ -21,8 +22,8 @@ export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trai
 
             const { width, height } = canvasRef.current;
             ctx.clearRect(0, 0, width, height);
-
-            const layers = [2, hiddenSize, 1];
+            const effectiveInputDim = inputDim || 2;
+            const layers = [effectiveInputDim, hiddenSize, 1];
             const layerX = [width * 0.2, width * 0.5, width * 0.8];
             const nodeRadius = 10;
 
@@ -37,13 +38,13 @@ export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trai
                     for (let j = 0; j < nextLayerNodes; j++) {
                         const y2 = (height / (nextLayerNodes + 1)) * (j + 1);
                         const weight = weights[wIdx++];
-                        
+
                         ctx.beginPath();
                         ctx.moveTo(layerX[l], y1);
                         ctx.lineTo(layerX[l + 1], y2);
                         ctx.lineWidth = Math.min(Math.abs(weight) * 3, 4);
-                        ctx.strokeStyle = weight > 0 
-                            ? `rgba(52, 211, 153, ${0.1 + Math.abs(weight)})` 
+                        ctx.strokeStyle = weight > 0
+                            ? `rgba(52, 211, 153, ${0.1 + Math.abs(weight)})`
                             : `rgba(244, 63, 94, ${0.1 + Math.abs(weight)})`;
                         ctx.stroke();
                     }
@@ -61,7 +62,7 @@ export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trai
                     ctx.shadowBlur = 10;
                     ctx.shadowColor = 'rgba(0,0,0,0.5)';
                     ctx.fill();
-                    
+
                     ctx.strokeStyle = 'rgba(255,255,255,0.1)';
                     ctx.lineWidth = 1;
                     ctx.stroke();
@@ -85,10 +86,10 @@ export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trai
                 </h3>
             </div>
             <div className="p-6">
-                <canvas 
-                    ref={canvasRef} 
-                    width={320} 
-                    height={280} 
+                <canvas
+                    ref={canvasRef}
+                    width={320}
+                    height={280}
                     className="w-full h-auto bg-black/10 rounded-xl"
                 />
             </div>

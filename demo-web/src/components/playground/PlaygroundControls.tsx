@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Upload, Download, Trash2, Play, Square, Plus, Database, GraduationCap, Settings2, Activity } from 'lucide-react';
+import { Upload, Download, Trash2, Play, Square, Plus, Database, GraduationCap, Settings2, Activity, Zap } from 'lucide-react';
 import { PRESETS } from './PlaygroundPresets';
+import { FeatureType, ALL_FEATURES, getFeatureLabel } from './features';
 
 interface PlaygroundControlsProps {
     isTraining: boolean;
     onToggleTraining: () => void;
     onClearPoints: () => void;
     onExportWeights: () => void;
+    onExportCCode: () => void;
     onImportWeights: (file: File) => void;
     loss: number;
     learningRate: number;
@@ -22,6 +24,8 @@ interface PlaygroundControlsProps {
     onAddManualPoint: (x: number, y: number, label: number) => void;
     onLoadPreset: (id: string) => void;
     currentPresetId: string | null;
+    activeFeatures: FeatureType[];
+    onToggleFeature: (feat: FeatureType) => void;
 }
 
 export const PlaygroundControls: React.FC<PlaygroundControlsProps> = ({
@@ -29,6 +33,7 @@ export const PlaygroundControls: React.FC<PlaygroundControlsProps> = ({
     onToggleTraining,
     onClearPoints,
     onExportWeights,
+    onExportCCode,
     onImportWeights,
     loss,
     learningRate,
@@ -43,7 +48,9 @@ export const PlaygroundControls: React.FC<PlaygroundControlsProps> = ({
     onImportDataset,
     onAddManualPoint,
     onLoadPreset,
-    currentPresetId
+    currentPresetId,
+    activeFeatures,
+    onToggleFeature
 }) => {
     const [manualX, setManualX] = useState<string>("0");
     const [manualY, setManualY] = useState<string>("0");
@@ -94,6 +101,28 @@ export const PlaygroundControls: React.FC<PlaygroundControlsProps> = ({
                     </div>
                 </div>
 
+                {/* Input Features (Feature Engineering) */}
+                <div className="space-y-3 pt-2 border-t border-border/50">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                        <Zap size={14} className="text-amber-400" />
+                        <label className="text-[9px] font-bold uppercase tracking-widest">Input Features</label>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                        {ALL_FEATURES.map(feat => (
+                            <button
+                                key={feat}
+                                onClick={() => onToggleFeature(feat)}
+                                className={`px-1 py-2 rounded-lg text-[8px] font-bold font-mono border transition-all ${activeFeatures.includes(feat)
+                                    ? 'bg-amber-500/10 border-amber-500/50 text-amber-500'
+                                    : 'bg-muted/30 border-transparent text-muted-foreground/40 hover:bg-muted/50'
+                                    }`}
+                            >
+                                {getFeatureLabel(feat)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
                 {/* Architecture Controls */}
                 <div className="space-y-3 pt-2 border-t border-border/50">
                     <div className="flex justify-between items-center text-muted-foreground">
@@ -117,12 +146,14 @@ export const PlaygroundControls: React.FC<PlaygroundControlsProps> = ({
                                 <div className="flex-1 flex items-center justify-center gap-3">
                                     <button
                                         onClick={() => onUpdateNeurons(idx, -1)}
-                                        className="w-6 h-6 rounded bg-muted/50 flex items-center justify-center hover:bg-muted text-foreground/70 transition-colors"
+                                        disabled={neurons <= 1}
+                                        className="w-6 h-6 rounded bg-muted/50 flex items-center justify-center hover:bg-muted text-foreground/70 transition-colors disabled:opacity-30"
                                     >-</button>
                                     <span className="text-[11px] font-bold font-mono w-4 text-center text-foreground/90">{neurons}</span>
                                     <button
                                         onClick={() => onUpdateNeurons(idx, 1)}
-                                        className="w-6 h-6 rounded bg-muted/50 flex items-center justify-center hover:bg-muted text-foreground/70 transition-colors"
+                                        disabled={neurons >= 64}
+                                        className="w-6 h-6 rounded bg-muted/50 flex items-center justify-center hover:bg-muted text-foreground/70 transition-colors disabled:opacity-30"
                                     >+</button>
                                 </div>
                                 <button
@@ -222,7 +253,13 @@ export const PlaygroundControls: React.FC<PlaygroundControlsProps> = ({
                                 onClick={onExportWeights}
                                 className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[9px] font-bold font-mono bg-muted/40 border border-border/50 hover:bg-muted/80 text-cyan-400/60 hover:text-cyan-400 transition-all uppercase"
                             >
-                                <Download size={12} /> Export Weights
+                                <Download size={12} /> JSON WEIGHTS
+                            </button>
+                            <button
+                                onClick={onExportCCode}
+                                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[9px] font-bold font-mono bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/20 text-cyan-400 transition-all uppercase"
+                            >
+                                <Download size={12} /> C HEADER (.H)
                             </button>
                             <label className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[9px] font-bold font-mono bg-muted/40 border border-border/50 hover:bg-muted/80 text-cyan-400/60 hover:text-cyan-400 transition-all cursor-pointer uppercase">
                                 <Upload size={12} /> Import Weights

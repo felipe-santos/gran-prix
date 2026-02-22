@@ -4,9 +4,10 @@ import { Cpu, Binary } from 'lucide-react';
 interface WeightsViewerProps {
     weights: Float32Array | null;
     hiddenLayers: number[];
+    inputDim: number;
 }
 
-export const WeightsViewer: React.FC<WeightsViewerProps> = ({ weights, hiddenLayers }) => {
+export const WeightsViewer: React.FC<WeightsViewerProps> = ({ weights, hiddenLayers, inputDim }) => {
     if (!weights || weights.length === 0) {
         return (
             <div className="bg-card/50 border border-border rounded-2xl overflow-hidden backdrop-blur-md p-6 flex flex-col items-center justify-center text-muted-foreground font-mono text-[10px] gap-3 min-h-[200px]">
@@ -19,7 +20,7 @@ export const WeightsViewer: React.FC<WeightsViewerProps> = ({ weights, hiddenLay
     const totalParams = weights.length;
     const blocks: { title: string; data: number[]; cols: number }[] = [];
     let currentIdx = 0;
-    let prevSize = 2;
+    let prevSize = inputDim;
 
     hiddenLayers.forEach((hSize, idx) => {
         const wCount = prevSize * hSize;

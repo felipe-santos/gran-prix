@@ -16,6 +16,7 @@ pub struct Trainer {
     graph: RefCell<Graph>,
     input_node: usize,
     output_node: usize,
+    input_dim: usize,
     #[allow(dead_code)]
     target_node: RefCell<Option<usize>>,
     input_tensor: RefCell<Tensor>,
@@ -24,16 +25,16 @@ pub struct Trainer {
 #[wasm_bindgen]
 impl Trainer {
     #[wasm_bindgen(constructor)]
-    pub fn new(hidden_layers: Vec<usize>) -> Result<Trainer, JsValue> {
+    pub fn new(input_dim: usize, hidden_layers: Vec<usize>) -> Result<Trainer, JsValue> {
         let backend = Box::new(CPUBackend);
         let mut graph = Graph::new(backend);
         let mut gb = GraphBuilder::new(&mut graph);
 
-        // Input: 2D Point (x, y)
-        let input_tensor = Tensor::new_zeros(&[1, 2]);
+        // Input: Expandable according to features
+        let input_tensor = Tensor::new_zeros(&[1, input_dim]);
         let input_id = gb.val(input_tensor);
 
-        let mut current_size = 2;
+        let mut current_size = input_dim;
         let mut last_node = input_id;
 
         // Build Hidden Layers dynamically
@@ -69,8 +70,9 @@ impl Trainer {
             graph: RefCell::new(graph),
             input_node: input_id.0,
             output_node: final_out.0,
+            input_dim,
             target_node: RefCell::new(None),
-            input_tensor: RefCell::new(Tensor::new_zeros(&[1, 2])),
+            input_tensor: RefCell::new(Tensor::new_zeros(&[1, input_dim])),
         })
     }
 
@@ -116,10 +118,14 @@ impl Trainer {
         Ok(())
     }
 
-    pub fn train_batch(&self, inputs_x: Vec<f32>, inputs_y: Vec<f32>, targets: Vec<f32>, lr: f32) -> Result<f32, JsValue> {
+    pub fn train_batch(&self, inputs: Vec<f32>, targets: Vec<f32>, lr: f32) -> Result<f32, JsValue> {
         let mut graph = self.graph.borrow_mut();
+        
         let batch_size = targets.len();
         if batch_size == 0 { return Ok(0.0); }
+        if inputs.len() != batch_size * self.input_dim {
+            return Err(JsValue::from_str("Input vector size mismatch"));
+        }
         
         let mut total_loss = 0.0;
         let target = gran_prix::NodeId(self.output_node);
@@ -131,8 +137,10 @@ impl Trainer {
             {
                 let mut input_buffer = self.input_tensor.borrow_mut();
                 if let Ok(mut view) = input_buffer.try_view_mut() {
-                    view[[0, 0]] = inputs_x[i];
-                    view[[0, 1]] = inputs_y[i];
+                    let start = i * self.input_dim;
+                    for d in 0..self.input_dim {
+                        view[[0, d]] = inputs[start + d];
+                    }
                 }
                 if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(self.input_node) {
                     t.copy_from(&input_buffer).map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
@@ -157,18 +165,23 @@ impl Trainer {
         Ok(total_loss / batch_size as f32)
     }
 
-    pub fn train_step(&self, x: f32, y: f32, target_val: f32, lr: f32) -> Result<f32, JsValue> {
-        self.train_batch(vec![x], vec![y], vec![target_val], lr)
+    pub fn train_step(&self, features: Vec<f32>, target_val: f32, lr: f32) -> Result<f32, JsValue> {
+        self.train_batch(features, vec![target_val], lr)
     }
 
-    pub fn predict(&self, x: f32, y: f32) -> Result<f32, JsValue> {
+    pub fn predict(&self, features: Vec<f32>) -> Result<f32, JsValue> {
+        if features.len() != self.input_dim {
+            return Err(JsValue::from_str("Features dimension mismatch"));
+        }
         let mut graph = self.graph.borrow_mut();
         {
             let mut input_buffer = self.input_tensor.borrow_mut();
             let mut view = input_buffer.try_view_mut()
                 .map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
-            view[[0, 0]] = x;
-            view[[0, 1]] = y;
+            
+            for d in 0..self.input_dim {
+                view[[0, d]] = features[d];
+            }
 
             if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(self.input_node) {
                 t.copy_from(&input_buffer).map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
@@ -183,7 +196,7 @@ impl Trainer {
         Ok(1.0 / (1.0 + (-logit).exp()))
     }
 
-    pub fn get_decision_boundary(&self, resolution: usize) -> Result<Vec<f32>, JsValue> {
+    pub fn get_decision_boundary(&self, resolution: usize, feature_map: js_sys::Function) -> Result<Vec<f32>, JsValue> {
         let mut graph = self.graph.borrow_mut();
         let target = gran_prix::NodeId(self.output_node);
         graph.sync_params().map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
@@ -196,11 +209,20 @@ impl Trainer {
             for i in 0..resolution {
                 let x = (i as f32 / resolution as f32) * 2.0 - 1.0;
                 let y = (j as f32 / resolution as f32) * 2.0 - 1.0;
+                
+                // Call JS function to map (x, y) to expanded feature vector
+                let js_x = JsValue::from_f64(x as f64);
+                let js_y = JsValue::from_f64(y as f64);
+                let expanded = feature_map.call2(&JsValue::NULL, &js_x, &js_y)?
+                    .dyn_into::<js_sys::Float32Array>()?;
+                let features = expanded.to_vec();
+
                 {
                     let mut input_buffer = self.input_tensor.borrow_mut();
                     if let Ok(mut view) = input_buffer.try_view_mut() {
-                        view[[0, 0]] = x;
-                        view[[0, 1]] = y;
+                        for d in 0..self.input_dim {
+                            view[[0, d]] = features[d];
+                        }
                     }
                     if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(self.input_node) {
                         t.copy_from(&input_buffer).map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;

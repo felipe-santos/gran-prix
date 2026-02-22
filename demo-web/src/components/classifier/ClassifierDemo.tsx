@@ -58,12 +58,12 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
 
     useEffect(() => {
         if (!isWasmReady) return;
-        
+
         try {
             generatePoints(pattern);
             if (typeof wasm.Trainer === 'undefined') return;
-            
-            const newTrainer = new wasm.Trainer(hiddenSize);
+
+            const newTrainer = new wasm.Trainer(2, new Uint32Array([hiddenSize]));
             trainerRef.current = newTrainer;
             setTrainer(newTrainer);
             setGeneration(0);
@@ -93,15 +93,20 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
                 batchTarget.push(p.label);
             }
 
+            const batchInputs = new Float32Array(batchX.length * 2);
+            for (let i = 0; i < batchX.length; i++) {
+                batchInputs[i * 2] = batchX[i];
+                batchInputs[i * 2 + 1] = batchY[i];
+            }
+
             const avgLoss = currentTrainer.train_batch(
-                new Float32Array(batchX), 
-                new Float32Array(batchY), 
-                new Float32Array(batchTarget), 
+                batchInputs,
+                new Float32Array(batchTarget),
                 lrRef.current
             );
-            
+
             setLoss(avgLoss);
-            
+
             genRef.current += 1;
             if (genRef.current % 10 === 0) {
                 setGeneration(genRef.current);
@@ -115,9 +120,10 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
             const ctx = canvasRef.current?.getContext('2d');
             if (ctx && canvasRef.current) {
                 const { width, height } = canvasRef.current;
-                
+
                 if (genRef.current % 3 === 0) {
-                    const boundary = trainerRef.current!.get_decision_boundary(RESOLUTION);
+                    const featureMap = (x: number, y: number) => new Float32Array([x, y]);
+                    const boundary = trainerRef.current!.get_decision_boundary(RESOLUTION, featureMap);
                     const cellSize = width / RESOLUTION;
 
                     for (let j = 0; j < RESOLUTION; j++) {
@@ -167,7 +173,7 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
         const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
         const y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
         const label = e.shiftKey || e.button === 2 ? 0 : 1;
-        
+
         setPattern('custom');
         pointsRef.current = [...pointsRef.current, { x, y, label }];
     };
@@ -208,8 +214,8 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
                                 GRADIENT_DESCENT · LIVE_WEIGHTS
                             </p>
                         </div>
-                        <ClassifierNetworkViz trainer={trainer} hiddenSize={hiddenSize} />
-                        
+                        <ClassifierNetworkViz trainer={trainer} hiddenSize={hiddenSize} inputDim={2} />
+
                         <div className="mt-5 space-y-1.5 border-t border-border pt-4">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
                                 Input Legend (2)
@@ -235,8 +241,8 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
                 {/* Centre — Main Dashboard */}
                 <div className="flex flex-col items-center flex-shrink-0">
                     <ClassifierStatsBar stats={{ generation, loss, lr }} />
-                    <ClassifierCanvas 
-                        ref={canvasRef} 
+                    <ClassifierCanvas
+                        ref={canvasRef}
                         onCanvasClick={handleCanvasClick}
                     />
                     <GameControls

@@ -464,10 +464,11 @@ export class Trainer {
     }
     /**
      * @param {number} resolution
+     * @param {Function} feature_map
      * @returns {Float32Array}
      */
-    get_decision_boundary(resolution) {
-        const ret = wasm.trainer_get_decision_boundary(this.__wbg_ptr, resolution);
+    get_decision_boundary(resolution, feature_map) {
+        const ret = wasm.trainer_get_decision_boundary(this.__wbg_ptr, resolution, feature_map);
         if (ret[3]) {
             throw takeFromExternrefTable0(ret[2]);
         }
@@ -499,12 +500,13 @@ export class Trainer {
         }
     }
     /**
+     * @param {number} input_dim
      * @param {Uint32Array} hidden_layers
      */
-    constructor(hidden_layers) {
+    constructor(input_dim, hidden_layers) {
         const ptr0 = passArray32ToWasm0(hidden_layers, wasm.__wbindgen_malloc_command_export);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.trainer_new(ptr0, len0);
+        const ret = wasm.trainer_new(input_dim, ptr0, len0);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -513,46 +515,45 @@ export class Trainer {
         return this;
     }
     /**
-     * @param {number} x
-     * @param {number} y
+     * @param {Float32Array} features
      * @returns {number}
      */
-    predict(x, y) {
-        const ret = wasm.trainer_predict(this.__wbg_ptr, x, y);
+    predict(features) {
+        const ptr0 = passArrayF32ToWasm0(features, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_predict(this.__wbg_ptr, ptr0, len0);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0];
     }
     /**
-     * @param {Float32Array} inputs_x
-     * @param {Float32Array} inputs_y
+     * @param {Float32Array} inputs
      * @param {Float32Array} targets
      * @param {number} lr
      * @returns {number}
      */
-    train_batch(inputs_x, inputs_y, targets, lr) {
-        const ptr0 = passArrayF32ToWasm0(inputs_x, wasm.__wbindgen_malloc_command_export);
+    train_batch(inputs, targets, lr) {
+        const ptr0 = passArrayF32ToWasm0(inputs, wasm.__wbindgen_malloc_command_export);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passArrayF32ToWasm0(inputs_y, wasm.__wbindgen_malloc_command_export);
+        const ptr1 = passArrayF32ToWasm0(targets, wasm.__wbindgen_malloc_command_export);
         const len1 = WASM_VECTOR_LEN;
-        const ptr2 = passArrayF32ToWasm0(targets, wasm.__wbindgen_malloc_command_export);
-        const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.trainer_train_batch(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2, lr);
+        const ret = wasm.trainer_train_batch(this.__wbg_ptr, ptr0, len0, ptr1, len1, lr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0];
     }
     /**
-     * @param {number} x
-     * @param {number} y
+     * @param {Float32Array} features
      * @param {number} target_val
      * @param {number} lr
      * @returns {number}
      */
-    train_step(x, y, target_val, lr) {
-        const ret = wasm.trainer_train_step(this.__wbg_ptr, x, y, target_val, lr);
+    train_step(features, target_val, lr) {
+        const ptr0 = passArrayF32ToWasm0(features, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_train_step(this.__wbg_ptr, ptr0, len0, target_val, lr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -607,6 +608,10 @@ function __wbg_get_imports() {
             const ret = arg0.call(arg1, arg2);
             return ret;
         }, arguments); },
+        __wbg_call_812d25f1510c13c8: function() { return handleError(function (arg0, arg1, arg2, arg3) {
+            const ret = arg0.call(arg1, arg2, arg3);
+            return ret;
+        }, arguments); },
         __wbg_crypto_86f2631e91b51511: function(arg0) {
             const ret = arg0.crypto;
             return ret;
@@ -625,7 +630,21 @@ function __wbg_get_imports() {
         __wbg_getRandomValues_b3f15fcbfabb0f8b: function() { return handleError(function (arg0, arg1) {
             arg0.getRandomValues(arg1);
         }, arguments); },
+        __wbg_instanceof_Float32Array_c882a172bf41d92a: function(arg0) {
+            let result;
+            try {
+                result = arg0 instanceof Float32Array;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
+            return ret;
+        },
         __wbg_length_32ed9a279acd054c: function(arg0) {
+            const ret = arg0.length;
+            return ret;
+        },
+        __wbg_length_9a7876c9728a0979: function(arg0) {
             const ret = arg0.length;
             return ret;
         },
@@ -663,6 +682,9 @@ function __wbg_get_imports() {
         },
         __wbg_prototypesetcall_bdcdcc5842e4d77d: function(arg0, arg1, arg2) {
             Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
+        },
+        __wbg_prototypesetcall_c7e6a26aeade796d: function(arg0, arg1, arg2) {
+            Float32Array.prototype.set.call(getArrayF32FromWasm0(arg0, arg1), arg2);
         },
         __wbg_randomFillSync_f8c153b79f285817: function() { return handleError(function (arg0, arg1) {
             arg0.randomFillSync(arg1);
