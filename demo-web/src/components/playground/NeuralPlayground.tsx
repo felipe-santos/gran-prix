@@ -5,6 +5,8 @@ import * as wasm from '../../wasm/pkg/gran_prix_wasm';
 import { PlaygroundCanvas, DataPoint } from './PlaygroundCanvas';
 import { PlaygroundControls } from './PlaygroundControls';
 import { WeightsViewer } from './WeightsViewer';
+import { PlaygroundExplanation } from './PlaygroundExplanation';
+import { PRESETS } from './PlaygroundPresets';
 
 export const NeuralPlayground: React.FC = () => {
     // WASM Init State
@@ -20,6 +22,7 @@ export const NeuralPlayground: React.FC = () => {
     const [weights, setWeights] = useState<Float32Array | null>(null);
     const [decisionBoundary, setDecisionBoundary] = useState<number[]>([]);
     const [hiddenLayers, setHiddenLayers] = useState<number[]>([8, 8]); // Default to 2 layers of 8 neurons
+    const [currentPresetId, setCurrentPresetId] = useState<string | null>(null);
 
     // Config
     const RESOLUTION = 40; // Generate a 40x40 grid for decision boundary heatmap
@@ -96,6 +99,7 @@ export const NeuralPlayground: React.FC = () => {
     // 3. Handlers
     const handleCanvasClick = (x: number, y: number) => {
         setPoints(prev => [...prev, { x, y, label: currentLabel }]);
+        setCurrentPresetId(null); // User modified data, clear preset highlight
     };
 
     const handleClear = () => {
@@ -152,6 +156,46 @@ export const NeuralPlayground: React.FC = () => {
         setHiddenLayers(prev => prev.map((n, i) => i === index ? Math.max(1, Math.min(64, n + delta)) : n));
     };
 
+    const handleExportDataset = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(points));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "gran_prix_dataset.json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    };
+
+    const handleImportDataset = async (file: File) => {
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (Array.isArray(data)) {
+                setPoints(data);
+            }
+        } catch (err) {
+            console.error("Dataset import failed:", err);
+            alert("Failed to import dataset JSON.");
+        }
+    };
+
+    const handleAddManualPoint = (x: number, y: number, label: number) => {
+        setPoints(prev => [...prev, { x, y, label }]);
+        setCurrentPresetId(null); // User modified data, clear preset highlight
+    };
+
+    const handleLoadPreset = (id: string) => {
+        const preset = PRESETS.find(p => p.id === id);
+        if (preset) {
+            setPoints(preset.points);
+            setHiddenLayers(preset.recommendedArch);
+            setCurrentPresetId(id);
+            setIsTraining(false);
+        }
+    };
+
+    const currentPreset = PRESETS.find(p => p.id === currentPresetId) || null;
+
     if (!isWasmReady) {
         return <div className="p-24 text-center text-cyan-400 font-mono animate-pulse">Initializing WASM Backend...</div>;
     }
@@ -196,7 +240,15 @@ export const NeuralPlayground: React.FC = () => {
                         onAddLayer={handleAddLayer}
                         onRemoveLayer={handleRemoveLayer}
                         onUpdateNeurons={handleUpdateNeurons}
+                        onExportDataset={handleExportDataset}
+                        onImportDataset={handleImportDataset}
+                        onAddManualPoint={handleAddManualPoint}
+                        onLoadPreset={handleLoadPreset}
+                        currentPresetId={currentPresetId}
                     />
+                    <div className="mt-6">
+                        <PlaygroundExplanation preset={currentPreset} />
+                    </div>
                 </div>
 
                 {/* Right Column: Weight Viewer (Col Span 4) */}
