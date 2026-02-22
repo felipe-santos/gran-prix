@@ -1,1 +1,2 @@
-export { ClassifierDemo } from './ClassifierDemo';
+export * from './ClassifierDemo';
+export * from './ClassifierWrapper';

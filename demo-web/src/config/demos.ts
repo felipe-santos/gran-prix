@@ -1,3 +1,17 @@
+import {
+    Thermometer,
+    Bot,
+    TrendingUp,
+    Zap,
+    Navigation,
+    Skull,
+    PersonStanding,
+    Bird,
+    CarFront,
+    BrainCircuit,
+    LucideIcon
+} from 'lucide-react';
+
 export type DemoId =
     | 'oven'
     | 'vacuum'
@@ -16,7 +30,7 @@ export interface DemoMetadata {
     subtitle: string;
     description: string;
     tags: string[];
-    icon: string;
+    icon: LucideIcon;
     color: string; // Tailwind color class for the glowing accent
 }
 
@@ -25,90 +39,90 @@ export const DEMOS: DemoMetadata[] = [
         id: 'oven',
         title: 'Smart Oven IoT',
         subtitle: 'Edge AI Thermodynamics Control',
-        description: 'Redes neurais operando como controladores PID avançados rodando no limite do sensor para assar perfeitamente diferentes tipos de alimentos.',
+        description: 'Neural networks acting as advanced PID controllers running at the sensor edge to perfectly bake diverse food types.',
         tags: ['PID', 'Thermodynamics', 'Edge AI'],
-        icon: '🍳',
+        icon: Thermometer,
         color: 'from-orange-500 to-red-500',
     },
     {
         id: 'vacuum',
         title: 'Smart Vacuum',
         subtitle: 'Autonomous Spatial Coverage',
-        description: 'Agentes robóticos aprendem a navegar, mapear e limpar uma sala com obstáculos mantendo eficiência energética.',
+        description: 'Robotic agents learn to navigate, map, and clean a room with dynamic obstacles while maintaining energy efficiency.',
         tags: ['Spatial', 'Pathfinding', 'Energy'],
-        icon: '🤖',
+        icon: Bot,
         color: 'from-blue-400 to-indigo-500',
     },
     {
         id: 'trader',
         title: 'AI Trader',
         subtitle: 'Market Simulation & Prediction',
-        description: 'Evolução de estratégias de trading com leitura de indicadores técnicos (RSI, SMA) em um mercado simulado (GBM).',
+        description: 'Evolution of trading strategies utilizing technical indicators (RSI, SMA) in a simulated geometric Brownian motion market.',
         tags: ['Finance', 'Time Series', 'Evolution'],
-        icon: '📈',
+        icon: TrendingUp,
         color: 'from-emerald-400 to-teal-500',
     },
     {
         id: 'smart-grid',
         title: 'Smart Grid',
         subtitle: 'Energy Optimization Routing',
-        description: 'Otimização descentralizada de distribuição de energia solar, baterias e demanda urbana flutuante.',
+        description: 'Decentralized optimization of solar energy distribution, battery storage, and fluctuating urban demand.',
         tags: ['Logistics', 'Optimization', 'Grid'],
-        icon: '⚡',
+        icon: Zap,
         color: 'from-yellow-400 to-amber-500',
     },
     {
         id: 'drone',
         title: 'Drone Stabilizer',
         subtitle: '6-DOF Attitude Control',
-        description: 'Treinamento de drones com múltiplos propulsores para manter estabilidade e alcançar waypoints sob ventos imprevisíveis.',
+        description: 'Training multi-rotor drones to maintain stability and reach 3D waypoints under unpredictable wind conditions.',
         tags: ['Physics', 'Control Theory', '6-DOF'],
-        icon: '🚁',
+        icon: Navigation,
         color: 'from-cyan-400 to-blue-500',
     },
     {
         id: 'predator-prey',
         title: 'Predator vs Prey',
         subtitle: 'Co-evolutionary Arms Race',
-        description: 'Duas populações de redes neurais evoluem simultaneamente: raposas aprendem a caçar, coelhos aprendem a fugir.',
+        description: 'Two neural network populations evolving simultaneously: foxes learn to hunt efficiently, rabbits learn to evade.',
         tags: ['Co-evolution', 'Multi-Agent', 'Survival'],
-        icon: '🦊',
+        icon: Skull,
         color: 'from-rose-400 to-red-600',
     },
     {
         id: 'walker',
         title: 'Bipedal Walker',
         subtitle: 'Articulated Physics Locomotion',
-        description: 'Aprendizado de marcha (gait) para um robô bípede em terreno irregular utilizando limites de juntas.',
+        description: 'Gait learning for a bipedal robot traversing irregular terrain using rigid bodies and joint constraints.',
         tags: ['Physics', 'Locomotion', 'Joints'],
-        icon: '🦵',
+        icon: PersonStanding,
         color: 'from-stone-400 to-stone-600',
     },
     {
         id: 'flappy',
         title: 'Flappy Bird RL',
         subtitle: 'Classic Reinforcement Learning',
-        description: 'O clássico: redes neurais que aprendem a desviar de canos variados calculando distância horizontal e vertical.',
+        description: 'The classic: neural networks learning to navigate varying pipe gaps by calculating vertical and horizontal distances.',
         tags: ['Classic RL', 'Vision', 'Timing'],
-        icon: '🐦',
+        icon: Bird,
         color: 'from-yellow-300 to-green-500',
     },
     {
         id: 'evolution',
         title: 'Car Evolution',
         subtitle: 'Genetic Algorithm Basics',
-        description: 'Nossa engine original: carros aprendendo a dirigir por uma pista com base em sensores de distância lidando com colisões.',
+        description: 'Our original engine: cars learning to drive through a track based on distance raycasting and collision detection.',
         tags: ['Raycasting', 'Vehicles', 'Genesis'],
-        icon: '🏎️',
+        icon: CarFront,
         color: 'from-red-500 to-rose-600',
     },
     {
         id: 'training',
         title: 'Backprop Classifier',
         subtitle: 'Core Supervised Learning',
-        description: 'Laboratório interativo mostrando descida de gradiente em tempo real (Backpropagation). O "Hello World" profundo.',
+        description: 'Interactive laboratory visualizing gradient descent in real-time (Backpropagation). The deep learning "Hello World".',
         tags: ['Backprop', 'Classification', 'Gradients'],
-        icon: '🧠',
+        icon: BrainCircuit,
         color: 'from-purple-400 to-fuchsia-500',
     }
 ];

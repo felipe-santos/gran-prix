@@ -26,7 +26,7 @@ export const DemoLayout: React.FC = () => {
                     className="flex items-center gap-2 text-muted-foreground hover:text-foreground text-[10px] uppercase font-bold tracking-[0.2em] transition-colors"
                 >
                     <ArrowLeft size={16} />
-                    <span className="hidden sm:inline">Voltar ao Laboratório</span>
+                    <span className="hidden sm:inline">Back to Laboratory</span>
                 </Link>
 
                 <div className="flex flex-col items-center md:items-end text-center md:text-right">

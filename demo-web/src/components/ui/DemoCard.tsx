@@ -16,8 +16,10 @@ export const DemoCard: React.FC<DemoCardProps> = ({ demo }) => {
             {/* Subtle background glow effect using the card's theme color */}
             <div className={`absolute -inset-px opacity-0 group-hover:opacity-10 transition-opacity duration-500 pointer-events-none rounded-2xl bg-gradient-to-br ${demo.color}`} />
 
-            <div className="flex items-start justify-between mb-4 relative z-10">
-                <span className="text-3xl filter drop-shadow-md">{demo.icon}</span>
+            <div className="flex items-start justify-between mb-6 relative z-10">
+                <div className="p-3 bg-white/5 border border-white/10 rounded-xl">
+                    <demo.icon size={24} className="text-foreground/90" />
+                </div>
                 <div className={`p-2 rounded-full bg-white/5 opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0`}>
                     <ChevronRight size={16} className={`text-foreground/80`} />
                 </div>

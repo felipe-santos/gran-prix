@@ -1,0 +1,238 @@
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+
+// Types & Hooks
+import {
+    GAME_WIDTH,
+    GAME_HEIGHT,
+    PLAYER_SIZE,
+    POPULATION_SIZE,
+    GameStats,
+    Car
+} from '../../types';
+import { useWasmPopulation } from '../../hooks/useWasmPopulation';
+import { useGameLoop } from '../../hooks/useGameLoop';
+
+// Components
+import { GameCanvas } from '../GameCanvas';
+import { StatsBar } from '../StatsBar';
+import { GameControls } from '../GameControls';
+import { BrainInspector } from '../BrainInspector';
+import { LearningLab } from '../LearningLab';
+import { PerformanceCharts, PerformanceData } from '../PerformanceCharts';
+
+export const EvolutionDemo: React.FC = () => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [stats, setStats] = useState<GameStats>({ score: 0, generation: 1, best: 0, alive: 0 });
+    const [isRestarting] = useState(false);
+    const [showInspector, setShowInspector] = useState(false);
+
+    // Learning Lab State
+    const [mutationRate, setMutationRate] = useState(0.2);
+    const [mutationScale, setMutationScale] = useState(0.5);
+    const [mutationStrategy, setMutationStrategy] = useState<wasm.MutationStrategy>(wasm.MutationStrategy.Additive);
+    const [customKernel, setCustomKernelState] = useState<[number, number, number]>([0, 1, 0]);
+    const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
+
+    const { population, initWasm, evolve: wasmEvolve, computeAll, getBestBrainSnapshot, setGlobalKernel } = useWasmPopulation();
+
+    const evolve = useCallback((fitnessScores: number[], rate: number, scale: number, strategy: wasm.MutationStrategy) => {
+        // Collect Metrics
+        const max = Math.max(...fitnessScores);
+        const avg = fitnessScores.reduce((a, b) => a + b, 0) / fitnessScores.length;
+
+        setPerformanceHistory(prev => {
+            const nextGen = prev.length > 0 ? prev[prev.length - 1].generation + 1 : 1;
+            const newHistory = [...prev, { generation: nextGen, avg, max }];
+            return newHistory.slice(-50); // Keep last 50 generations
+        });
+
+        // Original Evolve
+        wasmEvolve(fitnessScores, rate, scale, strategy);
+    }, [wasmEvolve]);
+
+    const { gameState, resetGame, updatePhysics } = useGameLoop({
+        computeAll,
+        evolve,
+        setStats,
+        mutationRate,
+        mutationScale,
+        mutationStrategy
+    });
+
+    const rafId = useRef<number | null>(null);
+    const isLoopActive = useRef(false);
+
+    // Initialize WASM
+    useEffect(() => {
+        if (!population) {
+            initWasm().then(() => {
+                // Init cars in gameState
+                const cars: Car[] = [];
+                for (let i = 0; i < POPULATION_SIZE; i++) {
+                    cars.push({
+                        id: i,
+                        x: GAME_WIDTH / 2,
+                        y: GAME_HEIGHT - 50,
+                        dead: false,
+                        fitness: 0,
+                        color: `hsl(${Math.random() * 360}, 80%, 60%)`,
+                        popId: 'main'
+                    });
+                }
+                gameState.current.cars = cars;
+                setStats(s => ({ ...s, alive: POPULATION_SIZE }));
+            });
+        }
+    }, [initWasm, population, gameState]);
+
+    const render = useCallback((ctx: CanvasRenderingContext2D) => {
+        const state = gameState.current;
+
+        // Clear with slight trail effect
+        const trailColor = getComputedStyle(document.documentElement).getPropertyValue('--canvas-trail').trim() || 'rgba(10, 10, 11, 0.4)';
+        ctx.fillStyle = trailColor;
+        ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+        // Draw Grid (Feng Shui detail)
+        const gridStyle = getComputedStyle(document.documentElement).getPropertyValue('--canvas-grid').trim() || 'rgba(255, 255, 255, 0.03)';
+        ctx.strokeStyle = gridStyle;
+        ctx.lineWidth = 1;
+        for (let x = 0; x < GAME_WIDTH; x += 40) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0); ctx.lineTo(x, GAME_HEIGHT);
+            ctx.stroke();
+        }
+        for (let y = 0; y < GAME_HEIGHT; y += 40) {
+            ctx.beginPath();
+            ctx.moveTo(0, y); ctx.lineTo(GAME_WIDTH, y);
+            ctx.stroke();
+        }
+
+        // Obstacles
+        state.obstacles.forEach(o => {
+            ctx.fillStyle = '#ff0055';
+            ctx.fillRect(o.x, o.y, o.w, o.h);
+        });
+
+        // Cars
+        state.cars.forEach(car => {
+            if (car.dead) {
+                if (document.documentElement.classList.contains('dark')) {
+                    ctx.fillStyle = '#1a1a1c';
+                } else {
+                    ctx.fillStyle = '#ece4e7ff';
+                }
+                ctx.globalAlpha = 0.2;
+            } else {
+                ctx.fillStyle = car.color;
+                ctx.globalAlpha = 1.0;
+            }
+
+            ctx.beginPath();
+            ctx.roundRect(car.x, car.y, PLAYER_SIZE, PLAYER_SIZE, 2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1.0;
+    }, [gameState]);
+
+    const gameLoop = useCallback(() => {
+        if (!isPlaying) {
+            isLoopActive.current = false;
+            return;
+        }
+
+        if (!canvasRef.current) {
+            rafId.current = requestAnimationFrame(gameLoop);
+            return;
+        }
+
+        const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
+
+        // 1. Update Physics
+        updatePhysics();
+
+        // 2. Render
+        render(ctx);
+
+        rafId.current = requestAnimationFrame(gameLoop);
+    }, [isPlaying, updatePhysics, render]);
+
+    useEffect(() => {
+        if (isPlaying && !isLoopActive.current) {
+            isLoopActive.current = true;
+            rafId.current = requestAnimationFrame(gameLoop);
+        }
+        return () => {
+            if (rafId.current) cancelAnimationFrame(rafId.current);
+            isLoopActive.current = false;
+        };
+    }, [isPlaying, gameLoop]);
+
+    return (
+        <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 py-8 transition-all duration-500">
+            <div className="flex flex-col gap-6 flex-shrink-0">
+                <div className="pt-0">
+                    <LearningLab
+                        mutationRate={mutationRate}
+                        setMutationRate={setMutationRate}
+                        mutationScale={mutationScale}
+                        setMutationScale={setMutationScale}
+                        mutationStrategy={mutationStrategy}
+                        setMutationStrategy={setMutationStrategy}
+                        customKernel={customKernel}
+                        setCustomKernel={(k: [number, number, number]) => {
+                            setCustomKernelState(k);
+                            setGlobalKernel(k[0], k[1], k[2]);
+                        }}
+                    />
+                </div>
+            </div>
+
+            <div className="flex flex-col items-center flex-shrink-0">
+                <StatsBar stats={stats} />
+                <GameCanvas
+                    ref={canvasRef}
+                    width={GAME_WIDTH}
+                    height={GAME_HEIGHT}
+                />
+
+                <GameControls
+                    isPlaying={isPlaying}
+                    onTogglePlay={() => setIsPlaying(!isPlaying)}
+                    onReset={() => {
+                        resetGame();
+                        setStats({ score: 0, generation: 1, best: 0, alive: POPULATION_SIZE });
+                    }}
+                    isRestarting={isRestarting}
+                />
+
+                <div className="w-full mt-8">
+                    <PerformanceCharts data={performanceHistory} />
+                </div>
+
+                {!showInspector && (
+                    <button
+                        onClick={() => setShowInspector(true)}
+                        className="mt-6 px-4 py-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-lg border border-emerald-500/20 text-[10px] uppercase tracking-widest font-bold transition-all"
+                    >
+                        Inspect Specialist Agent Brain
+                    </button>
+                )}
+            </div>
+
+            {showInspector && (
+                <div className="flex flex-col gap-6 flex-shrink-0">
+                    <div className="pt-0">
+                        <BrainInspector
+                            nodes={getBestBrainSnapshot(Float32Array.from(gameState.current.cars.map(c => c.fitness))) || []}
+                            onClose={() => setShowInspector(false)}
+                        />
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};

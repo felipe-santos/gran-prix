@@ -184,11 +184,9 @@ export const MouseHeroDemo: React.FC<{ onExplore: () => void }> = ({ onExplore }
 
             // 1. Clear frame with high motion blur (low alpha)
             ctx.globalCompositeOperation = 'source-over';
-            const trailColor = getComputedStyle(document.documentElement).getPropertyValue('--canvas-bg').trim() || '#0d0d0e';
+            const trailColor = getComputedStyle(document.documentElement).getPropertyValue('--canvas-trail').trim() || 'rgba(10, 10, 11, 0.4)';
 
-            // Extract rgb from hex/rgb string if possible, or fallback manually
-            // For extreme glow, the background fade needs to be very dark but clean
-            ctx.fillStyle = trailColor === '#0d0d0e' ? 'rgba(13, 13, 14, 0.2)' : 'rgba(248, 248, 249, 0.2)';
+            ctx.fillStyle = trailColor;
             ctx.fillRect(0, 0, w, h);
 
             // 2. Draw Subtle Grid
@@ -206,7 +204,9 @@ export const MouseHeroDemo: React.FC<{ onExplore: () => void }> = ({ onExplore }
             }
 
             // --- PREMIUM EFFECTS START HERE ---
-            ctx.globalCompositeOperation = 'lighter'; // Additive blending for neon glow
+            // In light mode, 'lighter' just blows everything out to white. We use 'source-over' for light mode, 'lighter' for dark.
+            const isDark = trailColor.includes('10, 10, 11');
+            ctx.globalCompositeOperation = isDark ? 'lighter' : 'source-over';
 
             // 3. Draw Fluid Mouse Trail (Bezier Curve)
             if (history.length > 2) {
@@ -289,9 +289,16 @@ export const MouseHeroDemo: React.FC<{ onExplore: () => void }> = ({ onExplore }
                     // Draw the core glowing prediction line
                     ctx.beginPath();
                     const grad = ctx.createLinearGradient(currentMouse.x, currentMouse.y, futureX, futureY);
-                    grad.addColorStop(0, 'rgba(0, 229, 255, 0)');      // Transparent at cursor
-                    grad.addColorStop(0.5, 'rgba(0, 229, 255, 0.6)');  // Intense Cyan
-                    grad.addColorStop(1, 'rgba(255, 0, 255, 0.8)');    // Neon Magenta tip
+
+                    if (isDark) {
+                        grad.addColorStop(0, 'rgba(0, 229, 255, 0)');      // Transparent at cursor
+                        grad.addColorStop(0.5, 'rgba(0, 229, 255, 0.6)');  // Intense Cyan
+                        grad.addColorStop(1, 'rgba(255, 0, 255, 0.8)');    // Neon Magenta tip
+                    } else {
+                        grad.addColorStop(0, 'rgba(14, 165, 233, 0)');     // Transparent (Sky Blue)
+                        grad.addColorStop(0.5, 'rgba(14, 165, 233, 0.8)'); // Solid Sky Blue
+                        grad.addColorStop(1, 'rgba(217, 70, 239, 1)');     // Solid Fuchsia
+                    }
 
                     ctx.strokeStyle = grad;
                     ctx.lineWidth = 3;
@@ -307,7 +314,7 @@ export const MouseHeroDemo: React.FC<{ onExplore: () => void }> = ({ onExplore }
                     ctx.stroke();
                     ctx.beginPath();
                     ctx.arc(futureX, futureY, 2, 0, Math.PI * 2);
-                    ctx.fillStyle = '#fff';
+                    ctx.fillStyle = isDark ? '#fff' : '#000';
                     ctx.fill();
 
                     // Spawn Prediction Stream Particles (rapid fire)
@@ -315,7 +322,7 @@ export const MouseHeroDemo: React.FC<{ onExplore: () => void }> = ({ onExplore }
                         const px = predDx * MAX_SPEED * 4;
                         const py = predDy * MAX_SPEED * 4;
                         // Shoot particles from cursor towards target
-                        particlesRef.current.push(new Particle(currentMouse.x, currentMouse.y, px, py, '#00e5ff', false));
+                        particlesRef.current.push(new Particle(currentMouse.x, currentMouse.y, px, py, isDark ? '#00e5ff' : '#0ea5e9', false));
                     }
                 }
             }

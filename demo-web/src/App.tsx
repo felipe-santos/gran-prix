@@ -13,6 +13,8 @@ import { DroneDemo } from './components/drone';
 import { PredatorPreyDemo } from './components/predator-prey';
 import { WalkerDemo } from './components/walker';
 import { FlappyDemo } from './components/flappy';
+import { EvolutionDemo } from './components/evolution';
+import { ClassifierWrapper } from './components/classifier';
 
 // The original Evolution + Backprop (Training) demos require more global state right now.
 // For the sake of this architectural migration, we wrap them in a simple local component or redirect them.
@@ -38,8 +40,8 @@ function App() {
           <Route path="/demo/flappy" element={<div className="w-full flex justify-center py-8"><FlappyDemo /></div>} />
 
           {/* Fallbacks for older demos until fully isolated */}
-          <Route path="/demo/evolution" element={<div className="w-full text-center py-24 text-muted-foreground uppercase tracking-widest text-sm">Car Evolution isolamento em breve</div>} />
-          <Route path="/demo/training" element={<div className="w-full text-center py-24 text-muted-foreground uppercase tracking-widest text-sm">Backprop isolamento em breve</div>} />
+          <Route path="/demo/evolution" element={<EvolutionDemo />} />
+          <Route path="/demo/training" element={<ClassifierWrapper />} />
 
           {/* Catch-all to redirect back home */}
           <Route path="*" element={<Navigate to="/" replace />} />
