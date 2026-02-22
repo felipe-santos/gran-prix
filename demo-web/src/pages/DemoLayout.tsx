@@ -16,6 +16,7 @@ import { WalkerDemo } from '../components/walker';
 import { FlappyDemo } from '../components/flappy';
 import { EvolutionDemo } from '../components/evolution';
 import { ClassifierWrapper } from '../components/classifier';
+import { TurretDemo } from '../components/turret';
 
 const DEMO_COMPONENTS: Record<string, React.FC> = {
     'oven': OvenDemo,
@@ -28,6 +29,7 @@ const DEMO_COMPONENTS: Record<string, React.FC> = {
     'flappy': FlappyDemo,
     'evolution': EvolutionDemo,
     'training': ClassifierWrapper,
+    'turret': TurretDemo,
 };
 
 interface DemoLayoutProps {

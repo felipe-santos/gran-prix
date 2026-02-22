@@ -22,7 +22,8 @@ export type DemoId =
     | 'walker'
     | 'flappy'
     | 'evolution'
-    | 'training';
+    | 'training'
+    | 'turret';
 
 export interface DemoMetadata {
     id: DemoId;
@@ -106,6 +107,15 @@ export const DEMOS: DemoMetadata[] = [
         tags: ['Classic RL', 'Vision', 'Timing'],
         icon: Bird,
         color: 'from-yellow-300 to-green-500',
+    },
+    {
+        id: 'turret',
+        title: 'Anti-Drone Tracker',
+        subtitle: 'Ballistics & Trajectory Prediction',
+        description: 'An AI-controlled turret learns to track evasive drones using pan/tilt motors, adjusting ballistics for dynamic wind vectors.',
+        tags: ['Physics', 'Ballistics', 'Tracking'],
+        icon: Navigation,
+        color: 'from-cyan-500 to-blue-600',
     },
     {
         id: 'evolution',

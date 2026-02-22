@@ -207,3 +207,25 @@ export {
     OVEN_AMBIENT_TEMP,
     OVEN_MAX_TEMP,
 } from './oven';
+
+// ─── Anti-Drone Turret Tracker ──────────────────────────────────────────────
+export type {
+    TurretAgent,
+    Projectile,
+    DroneTarget,
+    TurretGameState,
+    TurretStats,
+} from './turret';
+export {
+    TURRET_WIDTH,
+    TURRET_HEIGHT,
+    TURRET_POPULATION_SIZE,
+    TURRET_INPUTS,
+    TURRET_HIDDEN,
+    TURRET_OUTPUTS,
+    TURRET_MAX_FRAMES,
+    GRAVITY,
+    PROJECTILE_SPEED,
+    DRONE_SPEED_BASE,
+} from './turret';
+
