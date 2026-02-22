@@ -23,7 +23,7 @@ import { ClassifierWrapper } from './components/classifier';
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/gran-prix/">
       <Routes>
         {/* Landing Page with Hero and Grid */}
         <Route path="/" element={<LandingPage />} />
