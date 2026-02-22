@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, Download, Trash2, Play, Square, Plus, Database, GraduationCap } from 'lucide-react';
+import { Upload, Download, Trash2, Play, Square, Plus, Database, GraduationCap, Settings2, Activity } from 'lucide-react';
 import { PRESETS } from './PlaygroundPresets';
 
 interface PlaygroundControlsProps {
@@ -57,209 +57,212 @@ export const PlaygroundControls: React.FC<PlaygroundControlsProps> = ({
     };
 
     return (
-        <div className="bg-card/40 backdrop-blur-sm border border-white/5 rounded-2xl p-6 flex flex-col gap-6">
-
-            <div className="flex items-center justify-between border-b border-white/5 pb-4">
-                <span className="text-sm text-muted-foreground uppercase tracking-widest font-mono">Current Loss</span>
-                <span className={`text-xl font-mono tabular-nums ${loss < 0.1 ? 'text-emerald-400' : 'text-cyan-400'}`}>
+        <div className="bg-card/50 border border-border rounded-2xl overflow-hidden backdrop-blur-md flex flex-col shadow-xl">
+            {/* Simulation Header */}
+            <div className="p-4 border-b border-border bg-card/80 flex items-center justify-between">
+                <div className="flex flex-col">
+                    <h3 className="text-sm font-bold text-foreground uppercase tracking-tighter flex items-center gap-2">
+                        <Activity size={14} className="text-cyan-500" /> Training Status
+                    </h3>
+                    <p className="text-[9px] text-muted-foreground font-mono mt-0.5 uppercase">Network Batch Gradient</p>
+                </div>
+                <span className={`text-lg font-mono tabular-nums font-bold ${loss < 0.1 ? 'text-emerald-400' : 'text-cyan-400'}`}>
                     {loss.toFixed(4)}
                 </span>
             </div>
 
-            {/* Presets Selector */}
-            <div className="space-y-4 border-b border-white/5 pb-6">
-                <div className="flex items-center gap-2 text-purple-400 mb-1">
-                    <GraduationCap size={16} />
-                    <label className="text-sm font-medium uppercase tracking-tighter">Educational Presets</label>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                    {PRESETS.map(preset => (
-                        <button
-                            key={preset.id}
-                            onClick={() => onLoadPreset(preset.id)}
-                            className={`px-3 py-2 rounded-xl text-[10px] font-mono border transition-all ${currentPresetId === preset.id
-                                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
-                                    : 'bg-white/5 border-white/5 text-white/50 hover:bg-white/10'
-                                }`}
-                        >
-                            {preset.name}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            {/* Manual Data Entry */}
-            <div className="space-y-4 border-b border-white/5 pb-6">
-                <label className="text-sm font-medium text-foreground/80 uppercase tracking-tighter">Manual Entry</label>
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                        <span className="text-[10px] text-white/30 uppercase font-mono">X Coordinate</span>
-                        <input
-                            type="number"
-                            step="0.01"
-                            min="-1"
-                            max="1"
-                            value={manualX}
-                            onChange={(e) => setManualX(e.target.value)}
-                            className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-sm font-mono text-cyan-400 focus:outline-none focus:border-cyan-500/50"
-                        />
-                    </div>
-                    <div className="space-y-1">
-                        <span className="text-[10px] text-white/30 uppercase font-mono">Y Coordinate</span>
-                        <input
-                            type="number"
-                            step="0.01"
-                            min="-1"
-                            max="1"
-                            value={manualY}
-                            onChange={(e) => setManualY(e.target.value)}
-                            className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-sm font-mono text-cyan-400 focus:outline-none focus:border-cyan-500/50"
-                        />
-                    </div>
-                    <button
-                        onClick={handleManualAdd}
-                        className="col-span-2 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all"
-                    >
-                        <Plus size={14} /> Add Point (Class {currentLabel})
-                    </button>
-                </div>
-            </div>
-
-            {/* Architecture Controls */}
-            <div className="space-y-4 border-b border-white/5 pb-6">
-                <div className="flex justify-between items-center">
-                    <label className="text-sm font-medium text-foreground/80 uppercase tracking-tighter">Architecture</label>
-                    <button
-                        onClick={onAddLayer}
-                        disabled={hiddenLayers.length >= 5}
-                        className="text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-1 rounded hover:bg-cyan-500/20 disabled:opacity-30"
-                    >
-                        + Add Layer
-                    </button>
-                </div>
-
+            <div className="p-5 space-y-6">
+                {/* Presets Selector */}
                 <div className="space-y-3">
-                    {hiddenLayers.map((neurons, idx) => (
-                        <div key={idx} className="flex items-center gap-3 bg-black/20 p-2 rounded-xl border border-white/5">
-                            <span className="text-[10px] font-mono text-white/30 w-12 text-center">Layer {idx + 1}</span>
-                            <div className="flex-1 flex items-center justify-center gap-4">
-                                <button
-                                    onClick={() => onUpdateNeurons(idx, -1)}
-                                    className="w-6 h-6 rounded bg-white/5 flex items-center justify-center hover:bg-white/10 text-white/60"
-                                >-</button>
-                                <span className="text-sm font-mono w-4 text-center">{neurons}</span>
-                                <button
-                                    onClick={() => onUpdateNeurons(idx, 1)}
-                                    className="w-6 h-6 rounded bg-white/5 flex items-center justify-center hover:bg-white/10 text-white/60"
-                                >+</button>
-                            </div>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                        <GraduationCap size={14} />
+                        <label className="text-[9px] font-bold uppercase tracking-widest">Scenario Presets</label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        {PRESETS.map(preset => (
                             <button
-                                onClick={() => onRemoveLayer(idx)}
-                                className="text-rose-500/40 hover:text-rose-500 px-2"
+                                key={preset.id}
+                                onClick={() => onLoadPreset(preset.id)}
+                                className={`px-2 py-2 rounded-lg text-[9px] font-bold font-mono border transition-all ${currentPresetId === preset.id
+                                    ? 'bg-cyan-500/10 border-cyan-500/50 text-cyan-400'
+                                    : 'bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/50 hover:border-border'
+                                    }`}
                             >
-                                <Trash2 size={14} />
+                                {preset.name}
                             </button>
-                        </div>
-                    ))}
-                    {hiddenLayers.length === 0 && (
-                        <div className="text-center py-4 text-[10px] text-white/20 uppercase font-mono">Linear Model (No hidden layers)</div>
-                    )}
+                        ))}
+                    </div>
                 </div>
-            </div>
 
-            <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                    <label className="text-sm font-medium text-foreground/80">Input Feature Class</label>
-                    <div className="flex bg-black/40 p-1 rounded-lg border border-white/5">
+                {/* Architecture Controls */}
+                <div className="space-y-3 pt-2 border-t border-border/50">
+                    <div className="flex justify-between items-center text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                            <Settings2 size={14} />
+                            <label className="text-[9px] font-bold uppercase tracking-widest">Topology</label>
+                        </div>
+                        <button
+                            onClick={onAddLayer}
+                            disabled={hiddenLayers.length >= 5}
+                            className="text-[9px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 px-2 py-0.5 rounded-full font-bold hover:bg-cyan-500/20 transition-all disabled:opacity-30"
+                        >
+                            + LAYER
+                        </button>
+                    </div>
+
+                    <div className="space-y-1.5">
+                        {hiddenLayers.map((neurons, idx) => (
+                            <div key={idx} className="flex items-center gap-2 bg-muted/20 p-1 pl-3 rounded-lg border border-border/10">
+                                <span className="text-[9px] font-bold font-mono text-muted-foreground/50 uppercase tracking-tighter">L{idx + 1}</span>
+                                <div className="flex-1 flex items-center justify-center gap-3">
+                                    <button
+                                        onClick={() => onUpdateNeurons(idx, -1)}
+                                        className="w-6 h-6 rounded bg-muted/50 flex items-center justify-center hover:bg-muted text-foreground/70 transition-colors"
+                                    >-</button>
+                                    <span className="text-[11px] font-bold font-mono w-4 text-center text-foreground/90">{neurons}</span>
+                                    <button
+                                        onClick={() => onUpdateNeurons(idx, 1)}
+                                        className="w-6 h-6 rounded bg-muted/50 flex items-center justify-center hover:bg-muted text-foreground/70 transition-colors"
+                                    >+</button>
+                                </div>
+                                <button
+                                    onClick={() => onRemoveLayer(idx)}
+                                    className="w-6 h-6 flex items-center justify-center text-rose-500/40 hover:text-rose-500 transition-colors"
+                                >
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
+                        ))}
+                        {hiddenLayers.length === 0 && (
+                            <div className="text-center py-4 bg-muted/10 border border-dashed border-border/20 rounded-lg text-[9px] text-muted-foreground/50 uppercase font-bold tracking-widest">Linear Classifier</div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Hyperparams & Manual Entry */}
+                <div className="space-y-4 pt-2 border-t border-border/50">
+                    <div className="grid grid-cols-2 gap-2">
                         <button
                             onClick={() => onLabelChange(0)}
-                            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentLabel === 0 ? 'bg-blue-500 text-white shadow-lg' : 'text-blue-400 hover:text-blue-300'}`}
+                            className={`py-2 rounded-lg text-[10px] font-bold font-mono transition-all border ${currentLabel === 0 ? 'bg-blue-500 border-blue-600 text-white' : 'bg-muted/30 border-transparent text-blue-400/60 hover:bg-muted/50'}`}
                         >
-                            Class 0 (Blue)
+                            CLASS 0
                         </button>
                         <button
                             onClick={() => onLabelChange(1)}
-                            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${currentLabel === 1 ? 'bg-orange-500 text-white shadow-lg' : 'text-orange-400 hover:text-orange-300'}`}
+                            className={`py-2 rounded-lg text-[10px] font-bold font-mono transition-all border ${currentLabel === 1 ? 'bg-orange-500 border-orange-600 text-white' : 'bg-muted/30 border-transparent text-orange-400/60 hover:bg-muted/50'}`}
                         >
-                            Class 1 (Orange)
+                            CLASS 1
+                        </button>
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                            <label>Learning Rate</label>
+                            <span className="font-mono text-cyan-400">{learningRate.toFixed(3)}</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="0.001"
+                            max="0.5"
+                            step="0.001"
+                            value={learningRate}
+                            onChange={(e) => onLearningRateChange(parseFloat(e.target.value))}
+                            className="w-full accent-cyan-500 h-1 bg-muted rounded-full cursor-pointer"
+                        />
+                    </div>
+
+                    <div className="flex gap-2">
+                        <input
+                            type="number"
+                            step="0.01"
+                            value={manualX}
+                            onChange={(e) => setManualX(e.target.value)}
+                            className="w-1/2 bg-muted/30 border border-border/20 rounded-lg px-2 py-1.5 text-[10px] font-mono text-foreground focus:outline-none focus:border-cyan-500/30"
+                            placeholder="X"
+                        />
+                        <input
+                            type="number"
+                            step="0.01"
+                            value={manualY}
+                            onChange={(e) => setManualY(e.target.value)}
+                            className="w-1/2 bg-muted/30 border border-border/20 rounded-lg px-2 py-1.5 text-[10px] font-mono text-foreground focus:outline-none focus:border-cyan-500/30"
+                            placeholder="Y"
+                        />
+                        <button
+                            onClick={handleManualAdd}
+                            className="flex items-center justify-center p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all"
+                        >
+                            <Plus size={14} />
                         </button>
                     </div>
                 </div>
 
-                <div className="space-y-2">
-                    <div className="flex justify-between">
-                        <label className="text-sm font-medium text-foreground/80">Learning Rate</label>
-                        <span className="text-sm font-mono text-cyan-400">{learningRate.toFixed(3)}</span>
+                {/* Primary Actions */}
+                <div className="pt-2 border-t border-border/50 space-y-2">
+                    <button
+                        onClick={onToggleTraining}
+                        className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all uppercase tracking-widest text-xs border ${isTraining
+                            ? 'bg-rose-500 border-rose-600 text-white'
+                            : 'bg-emerald-500 border-emerald-600 text-white'
+                            }`}
+                    >
+                        {isTraining ? <><Square size={14} fill="currentColor" /> Stop Execution</> : <><Play size={14} fill="currentColor" /> Run Trainer</>}
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            onClick={onClearPoints}
+                            className="flex items-center justify-center gap-2 py-2 rounded-lg text-[9px] font-bold font-mono bg-muted/40 border border-border/50 hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-all uppercase"
+                        >
+                            <Trash2 size={12} /> Reset
+                        </button>
+                        <div className="flex flex-col gap-1">
+                            <button
+                                onClick={onExportWeights}
+                                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[9px] font-bold font-mono bg-muted/40 border border-border/50 hover:bg-muted/80 text-cyan-400/60 hover:text-cyan-400 transition-all uppercase"
+                            >
+                                <Download size={12} /> Export Weights
+                            </button>
+                            <label className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[9px] font-bold font-mono bg-muted/40 border border-border/50 hover:bg-muted/80 text-cyan-400/60 hover:text-cyan-400 transition-all cursor-pointer uppercase">
+                                <Upload size={12} /> Import Weights
+                                <input
+                                    type="file"
+                                    accept="application/json"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) onImportWeights(file);
+                                    }}
+                                />
+                            </label>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <button
+                                onClick={onExportDataset}
+                                className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[9px] font-bold font-mono bg-muted/40 border border-border/50 hover:bg-muted/80 text-purple-400/60 hover:text-purple-400 transition-all uppercase"
+                            >
+                                <Database size={12} /> Export Data
+                            </button>
+                            <label className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[9px] font-bold font-mono bg-muted/40 border border-border/50 hover:bg-muted/80 text-purple-400/60 hover:text-purple-400 transition-all cursor-pointer uppercase">
+                                <Upload size={12} /> Import Data
+                                <input
+                                    type="file"
+                                    accept="application/json"
+                                    className="hidden"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) onImportDataset(file);
+                                    }}
+                                />
+                            </label>
+                        </div>
                     </div>
-                    <input
-                        type="range"
-                        min="0.001"
-                        max="0.5"
-                        step="0.001"
-                        value={learningRate}
-                        onChange={(e) => onLearningRateChange(parseFloat(e.target.value))}
-                        className="w-full accent-cyan-500"
-                    />
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/5">
-                <button
-                    onClick={onToggleTraining}
-                    className={`col-span-2 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium transition-all ${isTraining
-                        ? 'bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/30'
-                        : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/30'
-                        }`}
-                >
-                    {isTraining ? <><Square size={18} /> Stop Training</> : <><Play size={18} /> Start Training</>}
-                </button>
-
-                <button
-                    onClick={onClearPoints}
-                    className="flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-[10px] font-medium bg-white/5 hover:bg-white/10 text-foreground transition-all"
-                >
-                    <Trash2 size={14} /> Clear Canvas
-                </button>
-
-                <button
-                    onClick={onExportWeights}
-                    className="flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-[10px] font-medium bg-white/5 hover:bg-white/10 text-cyan-400 transition-all border border-cyan-500/20"
-                >
-                    <Download size={14} /> Export Weights
-                </button>
-
-                <button
-                    onClick={onExportDataset}
-                    className="flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-[10px] font-medium bg-white/5 hover:bg-white/10 text-purple-400 transition-all border border-purple-500/20"
-                >
-                    <Database size={14} /> Export Data
-                </button>
-
-                <label className="flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-[10px] font-medium bg-white/5 hover:bg-white/10 text-purple-400 transition-all cursor-pointer border border-purple-500/20">
-                    <Upload size={14} /> Import Data
-                    <input
-                        type="file"
-                        accept="application/json"
-                        className="hidden"
-                        onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) onImportDataset(file);
-                        }}
-                    />
-                </label>
-
-                <label className="col-span-2 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-sm font-medium bg-white/5 hover:bg-white/10 text-emerald-400 transition-all cursor-pointer border border-emerald-500/20 border-dashed">
-                    <Upload size={16} /> Import Weights
-                    <input
-                        type="file"
-                        accept="application/json"
-                        className="hidden"
-                        onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) onImportWeights(file);
-                        }}
-                    />
-                </label>
+            <div className="p-3 bg-muted/20 border-t border-border text-[7px] text-muted-foreground font-mono text-center tracking-widest uppercase">
+                PRIX_PROTOCOL • ML_CORE_WASM
             </div>
         </div>
     );

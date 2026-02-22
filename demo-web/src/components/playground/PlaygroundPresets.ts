@@ -16,9 +16,9 @@ export interface Preset {
 export const PRESETS: Preset[] = [
     {
         id: 'linear',
-        name: 'Separação Linear',
-        description: 'Dois grupos de pontos que podem ser divididos por uma única linha reta.',
-        explanation: 'Este é o caso mais simples. Uma rede neural sem camadas ocultas (um Perceptron) consegue resolver isso facilmente, pois a fronteira de decisão é uma função linear (uma linha).',
+        name: 'Linear Separation',
+        description: 'Two groups of points that can be divided by a single straight line.',
+        explanation: 'This is the simplest case. A neural network with no hidden layers (a Perceptron) can solve this easily, as the decision boundary is a linear function.',
         recommendedArch: [],
         points: [
             { x: -0.5, y: -0.5, label: 0 }, { x: -0.7, y: -0.3, label: 0 }, { x: -0.3, y: -0.8, label: 0 },
@@ -29,9 +29,9 @@ export const PRESETS: Preset[] = [
     },
     {
         id: 'xor',
-        name: 'Padrão XOR',
-        description: 'Os pontos estão cruzados, impedindo uma divisão por uma única reta.',
-        explanation: 'O problema do XOR foi o que causou o "primeiro inverno da IA". Ele demonstra que funções não-lineares exigem camadas ocultas. Para resolver isso, a rede precisa de pelo menos uma camada oculta (ex: [4]) para "dobrar" o espaço e criar duas linhas de corte.',
+        name: 'XOR Pattern',
+        description: 'Points are crossed, preventing a division by a single straight line.',
+        explanation: 'The XOR problem caused the "first AI winter". It demonstrates that non-linear functions require hidden layers. To solve this, the network needs at least one hidden layer (e.g., [4]) to "warp" the space.',
         recommendedArch: [4],
         points: [
             { x: -0.5, y: -0.5, label: 0 }, { x: -0.6, y: -0.4, label: 0 }, { x: -0.4, y: -0.6, label: 0 },
@@ -42,9 +42,9 @@ export const PRESETS: Preset[] = [
     },
     {
         id: 'circles',
-        name: 'Círculos Concêntricos',
-        description: 'Um círculo de pontos dentro de outro círculo.',
-        explanation: 'Aqui a rede precisa criar uma fronteira fechada (um anel). Isso exige mais neurônios e profundidade (ex: [8, 8]) para que a combinação das funções de ativação consiga cercar o centro com precisão.',
+        name: 'Concentric Circles',
+        description: 'A circle of points inside another circle.',
+        explanation: 'Here the network needs to create a closed boundary (a ring). This requires more neurons and depth (e.g., [8, 8]) so the combination of activation functions can accurately surround the center.',
         recommendedArch: [8, 8],
         points: [
             // Inner circle (Class 0)
@@ -61,9 +61,9 @@ export const PRESETS: Preset[] = [
     },
     {
         id: 'moons',
-        name: 'Luas Entrelaçadas',
-        description: 'Duas formas em meia-lua que se encaixam de forma complexa.',
-        explanation: 'Este padrão testa a capacidade da rede de aprender curvas suaves e complexas. É um ótimo exemplo de como a retropropagação (backprop) ajusta os pesos para "esculpir" a solução no espaço de características.',
+        name: 'Intertwined Moons',
+        description: 'Two interlocking crescent shapes.',
+        explanation: 'This pattern tests the network\'s ability to learn smooth, complex curves. It is a great example of how backpropagation carves the solution into the feature space.',
         recommendedArch: [8, 8],
         points: [
             // Top moon (Class 0)

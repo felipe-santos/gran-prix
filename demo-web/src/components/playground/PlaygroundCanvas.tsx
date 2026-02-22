@@ -27,11 +27,9 @@ export const PlaygroundCanvas: React.FC<PlaygroundCanvasProps> = ({
 
     const handleClick = (e: MouseEvent<HTMLCanvasElement>) => {
         const rect = e.currentTarget.getBoundingClientRect();
-        // x and y are the precise pixel coordinates generated on the visual element
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
-        // Convert visual element coordinates to normalized (-1 to 1) using the actual rendered dimensions!
         const normX = (x / rect.width) * 2 - 1;
         const normY = (y / rect.height) * 2 - 1;
 
@@ -52,9 +50,6 @@ export const PlaygroundCanvas: React.FC<PlaygroundCanvasProps> = ({
             for (let j = 0; j < resolution; j++) {
                 for (let i = 0; i < resolution; i++) {
                     const prob = decisionBoundary[j * resolution + i];
-
-                    // prob is between 0 (Class 0) and 1 (Class 1)
-                    // We'll interpolate between blue (0) and orange (1)
                     const r = Math.round(255 * prob);
                     const b = Math.round(255 * (1 - prob));
                     const g = Math.round(100 * prob + 100 * (1 - prob));
@@ -64,22 +59,29 @@ export const PlaygroundCanvas: React.FC<PlaygroundCanvasProps> = ({
                 }
             }
         } else {
-            // Initial clear if no valid boundary yet
             ctx.fillStyle = '#0f172a';
             ctx.fillRect(0, 0, width, height);
         }
 
-        // 2. Draw Points
+        // 2. Draw Points with Glow
         points.forEach(pt => {
-            // Convert normalized coordinates back to canvas coordinates
             const cx = ((pt.x + 1) / 2) * width;
             const cy = ((pt.y + 1) / 2) * height;
 
+            const gradient = ctx.createRadialGradient(cx, cy, 2, cx, cy, 10);
+            gradient.addColorStop(0, pt.label === 1 ? 'rgba(249, 115, 22, 0.8)' : 'rgba(59, 130, 246, 0.8)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+            ctx.fillStyle = gradient;
             ctx.beginPath();
-            ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-            ctx.fillStyle = pt.label === 1 ? '#f97316' : '#3b82f6'; // Orange = 1, Blue = 0
+            ctx.arc(cx, cy, 12, 0, Math.PI * 2);
             ctx.fill();
-            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+            ctx.fillStyle = pt.label === 1 ? '#fb923c' : '#60a5fa';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
             ctx.strokeStyle = '#ffffff';
             ctx.stroke();
         });
@@ -87,18 +89,18 @@ export const PlaygroundCanvas: React.FC<PlaygroundCanvasProps> = ({
     }, [points, decisionBoundary, resolution, width, height]);
 
     return (
-        <div className="relative overflow-hidden rounded-2xl border border-white/10 shadow-xl cursor-crosshair">
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 shadow-2xl cursor-crosshair">
             <canvas
                 ref={canvasRef}
                 width={width}
                 height={height}
                 onClick={handleClick}
-                className="block max-w-full h-auto bg-slate-900"
+                className="block w-full max-w-[600px] aspect-square bg-slate-900"
             />
             {/* Overlay Grid */}
-            <div className="absolute inset-0 pointer-events-none" style={{
+            <div className="absolute inset-0 pointer-events-none opacity-10" style={{
                 backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)',
-                backgroundSize: '40px 40px'
+                backgroundSize: '30px 30px'
             }} />
         </div>
     );

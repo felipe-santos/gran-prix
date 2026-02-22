@@ -7,55 +7,68 @@ interface PlaygroundExplanationProps {
 }
 
 export const PlaygroundExplanation: React.FC<PlaygroundExplanationProps> = ({ preset }) => {
-    if (!preset) {
-        return (
-            <div className="bg-card/40 backdrop-blur-sm border border-white/5 rounded-2xl p-6 flex flex-col gap-4">
-                <div className="flex items-center gap-2 text-cyan-400">
-                    <Lightbulb size={20} />
-                    <h3 className="font-semibold text-lg">Dica do Pesquisador</h3>
-                </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                    Clique no canvas para adicionar pontos de dados. Experimente criar padrões que não podem ser divididos por uma linha reta para ver como a rede neural reage!
+    return (
+        <div className="bg-card/50 border border-border rounded-2xl overflow-hidden backdrop-blur-md flex flex-col shadow-xl">
+            <div className="p-4 border-b border-border bg-card/80">
+                <h3 className="text-sm font-bold text-foreground uppercase tracking-tighter flex items-center gap-2">
+                    <BookOpen size={14} className="text-cyan-500" />
+                    {preset ? preset.name : 'Researcher Intelligence'}
+                </h3>
+                <p className="text-[9px] text-muted-foreground font-mono mt-0.5 uppercase">
+                    {preset ? 'Active Protocol Analysis' : 'Observation Mode'}
                 </p>
             </div>
-        );
-    }
 
-    return (
-        <div className="bg-card/40 backdrop-blur-sm border border-white/5 rounded-2xl p-6 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-purple-400">
-                    <BookOpen size={20} />
-                    <h3 className="font-semibold text-lg">{preset.name}</h3>
-                </div>
-                <span className="text-[10px] font-mono bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-1 rounded">
-                    PRESET ATIVO
-                </span>
+            <div className="p-5 space-y-5">
+                {!preset ? (
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                            <Lightbulb size={12} />
+                            <label className="text-[9px] font-bold uppercase tracking-widest">Didactic Status</label>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground leading-relaxed italic">
+                            Select a scenario preset to see internal analysis. You can also manually add points to challenge the neural network's convergence.
+                        </p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="space-y-2">
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground block">
+                                Pattern Topology
+                            </label>
+                            <p className="text-[11px] text-foreground/80 leading-relaxed font-medium">
+                                {preset.description}
+                            </p>
+                        </div>
+
+                        <div className="space-y-2 pt-2 border-t border-border/50">
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground block">
+                                Mathematical Insight
+                            </label>
+                            <div className="bg-cyan-500/5 border border-cyan-500/10 p-3 rounded-lg">
+                                <p className="text-[10px] text-cyan-500/80 leading-relaxed italic font-medium">
+                                    {preset.explanation}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 pt-2 border-t border-border/50">
+                            <label className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground block">
+                                Convergence Strategy
+                            </label>
+                            <div className="flex items-center justify-between">
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Recommended Depth</span>
+                                <span className="text-xs font-mono font-bold text-cyan-500">
+                                    {preset.recommendedArch.length === 0 ? 'LINEAR' : `[${preset.recommendedArch.join(', ')}]`}
+                                </span>
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
 
-            <div className="space-y-4">
-                <div>
-                    <h4 className="text-xs font-mono text-white/40 uppercase tracking-widest mb-2">O que é?</h4>
-                    <p className="text-sm text-foreground/80 leading-relaxed">
-                        {preset.description}
-                    </p>
-                </div>
-
-                <div className="bg-white/5 p-4 rounded-xl border border-white/5">
-                    <h4 className="text-xs font-mono text-purple-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                        <Lightbulb size={12} /> Desafio Didático
-                    </h4>
-                    <p className="text-sm text-muted-foreground leading-relaxed italic">
-                        {preset.explanation}
-                    </p>
-                </div>
-
-                <div className="flex items-center gap-4 text-[10px] font-mono text-cyan-400/60">
-                    <div className="flex items-center gap-1">
-                        <div className="w-2 h-2 rounded-full bg-cyan-500" /> Recomendações:
-                    </div>
-                    <span>Arquitetura: [{preset.recommendedArch.length === 0 ? "Nenhuma" : preset.recommendedArch.join(', ')}]</span>
-                </div>
+            <div className="p-3 bg-muted/50 border-t border-border text-[7px] text-muted-foreground font-mono text-center tracking-widest uppercase">
+                INTELLIGENCE_LAYER • PRIX_DIDACTIC
             </div>
         </div>
     );

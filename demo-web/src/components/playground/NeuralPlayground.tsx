@@ -21,15 +21,14 @@ export const NeuralPlayground: React.FC = () => {
     const [loss, setLoss] = useState(0.0);
     const [weights, setWeights] = useState<Float32Array | null>(null);
     const [decisionBoundary, setDecisionBoundary] = useState<number[]>([]);
-    const [hiddenLayers, setHiddenLayers] = useState<number[]>([8, 8]); // Default to 2 layers of 8 neurons
+    const [hiddenLayers, setHiddenLayers] = useState<number[]>([8, 8]);
     const [currentPresetId, setCurrentPresetId] = useState<string | null>(null);
 
     // Config
-    const RESOLUTION = 40; // Generate a 40x40 grid for decision boundary heatmap
-
+    const RESOLUTION = 40;
     const rafId = useRef<number | null>(null);
 
-    // 1. Initialize WASM inside useEffect
+    // 1. Initialize WASM
     useEffect(() => {
         let mounted = true;
         const init = async () => {
@@ -40,10 +39,8 @@ export const NeuralPlayground: React.FC = () => {
                     setTrainer(t);
                     setIsWasmReady(true);
 
-                    // Initial fetch
                     const initWeights = t.get_weights();
                     setWeights(initWeights);
-                    // Generate initial blind boundary
                     setDecisionBoundary(Array.from(t.get_decision_boundary(RESOLUTION)));
                 }
             } catch (err) {
@@ -55,16 +52,15 @@ export const NeuralPlayground: React.FC = () => {
             mounted = false;
             if (trainer) trainer.free();
         };
-    }, [hiddenLayers]); // Re-initialize if layers change
+    }, [hiddenLayers]);
 
     // 2. Training Loop
     const trainLoop = useCallback(() => {
         if (!trainer || points.length === 0 || !isTraining) {
-            if (isTraining && points.length === 0) setIsTraining(false); // Auto-stop if no points
+            if (isTraining && points.length === 0) setIsTraining(false);
             return;
         }
 
-        // Prepare batch arrays
         const xs = new Float32Array(points.length);
         const ys = new Float32Array(points.length);
         const ts = new Float32Array(points.length);
@@ -75,12 +71,9 @@ export const NeuralPlayground: React.FC = () => {
             ts[i] = p.label;
         });
 
-        // Run batch training
         const currentLoss = trainer.train_batch(xs, ys, ts, learningRate);
         setLoss(currentLoss);
 
-        // Update visuals periodically to avoid stuttering
-        // We update weights and boundary every frame here because it's a small network, but we could throttle if needed.
         setWeights(trainer.get_weights());
         setDecisionBoundary(Array.from(trainer.get_decision_boundary(RESOLUTION)));
 
@@ -99,18 +92,13 @@ export const NeuralPlayground: React.FC = () => {
     // 3. Handlers
     const handleCanvasClick = (x: number, y: number) => {
         setPoints(prev => [...prev, { x, y, label: currentLabel }]);
-        setCurrentPresetId(null); // User modified data, clear preset highlight
+        setCurrentPresetId(null);
     };
 
     const handleClear = () => {
         setPoints([]);
         setIsTraining(false);
         setLoss(0);
-        if (trainer) {
-            // Re-instantiate to truly clear weights? Or just clear points?
-            // Actually, "Clear Canvas" usually just clears points. We can let the user decide.
-            // But let's keep the model as is.
-        }
     };
 
     const handleExport = () => {
@@ -133,8 +121,6 @@ export const NeuralPlayground: React.FC = () => {
             const floatArr = new Float32Array(arr);
 
             trainer.import_weights(floatArr);
-
-            // Update UI
             setWeights(trainer.get_weights());
             setDecisionBoundary(Array.from(trainer.get_decision_boundary(RESOLUTION)));
             setIsTraining(false);
@@ -181,7 +167,7 @@ export const NeuralPlayground: React.FC = () => {
 
     const handleAddManualPoint = (x: number, y: number, label: number) => {
         setPoints(prev => [...prev, { x, y, label }]);
-        setCurrentPresetId(null); // User modified data, clear preset highlight
+        setCurrentPresetId(null);
     };
 
     const handleLoadPreset = (id: string) => {
@@ -197,22 +183,40 @@ export const NeuralPlayground: React.FC = () => {
     const currentPreset = PRESETS.find(p => p.id === currentPresetId) || null;
 
     if (!isWasmReady) {
-        return <div className="p-24 text-center text-cyan-400 font-mono animate-pulse">Initializing WASM Backend...</div>;
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
+                <div className="w-16 h-16 border-4 border-cyan-500/20 border-t-cyan-500 rounded-full animate-spin shadow-[0_0_20px_rgba(6,182,212,0.2)]" />
+                <div className="text-cyan-400 font-mono text-sm tracking-[0.3em] font-bold animate-pulse uppercase">Initializing Neural Core...</div>
+            </div>
+        );
     }
 
     return (
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col gap-8">
-            <div className="text-center space-y-4 max-w-3xl mx-auto mb-8">
-                <h1 className="text-3xl md:text-5xl font-light tracking-tight text-white">Neural <span className="font-semibold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Playground</span></h1>
-                <p className="text-muted-foreground">
-                    Click the canvas to add training data. The WASM neural network updates live using Backpropagation. Export your trained weights when completely separated!
+        <div className="w-full flex flex-col items-center gap-0">
+            {/* Header section (Didactic title & desc) */}
+            <div className="flex flex-col items-center mb-12">
+                <div className="flex flex-col items-center gap-2">
+                    <h1 className="text-3xl font-black bg-gradient-to-br from-cyan-400 to-blue-600 bg-clip-text text-transparent uppercase tracking-[0.3em] italic">
+                        Neural <span className="">Playground</span>
+                    </h1>
+                    <div className="w-24 h-1 bg-gradient-to-r from-cyan-500/0 via-cyan-500 to-cyan-500/0 rounded-full mt-1" />
+                </div>
+                <p className="text-[9px] text-muted-foreground uppercase tracking-[0.3em] mt-4 font-bold text-center max-w-lg leading-relaxed">
+                    Interactive Backpropagation Engine<br />
+                    WASM-Core • Multi-Layer Perceptron Visualization
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Main layout: left panel | canvas | right panel */}
+            <div className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 px-4">
 
-                {/* Left Column: Canvas (Col Span 5) */}
-                <div className="lg:col-span-5 flex flex-col">
+                {/* Left Column: Network Visualization */}
+                <div className="flex flex-col gap-6 flex-shrink-0 w-full lg:w-80">
+                    <WeightsViewer weights={weights} hiddenLayers={hiddenLayers} />
+                </div>
+
+                {/* Center Column: Interaction Canvas */}
+                <div className="flex flex-col items-center flex-grow max-w-[600px] gap-6">
                     <PlaygroundCanvas
                         points={points}
                         onCanvasClick={handleCanvasClick}
@@ -221,10 +225,20 @@ export const NeuralPlayground: React.FC = () => {
                         width={600}
                         height={600}
                     />
+                    <div className="flex gap-12 text-[10px] font-bold font-mono text-muted-foreground uppercase tracking-[0.3em]">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.3)]" />
+                            <span>Class 0</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.3)]" />
+                            <span>Class 1</span>
+                        </div>
+                    </div>
                 </div>
 
-                {/* Middle Column: Controls (Col Span 3) */}
-                <div className="lg:col-span-3">
+                {/* Right Column: Controls & Intelligence */}
+                <div className="flex flex-col gap-6 flex-shrink-0 w-full lg:w-80">
                     <PlaygroundControls
                         isTraining={isTraining}
                         onToggleTraining={() => setIsTraining(!isTraining)}
@@ -246,14 +260,7 @@ export const NeuralPlayground: React.FC = () => {
                         onLoadPreset={handleLoadPreset}
                         currentPresetId={currentPresetId}
                     />
-                    <div className="mt-6">
-                        <PlaygroundExplanation preset={currentPreset} />
-                    </div>
-                </div>
-
-                {/* Right Column: Weight Viewer (Col Span 4) */}
-                <div className="lg:col-span-4 h-full">
-                    <WeightsViewer weights={weights} hiddenLayers={hiddenLayers} />
+                    <PlaygroundExplanation preset={currentPreset} />
                 </div>
 
             </div>
