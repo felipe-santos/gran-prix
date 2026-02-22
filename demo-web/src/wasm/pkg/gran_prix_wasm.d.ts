@@ -45,8 +45,8 @@ export enum MutationStrategy {
  * ```no_run
  * use gran_prix_wasm::NeuralBrain;
  *
- * let brain = NeuralBrain::new(0, 4, 8, 2)?;
- * let outputs = brain.compute(&[1.0, 0.5, -0.3, 0.8])?;
+ * let brain = NeuralBrain::new(0, 4, vec![8], 2).unwrap();
+ * let outputs = brain.compute(&[1.0, 0.5, -0.3, 0.8]).unwrap();
  * ```
  */
 export class NeuralBrain {
@@ -161,6 +161,8 @@ export class NeuralBrain {
      * # Example
      *
      * ```no_run
+     * # use gran_prix_wasm::NeuralBrain;
+     * # let brain = NeuralBrain::new(0, 4, vec![8], 2).unwrap();
      * brain.set_kernel(-0.5, 1.0, -0.5); // Edge detection
      * ```
      */
@@ -202,9 +204,9 @@ export class NeuralBrain {
  * ```no_run
  * use gran_prix_wasm::{Population, MutationStrategy};
  *
- * let mut pop = Population::new(50, 4, &Uint32Array::from(&[8][..]), 2)?;
+ * let mut pop = Population::new(50, 4, vec![8], 2).unwrap();
  * let fitness = vec![1.0; 50];
- * pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive)?;
+ * pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive).unwrap();
  * ```
  */
 export class Population {
@@ -250,8 +252,6 @@ export class Population {
      * Success or error if length mismatch
      *
      * # Algorithm
-     *
-     * ```
      *
      * # Design Note: Why No Tournament Selection?
      *
@@ -321,6 +321,11 @@ export class Trainer {
     free(): void;
     [Symbol.dispose](): void;
     get_decision_boundary(resolution: number, feature_map: Function): Float32Array;
+    /**
+     * Diagnostic: Returns the sum of absolute gradients for each parameter node.
+     * Used to verify that backprop is reaching all layers.
+     */
+    get_gradient_norms(): Float32Array;
     get_weights(): Float32Array;
     import_weights(weights: Float32Array): void;
     constructor(input_dim: number, hidden_layers: Uint32Array);
@@ -346,6 +351,7 @@ export interface InitOutput {
     readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
     readonly __wbg_trainer_free: (a: number, b: number) => void;
     readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly trainer_get_gradient_norms: (a: number) => [number, number, number, number];
     readonly trainer_get_weights: (a: number) => [number, number, number, number];
     readonly trainer_import_weights: (a: number, b: number, c: number) => [number, number];
     readonly trainer_new: (a: number, b: number, c: number) => [number, number, number];

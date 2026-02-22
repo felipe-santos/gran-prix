@@ -88,6 +88,25 @@ impl Trainer {
         Ok(weights)
     }
 
+    /// Diagnostic: Returns the sum of absolute gradients for each parameter node.
+    /// Used to verify that backprop is reaching all layers.
+    pub fn get_gradient_norms(&self) -> Result<Vec<f32>, JsValue> {
+        let graph = self.graph.borrow();
+        let mut norms = Vec::new();
+        for i in 0..graph.nodes().len() {
+            if let gran_prix::graph::Node::Param(_) = &graph.nodes()[i] {
+                if let Some(grad) = graph.get_gradient(gran_prix::NodeId(i)) {
+                    let view = grad.as_cpu().map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
+                    let sum_abs: f32 = view.iter().map(|x| x.abs()).sum();
+                    norms.push(sum_abs);
+                } else {
+                    norms.push(0.0);
+                }
+            }
+        }
+        Ok(norms)
+    }
+
     pub fn import_weights(&self, weights: &[f32]) -> Result<(), JsValue> {
         let mut graph = self.graph.borrow_mut();
         let nodes = graph.nodes_mut();

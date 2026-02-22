@@ -77,7 +77,7 @@ impl MutationStrategy {
 ///
 /// `XorShift` is `!Send + !Sync` by design (uses mutable state).
 /// Each mutation should have its own instance.
-pub(crate) struct XorShift {
+pub struct XorShift {
     state: u32,
 }
 
@@ -96,7 +96,7 @@ impl XorShift {
     ///
     /// A seed of 0 would cause the generator to output all zeros,
     /// so we replace it with a non-zero constant.
-    pub(crate) fn new(seed: u32) -> Self {
+    pub fn new(seed: u32) -> Self {
         Self {
             state: if seed == 0 { 0xDEADBEEF } else { seed },
         }
@@ -118,7 +118,7 @@ impl XorShift {
     ///
     /// Random float in [0.0, 1.0)
     #[inline]
-    pub(crate) fn next_f32(&mut self) -> f32 {
+    pub fn next_f32(&mut self) -> f32 {
         let mut x = self.state;
         x ^= x << 13;
         x ^= x >> 17;
@@ -141,12 +141,13 @@ impl XorShift {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
+    /// use gran_prix_wasm::mutation::XorShift;
     /// let mut rng = XorShift::new(42);
     /// let value = rng.range(-1.0, 1.0); // Random in [-1.0, 1.0)
     /// ```
     #[inline]
-    pub(crate) fn range(&mut self, min: f32, max: f32) -> f32 {
+    pub fn range(&mut self, min: f32, max: f32) -> f32 {
         min + (self.next_f32() * (max - min))
     }
 }

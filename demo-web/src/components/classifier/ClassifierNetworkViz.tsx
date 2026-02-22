@@ -3,11 +3,11 @@ import * as wasm from '../../wasm/pkg/gran_prix_wasm';
 
 interface ClassifierNetworkVizProps {
     trainer: wasm.Trainer | null;
-    hiddenSize: number;
+    hiddenLayers: number[];
     inputDim?: number;
 }
 
-export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trainer, hiddenSize }) => {
+export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trainer, hiddenLayers, inputDim }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
     useEffect(() => {
@@ -23,9 +23,11 @@ export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trai
             const { width, height } = canvasRef.current;
             ctx.clearRect(0, 0, width, height);
             const effectiveInputDim = inputDim || 2;
-            const layers = [effectiveInputDim, hiddenSize, 1];
-            const layerX = [width * 0.2, width * 0.5, width * 0.8];
-            const nodeRadius = 10;
+            const layers = [effectiveInputDim, ...hiddenLayers, 1];
+
+            // Calculate X positions for layers
+            const layerX = layers.map((_, i) => width * (0.15 + (i * 0.7 / (layers.length - 1))));
+            const nodeRadius = Math.max(4, 10 - layers.length);
 
             // Draw Connections
             let wIdx = 0;
@@ -75,7 +77,7 @@ export const ClassifierNetworkViz: React.FC<ClassifierNetworkVizProps> = ({ trai
 
         rafId = requestAnimationFrame(draw);
         return () => cancelAnimationFrame(rafId);
-    }, [trainer, hiddenSize]);
+    }, [trainer, hiddenLayers, inputDim]);
 
     return (
         <div className="bg-card/40 border border-border/50 rounded-[2rem] overflow-hidden backdrop-blur-xl shadow-2xl">

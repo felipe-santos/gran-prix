@@ -65,7 +65,7 @@ export const NetworkViz: React.FC<NetworkVizProps> = ({
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             const layers = [inputs, ...hidden, outputs];
-            const layerX = layers.map((_, l) => 
+            const layerX = layers.map((_, l) =>
                 (canvas.width * 0.15) + (l * (canvas.width * 0.7)) / (layers.length - 1)
             );
             const nodeRadius = 5;
@@ -94,8 +94,8 @@ export const NetworkViz: React.FC<NetworkVizProps> = ({
                             : `rgba(244, 63, 94, ${alpha})`;
                         ctx.stroke();
                     }
-                    wIdx += nextNodes; // biases
                 }
+                wIdx += nextNodes; // biases
             }
 
             // ── Nodes + Labels ─────────────────────────────────────────────

@@ -45,8 +45,8 @@ export const MutationStrategy = Object.freeze({
  * ```no_run
  * use gran_prix_wasm::NeuralBrain;
  *
- * let brain = NeuralBrain::new(0, 4, 8, 2)?;
- * let outputs = brain.compute(&[1.0, 0.5, -0.3, 0.8])?;
+ * let brain = NeuralBrain::new(0, 4, vec![8], 2).unwrap();
+ * let outputs = brain.compute(&[1.0, 0.5, -0.3, 0.8]).unwrap();
  * ```
  */
 export class NeuralBrain {
@@ -218,6 +218,8 @@ export class NeuralBrain {
      * # Example
      *
      * ```no_run
+     * # use gran_prix_wasm::NeuralBrain;
+     * # let brain = NeuralBrain::new(0, 4, vec![8], 2).unwrap();
      * brain.set_kernel(-0.5, 1.0, -0.5); // Edge detection
      * ```
      * @param {number} k1
@@ -274,9 +276,9 @@ if (Symbol.dispose) NeuralBrain.prototype[Symbol.dispose] = NeuralBrain.prototyp
  * ```no_run
  * use gran_prix_wasm::{Population, MutationStrategy};
  *
- * let mut pop = Population::new(50, 4, &Uint32Array::from(&[8][..]), 2)?;
+ * let mut pop = Population::new(50, 4, vec![8], 2).unwrap();
  * let fitness = vec![1.0; 50];
- * pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive)?;
+ * pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive).unwrap();
  * ```
  */
 export class Population {
@@ -346,8 +348,6 @@ export class Population {
      * Success or error if length mismatch
      *
      * # Algorithm
-     *
-     * ```
      *
      * # Design Note: Why No Tournament Selection?
      *
@@ -469,6 +469,20 @@ export class Trainer {
      */
     get_decision_boundary(resolution, feature_map) {
         const ret = wasm.trainer_get_decision_boundary(this.__wbg_ptr, resolution, feature_map);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Diagnostic: Returns the sum of absolute gradients for each parameter node.
+     * Used to verify that backprop is reaching all layers.
+     * @returns {Float32Array}
+     */
+    get_gradient_norms() {
+        const ret = wasm.trainer_get_gradient_norms(this.__wbg_ptr);
         if (ret[3]) {
             throw takeFromExternrefTable0(ret[2]);
         }

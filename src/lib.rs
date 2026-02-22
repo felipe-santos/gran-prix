@@ -15,3 +15,6 @@ pub use types::{NodeId, Shape, Device};
 pub trait Layer: Send + Sync + std::fmt::Debug {
     fn forward(&mut self, input: NodeId, graph: &mut graph::dsl::GraphBuilder) -> NodeId;
 }
+
+#[cfg(test)]
+mod tests_math;

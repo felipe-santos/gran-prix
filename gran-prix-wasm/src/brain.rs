@@ -57,8 +57,8 @@ const BRAIN_MAGIC: u32 = 0xDEADC0DE;
 /// ```no_run
 /// use gran_prix_wasm::NeuralBrain;
 ///
-/// let brain = NeuralBrain::new(0, 4, 8, 2)?;
-/// let outputs = brain.compute(&[1.0, 0.5, -0.3, 0.8])?;
+/// let brain = NeuralBrain::new(0, 4, vec![8], 2).unwrap();
+/// let outputs = brain.compute(&[1.0, 0.5, -0.3, 0.8]).unwrap();
 /// ```
 #[wasm_bindgen]
 pub struct NeuralBrain {
@@ -262,6 +262,7 @@ impl NeuralBrain {
         }
 
         let mut graph = self.graph.borrow_mut();
+        graph.sync_params().map_err(|e| JsValue::from_str(&format!("Sync error: {}", e)))?;
 
         // ── Inject input into graph ───────────────────────────────────────────
         {
@@ -514,6 +515,8 @@ impl NeuralBrain {
     /// # Example
     ///
     /// ```no_run
+    /// # use gran_prix_wasm::NeuralBrain;
+    /// # let brain = NeuralBrain::new(0, 4, vec![8], 2).unwrap();
     /// brain.set_kernel(-0.5, 1.0, -0.5); // Edge detection
     /// ```
     pub fn set_kernel(&self, k1: f32, k2: f32, k3: f32) {

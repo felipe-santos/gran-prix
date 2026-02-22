@@ -12,6 +12,7 @@ export const neuralbrain_set_kernel: (a: number, b: number, c: number, d: number
 export const neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
 export const __wbg_trainer_free: (a: number, b: number) => void;
 export const trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
+export const trainer_get_gradient_norms: (a: number) => [number, number, number, number];
 export const trainer_get_weights: (a: number) => [number, number, number, number];
 export const trainer_import_weights: (a: number, b: number, c: number) => [number, number];
 export const trainer_new: (a: number, b: number, c: number) => [number, number, number];

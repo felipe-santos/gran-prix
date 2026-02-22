@@ -4,6 +4,8 @@ pub mod brain;
 pub mod population;
 pub mod mutation;
 pub mod trainer;
+#[cfg(all(test, target_arch = "wasm32"))]
+pub mod diag;
 
 // Re-export key types for convenience (though wasm_bindgen handles its own exports)
 pub use brain::NeuralBrain;

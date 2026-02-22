@@ -81,9 +81,17 @@ export const NeuralPlayground: React.FC = () => {
             try {
                 const currentLoss = trainerRef.current.train_batch(batchInputs, batchTargets, learningRate);
                 setLoss(currentLoss);
-                setWeights(trainerRef.current.get_weights());
 
-                // Pass a mapping function to the decision boundary generator
+                const currentWeights = trainerRef.current.get_weights();
+                setWeights(currentWeights);
+
+                // DIAGNOSTIC: Log gradient engagement periodically
+                if (Math.random() < 0.01) { // ~Every 100 frames
+                    const gradNorms = trainerRef.current.get_gradient_norms();
+                    console.log("[PRIX_DIAG] Gradient Abs-Sum per Parameter Block (W1, B1, W2, B2...):");
+                    console.log(Array.from(gradNorms).map((n, i) => `Block ${i}: ${n.toFixed(6)}`).join(" | "));
+                }
+
                 const featureMap = (x: number, y: number) => expandFeatures(x, y, activeFeatures);
                 setDecisionBoundary(Array.from(trainerRef.current.get_decision_boundary(RESOLUTION, featureMap)));
             } catch (e) {

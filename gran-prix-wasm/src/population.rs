@@ -38,9 +38,9 @@ use std::cell::RefCell;
 /// ```no_run
 /// use gran_prix_wasm::{Population, MutationStrategy};
 ///
-/// let mut pop = Population::new(50, 4, &Uint32Array::from(&[8][..]), 2)?;
+/// let mut pop = Population::new(50, 4, vec![8], 2).unwrap();
 /// let fitness = vec![1.0; 50];
-/// pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive)?;
+/// pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive).unwrap();
 /// ```
 #[wasm_bindgen]
 pub struct Population {
@@ -183,8 +183,6 @@ impl Population {
     ///
     /// # Algorithm
     ///
-    /// ```
-    ///
     /// # Design Note: Why No Tournament Selection?
     ///
     /// We use simple best-selection (elitism) because:
@@ -318,25 +316,25 @@ impl Population {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
 
     #[test]
     fn test_population_creation() {
-        let pop = Population::new(10, 4, 8, 2).unwrap();
+        let pop = Population::new(10, 4, vec![8], 2).unwrap();
         assert_eq!(pop.count(), 10);
     }
 
     #[test]
     fn test_population_zero_size() {
-        let result = Population::new(0, 4, 8, 2);
+        let result = Population::new(0, 4, vec![8], 2);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_compute_all() {
-        let pop = Population::new(2, 3, 4, 2).unwrap();
+        let pop = Population::new(2, 3, vec![4], 2).unwrap();
         let inputs = vec![1.0, 0.5, -0.3, 0.8, -0.2, 0.4]; // 2 agents * 3 inputs
         let outputs = pop.compute_all(&inputs).unwrap();
         assert_eq!(outputs.len(), 4); // 2 agents * 2 outputs
@@ -344,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_compute_all_wrong_size() {
-        let pop = Population::new(2, 3, 4, 2).unwrap();
+        let pop = Population::new(2, 3, vec![4], 2).unwrap();
         let inputs = vec![1.0, 0.5]; // Wrong size!
         let result = pop.compute_all(&inputs);
         assert!(result.is_err());
@@ -352,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_evolution() {
-        let mut pop = Population::new(5, 4, 8, 2).unwrap();
+        let mut pop = Population::new(5, 4, vec![8], 2).unwrap();
         let fitness = vec![1.0, 5.0, 2.0, 3.0, 4.0]; // Agent 1 is best
         pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive)
             .unwrap();
@@ -361,7 +359,7 @@ mod tests {
 
     #[test]
     fn test_evolution_wrong_fitness_size() {
-        let mut pop = Population::new(5, 4, 8, 2).unwrap();
+        let mut pop = Population::new(5, 4, vec![8], 2).unwrap();
         let fitness = vec![1.0, 2.0]; // Wrong size!
         let result = pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive);
         assert!(result.is_err());

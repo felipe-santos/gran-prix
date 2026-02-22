@@ -26,7 +26,7 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
     const isPlayingRef = useRef(true);
     const [lr, setLr] = useState(0.05);
     const lrRef = useRef(0.05);
-    const [hiddenSize, setHiddenSize] = useState(32);
+    const [hiddenLayers, setHiddenLayers] = useState<number[]>([16]);
     const [pattern, setPattern] = useState<'xor' | 'circle' | 'spiral' | 'custom'>('xor');
     const [loss, setLoss] = useState<number>(0);
     const [performanceHistory, setPerformanceHistory] = useState<PerformanceData[]>([]);
@@ -63,7 +63,7 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
             generatePoints(pattern);
             if (typeof wasm.Trainer === 'undefined') return;
 
-            const newTrainer = new wasm.Trainer(2, new Uint32Array([hiddenSize]));
+            const newTrainer = new wasm.Trainer(2, new Uint32Array(hiddenLayers));
             trainerRef.current = newTrainer;
             setTrainer(newTrainer);
             setGeneration(0);
@@ -74,7 +74,7 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
             console.error("Failed to initialize Trainer:", e);
             setInitError(e.toString());
         }
-    }, [pattern, hiddenSize, generatePoints, isWasmReady]);
+    }, [pattern, hiddenLayers, generatePoints, isWasmReady]);
 
     const trainLoop = useCallback(() => {
         const currentTrainer = trainerRef.current;
@@ -114,6 +114,17 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
                     const newData = [...prev, { generation: genRef.current, avg: 1 - avgLoss, max: 1 - avgLoss }];
                     return newData.length > 50 ? newData.slice(1) : newData;
                 });
+
+                // DIAGNOSTIC: Log gradient engagement periodically
+                if (genRef.current % 100 === 0) {
+                    try {
+                        const gradNorms = currentTrainer.get_gradient_norms();
+                        console.log(`[PRIX_DIAG] Gen ${genRef.current} | Gradients (W1, B1, W2, B2...):`);
+                        console.log(Array.from(gradNorms).map((n, i) => `Layer ${Math.floor(i / 2) + 1} ${i % 2 === 0 ? 'W' : 'B'}: ${n.toFixed(6)}`).join(" | "));
+                    } catch (e) {
+                        console.warn("Diag log failed:", e);
+                    }
+                }
             }
 
             // Render
@@ -214,7 +225,7 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
                                 GRADIENT_DESCENT · LIVE_WEIGHTS
                             </p>
                         </div>
-                        <ClassifierNetworkViz trainer={trainer} hiddenSize={hiddenSize} inputDim={2} />
+                        <ClassifierNetworkViz trainer={trainer} hiddenLayers={hiddenLayers} inputDim={2} />
 
                         <div className="mt-5 space-y-1.5 border-t border-border pt-4">
                             <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
@@ -273,8 +284,8 @@ export const ClassifierDemo: React.FC<{ isWasmReady: boolean }> = ({ isWasmReady
                             lrRef.current = v;
                             setLr(v);
                         }}
-                        hiddenSize={hiddenSize}
-                        onHiddenSizeChange={setHiddenSize}
+                        hiddenLayers={hiddenLayers}
+                        onHiddenLayersChange={setHiddenLayers}
                     />
                 </div>
             </div>
