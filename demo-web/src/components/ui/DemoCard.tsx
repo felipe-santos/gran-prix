@@ -10,8 +10,8 @@ interface DemoCardProps {
 export const DemoCard: React.FC<DemoCardProps> = ({ demo }) => {
     return (
         <Link
-            to={`/demo/${demo.id}`}
-            className="group relative flex flex-col h-full bg-card/40 border border-white/5 backdrop-blur-md rounded-2xl p-6 transition-all duration-500 hover:scale-[1.02] hover:-translate-y-1 hover:border-white/10 hover:shadow-2xl overflow-hidden"
+            to={`/?demo=${demo.id}`}
+            className="group relative flex flex-col h-full bg-card/40 border border-white/5 overflow-hidden rounded-2xl p-6 transition-all duration-500 hover:bg-card/60 hover:border-white/10 hover:-translate-y-1 hover:shadow-2xl hover:shadow-cyan-500/5 cursor-pointer"
         >
             {/* Subtle background glow effect using the card's theme color */}
             <div className={`absolute -inset-px opacity-0 group-hover:opacity-10 transition-opacity duration-500 pointer-events-none rounded-2xl bg-gradient-to-br ${demo.color}`} />

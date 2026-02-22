@@ -1,17 +1,47 @@
 import React from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { ThemeToggle } from '../components/ThemeToggle';
-import GoogleTagManager from '../components/GoogleTagManager';
+import GoogleTagManager from '../components/GoogleTagManager'; // Keep this as it's not explicitly removed
 import { ArrowLeft } from 'lucide-react';
 import { DEMOS } from '../config/demos';
 
-export const DemoLayout: React.FC = () => {
-    const location = useLocation();
+// Demos
+import { OvenDemo } from '../components/oven';
+import { VacuumDemo } from '../components/vacuum';
+import { TraderDemo } from '../components/trader';
+import { SmartGridDemo } from '../components/smart-grid';
+import { DroneDemo } from '../components/drone';
+import { PredatorPreyDemo } from '../components/predator-prey';
+import { WalkerDemo } from '../components/walker';
+import { FlappyDemo } from '../components/flappy';
+import { EvolutionDemo } from '../components/evolution';
+import { ClassifierWrapper } from '../components/classifier';
 
-    // Find metadata for the current route to set the top header
-    // e.g. from '/demo/oven' -> match.id === 'oven'
-    const demoIdMatch = location.pathname.split('/').pop();
-    const currentDemo = DEMOS.find(d => d.id === demoIdMatch);
+const DEMO_COMPONENTS: Record<string, React.FC> = {
+    'oven': OvenDemo,
+    'vacuum': VacuumDemo,
+    'trader': TraderDemo,
+    'smart-grid': SmartGridDemo,
+    'drone': DroneDemo,
+    'predator-prey': PredatorPreyDemo,
+    'walker': WalkerDemo,
+    'flappy': FlappyDemo,
+    'evolution': EvolutionDemo,
+    'training': ClassifierWrapper,
+};
+
+interface DemoLayoutProps {
+    demoId: string;
+}
+
+export const DemoLayout: React.FC<DemoLayoutProps> = ({ demoId }) => {
+    const currentDemo = DEMOS.find(d => d.id === demoId);
+
+    if (!currentDemo) {
+        return <Navigate to="/" replace />;
+    }
+
+    const DemoComponent = DEMO_COMPONENTS[demoId];
 
     return (
         <div className="min-h-screen bg-background text-foreground flex flex-col items-center selection:bg-emerald-500/30">
@@ -42,9 +72,11 @@ export const DemoLayout: React.FC = () => {
 
             </header>
 
-            <main className="w-full flex-1 flex flex-col items-center p-4">
-                {/* The specific demo component will render here */}
-                <Outlet />
+            {/* Demo Content */}
+            <main className="w-full flex-1 flex flex-col relative z-10 px-4 md:px-0">
+                <div className="w-full max-w-7xl mx-auto pb-24">
+                    <DemoComponent />
+                </div>
             </main>
 
             <footer className="pt-24 pb-12 text-muted-foreground text-[8px] uppercase tracking-[0.4em] font-medium w-full text-center">
