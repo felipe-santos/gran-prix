@@ -48,3 +48,22 @@ export interface BaseAgent {
     dead: boolean;
     color: string;
 }
+
+// ─── Mouse Hero Demo ─────────────────────────────────────────────────────────
+
+/**
+ * Phase state machine for the live mouse-prediction hero experience.
+ * - training:   network is learning from mouse movement (0–5s)
+ * - predicting: network draws prediction line ahead of cursor (5s+)
+ * - reveal:     tagline text fades in (7s+)
+ */
+export type MousePredictionPhase = 'training' | 'predicting' | 'reveal';
+
+/**
+ * A single timestamped mouse position sample.
+ */
+export interface MousePoint {
+    x: number;  // viewport px
+    y: number;  // viewport px
+    t: number;  // timestamp ms (performance.now())
+}

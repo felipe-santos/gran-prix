@@ -30,6 +30,8 @@ export type {
     PerformanceData,
     Obstacle,
     BaseAgent,
+    MousePredictionPhase,
+    MousePoint,
 } from './common';
 
 // ─── Evolution (Original Car Demo) ──────────────────────────────────────────

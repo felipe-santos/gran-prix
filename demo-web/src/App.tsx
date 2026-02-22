@@ -32,6 +32,7 @@ import { SmartGridDemo } from './components/smart-grid';
 import { TraderDemo } from './components/trader';
 import { VacuumDemo } from './components/vacuum';
 import { OvenDemo } from './components/oven';
+import { MouseHeroDemo } from './components/mouse-hero';
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -39,7 +40,7 @@ function App() {
   const [stats, setStats] = useState<GameStats>({ score: 0, generation: 1, best: 0, alive: 0 });
   const [isRestarting] = useState(false);
   const [showInspector, setShowInspector] = useState(false);
-  const [activeTab, setActiveTab] = useState<'evolution' | 'training' | 'flappy' | 'walker' | 'predator-prey' | 'drone' | 'smart-grid' | 'trader' | 'vacuum' | 'oven'>('oven');
+  const [activeTab, setActiveTab] = useState<'hero' | 'evolution' | 'training' | 'flappy' | 'walker' | 'predator-prey' | 'drone' | 'smart-grid' | 'trader' | 'vacuum' | 'oven'>('hero');
 
   // Learning Lab State
   const [mutationRate, setMutationRate] = useState(0.2);
@@ -191,22 +192,30 @@ function App() {
       <Header />
 
       <div className="flex gap-4 mb-8 p-1 bg-white/5 border border-white/10 rounded-xl overflow-x-auto max-w-full">
-        {(['evolution', 'predator-prey', 'flappy', 'walker', 'drone', 'smart-grid', 'trader', 'vacuum', 'oven', 'training'] as const).map(tab => (
+        {(['hero', 'evolution', 'predator-prey', 'flappy', 'walker', 'drone', 'smart-grid', 'trader', 'vacuum', 'oven', 'training'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-6 py-2 rounded-lg text-[10px] font-bold uppercase tracking-[0.2em] transition-all whitespace-nowrap ${activeTab === tab
-                ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20'
-                : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+              ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20'
+              : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
               }`}
           >
-            {tab === 'evolution' ? 'Genetic Evolution' : tab === 'training' ? 'Backprop Training' : tab === 'flappy' ? 'Flappy Bird RL' : tab === 'predator-prey' ? 'Predator vs Prey' : tab === 'drone' ? 'Drone Stabilizer' : tab === 'smart-grid' ? 'Smart Grid' : tab === 'trader' ? 'AI Trader' : tab === 'vacuum' ? 'Smart Vacuum' : tab === 'oven' ? 'Smart Oven' : 'Bipedal Walker'}
+            {tab === 'hero' ? 'Neural Preview' : tab === 'evolution' ? 'Genetic Evolution' : tab === 'training' ? 'Backprop Training' : tab === 'flappy' ? 'Flappy Bird RL' : tab === 'predator-prey' ? 'Predator vs Prey' : tab === 'drone' ? 'Drone Stabilizer' : tab === 'smart-grid' ? 'Smart Grid' : tab === 'trader' ? 'AI Trader' : tab === 'vacuum' ? 'Smart Vacuum' : tab === 'oven' ? 'Smart Oven' : 'Bipedal Walker'}
           </button>
         ))}
       </div>
 
       <main className="w-full max-w-7xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 transition-all duration-500">
-        {activeTab === 'oven' ? (
+        {activeTab === 'hero' ? (
+          <div className="w-full flex justify-center mt-4">
+            <MouseHeroDemo onExplore={() => {
+              // Scroll up slightly and switch to next demo to explore
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              setActiveTab('oven');
+            }} />
+          </div>
+        ) : activeTab === 'oven' ? (
           <div className="w-full flex justify-center py-8">
             <OvenDemo />
           </div>
