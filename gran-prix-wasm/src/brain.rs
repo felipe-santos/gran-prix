@@ -80,6 +80,9 @@ pub struct NeuralBrain {
     computing: RefCell<bool>,
     /// Custom 1D convolution kernel (size 3)
     custom_kernel: RefCell<Vec<f32>>,
+    /// Preserved layers to allow state extraction (RNN/GRU)
+    #[wasm_bindgen(skip)]
+    pub layers: RefCell<Vec<Box<dyn Layer>>>,
 }
 
 /// RAII guard for re-entrancy protection
@@ -145,6 +148,7 @@ impl NeuralBrain {
 
         let mut current_size = num_inputs;
         let mut last_node = input_id;
+        let mut preserved_layers: Vec<Box<dyn Layer>> = Vec::new();
 
         // Build Hidden Layers using Composable Layers
         for (i, &hidden_size) in hidden_layers.iter().enumerate() {
@@ -156,6 +160,9 @@ impl NeuralBrain {
             
             let mut relu = Activation::new(ActivationType::ReLU);
             last_node = relu.forward(layer_out, &mut gb);
+            
+            preserved_layers.push(Box::new(linear));
+            preserved_layers.push(Box::new(relu));
             
             current_size = hidden_size;
         }
@@ -169,6 +176,9 @@ impl NeuralBrain {
         
         let mut sigmoid = Activation::new(ActivationType::Sigmoid);
         let final_output = sigmoid.forward(out_layer, &mut gb);
+        
+        preserved_layers.push(Box::new(linear_final));
+        preserved_layers.push(Box::new(sigmoid));
 
         Ok(NeuralBrain {
             graph: RefCell::new(graph),
@@ -179,6 +189,7 @@ impl NeuralBrain {
             magic: BRAIN_MAGIC,
             computing: RefCell::new(false),
             custom_kernel: RefCell::new(vec![0.0, 1.0, 0.0]), // Identity kernel
+            layers: RefCell::new(preserved_layers),
         })
     }
 
@@ -307,6 +318,16 @@ impl NeuralBrain {
                 .execute_single_node(node_id)
                 .map_err(|e| GPError::BackendError(format!("Node {} execution error: {}", node_id.0, e)))?;
         }
+        
+        // ── Extract Temporal States for RNN/GRU ────────────────────────────────
+        let mut layers = self.layers.borrow_mut();
+        for layer in layers.iter_mut() {
+            if let Some(state_node_id) = layer.state_node() {
+                if let Some(Some(tensor)) = graph.values().get(state_node_id.0) {
+                    layer.update_state(tensor.clone());
+                }
+            }
+        }
 
         // ── Extract Output Efficiently ─────────────────────────────────────────
         let values = graph.values();
@@ -329,10 +350,20 @@ impl NeuralBrain {
     /// Reset cached values and gradients in the graph
     ///
     /// This is typically called between generations or training epochs.
-    pub fn reset(&self) {
+    pub fn reset_memory(&self) {
         let mut graph = self.graph.borrow_mut();
         graph.clear_values();
         graph.clear_gradients();
+        
+        let mut layers = self.layers.borrow_mut();
+        for layer in layers.iter_mut() {
+            layer.reset_state();
+        }
+    }
+    
+    // Maintain old alias for backwards compatibility
+    pub fn reset(&self) {
+        self.reset_memory();
     }
 
     /// Simple training step (placeholder for reinforcement learning)

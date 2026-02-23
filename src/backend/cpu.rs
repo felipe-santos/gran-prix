@@ -399,6 +399,37 @@ impl Backend for CPUBackend {
         Ok(())
     }
 
+    fn mul(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
+        Ok((a.try_view()?.to_owned() * &b.try_view()?).into_dyn().into())
+    }
+
+    fn mul_into(&self, a: &Tensor, b: &Tensor, out: &mut Tensor) -> GPResult<()> {
+        let a_view = a.try_view()?;
+        let b_view = b.try_view()?;
+        let mut out_view = out.try_view_mut()?;
+        
+        if a_view.shape() != b_view.shape() || a_view.shape() != out_view.shape() {
+             return Err(GPError::IncompatibleShapes { 
+                expected: a.shape().to_vec(), 
+                found: b.shape().to_vec(),
+                exp_len: a.len(),
+                found_len: b.len(),
+            });
+        }
+
+        Zip::from(&mut out_view).and(&a_view).and(&b_view).for_each(|o, &av, &bv| {
+            *o = av * bv;
+        });
+
+        Ok(())
+    }
+
+    fn mul_backward(&self, a: &Tensor, b: &Tensor, grad_output: &Tensor) -> GPResult<(Tensor, Tensor)> {
+        let grad_a = self.mul(grad_output, b)?;
+        let grad_b = self.mul(a, grad_output)?;
+        Ok((grad_a, grad_b))
+    }
+
     fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor> {
         let mut res = x.clone();
         self.sigmoid_inplace(&mut res)?;

@@ -145,12 +145,13 @@ export class NeuralBrain {
      * w[i] = sign * 0.1 where sign = (-1)^(i + seed_offset)
      */
     constructor(seed_offset: number, num_inputs: number, hidden_layers: Uint32Array, num_outputs: number);
+    reset(): void;
     /**
      * Reset cached values and gradients in the graph
      *
      * This is typically called between generations or training epochs.
      */
-    reset(): void;
+    reset_memory(): void;
     /**
      * Set custom convolution kernel
      *
@@ -347,6 +348,7 @@ export interface InitOutput {
     readonly neuralbrain_import_weights: (a: number, b: number, c: number) => [number, number];
     readonly neuralbrain_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly neuralbrain_reset: (a: number) => void;
+    readonly neuralbrain_reset_memory: (a: number) => void;
     readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
     readonly __wbg_trainer_free: (a: number, b: number) => void;
@@ -358,6 +360,7 @@ export interface InitOutput {
     readonly trainer_predict: (a: number, b: number, c: number) => [number, number, number];
     readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly init_panic_hook: () => void;
     readonly __wbg_population_free: (a: number, b: number) => void;
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
     readonly population_count: (a: number) => number;
@@ -365,7 +368,6 @@ export interface InitOutput {
     readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
     readonly population_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store_command_export: (a: number) => void;

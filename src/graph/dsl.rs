@@ -25,6 +25,14 @@ impl<'a> GraphBuilder<'a> {
     pub fn add(&mut self, a: NodeId, b: NodeId) -> NodeId {
         self.graph.op(OpType::Add, vec![a, b])
     }
+
+    pub fn mul(&mut self, a: NodeId, b: NodeId) -> NodeId {
+        self.graph.op(OpType::Mul, vec![a, b])
+    }
+    
+    pub fn node(&mut self, op: OpType, inputs: Vec<NodeId>) -> NodeId {
+        self.graph.op(op, inputs)
+    }
     
     /// Professional helper for Linear transformation: XW + B
     pub fn linear(&mut self, x: NodeId, w: NodeId, b: NodeId) -> NodeId {

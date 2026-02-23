@@ -200,13 +200,16 @@ export class NeuralBrain {
         NeuralBrainFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
+    reset() {
+        wasm.neuralbrain_reset(this.__wbg_ptr);
+    }
     /**
      * Reset cached values and gradients in the graph
      *
      * This is typically called between generations or training epochs.
      */
-    reset() {
-        wasm.neuralbrain_reset(this.__wbg_ptr);
+    reset_memory() {
+        wasm.neuralbrain_reset_memory(this.__wbg_ptr);
     }
     /**
      * Set custom convolution kernel

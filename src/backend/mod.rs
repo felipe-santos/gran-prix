@@ -41,6 +41,11 @@ pub trait Backend: Send + Sync + std::fmt::Debug {
 
     fn add(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor>;
     fn add_into(&self, a: &Tensor, b: &Tensor, out: &mut Tensor) -> GPResult<()>;
+    
+    fn mul(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor>;
+    fn mul_into(&self, a: &Tensor, b: &Tensor, out: &mut Tensor) -> GPResult<()>;
+    fn mul_backward(&self, a: &Tensor, b: &Tensor, grad_output: &Tensor) -> GPResult<(Tensor, Tensor)>;
+
     fn relu(&self, x: &Tensor) -> GPResult<Tensor>;
     fn relu_inplace(&self, x: &mut Tensor) -> GPResult<()>;
     fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor>;

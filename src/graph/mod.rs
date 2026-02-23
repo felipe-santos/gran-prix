@@ -42,6 +42,7 @@ pub enum OpType {
     Conv2D { stride: usize, padding: usize },
     MaxPool2D { kernel_size: usize, stride: usize },
     Add,
+    Mul,
     ReLU,
     Tanh,
     Sigmoid,
@@ -57,6 +58,7 @@ impl OpType {
             OpType::Conv2D { .. } => "Conv2D",
             OpType::MaxPool2D { .. } => "MaxPool2D",
             OpType::Add => "Add",
+            OpType::Mul => "Mul",
             OpType::ReLU => "ReLU",
             OpType::Tanh => "Tanh",
             OpType::Sigmoid => "Sigmoid",
@@ -72,6 +74,7 @@ impl OpType {
             OpType::Conv2D { stride, padding } => backend.conv2d(inputs[0], inputs[1], *stride, *padding),
             OpType::MaxPool2D { kernel_size, stride } => backend.max_pool2d(inputs[0], *kernel_size, *stride),
             OpType::Add => backend.add(inputs[0], inputs[1]),
+            OpType::Mul => backend.mul(inputs[0], inputs[1]),
             OpType::ReLU => backend.relu(inputs[0]),
             OpType::Tanh => backend.tanh(inputs[0]),
             OpType::Sigmoid => backend.sigmoid(inputs[0]),
@@ -89,6 +92,7 @@ impl OpType {
         match self {
             OpType::MatMul => backend.matmul_into(inputs[0], inputs[1], false, false, out),
             OpType::Add => backend.add_into(inputs[0], inputs[1], out),
+            OpType::Mul => backend.mul_into(inputs[0], inputs[1], out),
             OpType::ReLU => {
                 let out_shape = out.shape().to_vec();
                 let in_shape = inputs[0].shape().to_vec();
@@ -188,11 +192,16 @@ impl OpType {
                 Ok(vec![backend.max_pool2d_backward(&inputs[0], grad_output, *kernel_size, *stride)?])
             }
             OpType::Add => {
-                let shape_a = inputs[0].shape();
-                let shape_b = inputs[1].shape();
                 Ok(vec![
-                    self.resolve_grad(shape_a, grad_output, backend)?,
-                    self.resolve_grad(shape_b, grad_output, backend)?
+                    self.resolve_grad(inputs[0].shape(), grad_output, backend)?,
+                    self.resolve_grad(inputs[1].shape(), grad_output, backend)?
+                ])
+            }
+            OpType::Mul => {
+                let (grad_a, grad_b) = backend.mul_backward(inputs[0], inputs[1], grad_output)?;
+                Ok(vec![
+                    self.resolve_grad(inputs[0].shape(), &grad_a, backend)?,
+                    self.resolve_grad(inputs[1].shape(), &grad_b, backend)?
                 ])
             }
             OpType::ReLU => Ok(vec![backend.relu_backward(&inputs[0], grad_output)?]),
@@ -248,7 +257,7 @@ impl OpType {
                 let ow = (w - kernel_size) / stride + 1;
                 Ok(vec![n, c, oh, ow])
             }
-            OpType::Add | OpType::AddReLU => {
+            OpType::Add | OpType::Mul | OpType::AddReLU => {
                 if input_shapes[0] != input_shapes[1] {
                      let exp_total: usize = input_shapes[0].iter().product();
                      let found_total: usize = input_shapes[1].iter().product();
