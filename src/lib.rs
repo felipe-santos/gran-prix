@@ -5,6 +5,7 @@ pub mod tensor;
 pub mod errors;
 pub mod types;
 pub mod loss;
+pub mod optim;
 
 pub use tensor::Tensor;
 pub use errors::{GPError, GPResult};

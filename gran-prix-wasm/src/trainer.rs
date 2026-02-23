@@ -21,6 +21,7 @@ pub struct Trainer {
     #[allow(dead_code)]
     target_node: RefCell<Option<usize>>,
     input_tensor: RefCell<Tensor>,
+    optimizer: RefCell<gran_prix::optim::Adam>,
 }
 
 #[wasm_bindgen]
@@ -61,6 +62,8 @@ impl Trainer {
         
         let final_out = linear_out.forward(last_node, &mut gb);
 
+        let optimizer = gran_prix::optim::Adam::new(0.01);
+
         Ok(Trainer {
             graph: RefCell::new(graph),
             input_node: input_id.0,
@@ -68,6 +71,7 @@ impl Trainer {
             input_dim,
             target_node: RefCell::new(None),
             input_tensor: RefCell::new(Tensor::new_zeros(&[1, input_dim])),
+            optimizer: RefCell::new(optimizer),
         })
     }
 
@@ -146,8 +150,9 @@ impl Trainer {
         let order = graph.topological_sort(target)
             .map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
 
+        graph.clear_gradients();
+
         for i in 0..batch_size {
-            graph.clear_gradients();
             {
                 let mut input_buffer = self.input_tensor.borrow_mut();
                 if let Ok(mut view) = input_buffer.try_view_mut() {
@@ -166,15 +171,22 @@ impl Trainer {
             
             let target_tensor = Tensor::new_cpu(Array::from_shape_vec(IxDyn(&[1, 1]), vec![targets[i]]).unwrap());
             let loss_fn = gran_prix::loss::BCEWithLogits;
-            let grad = loss_fn.gradient(&result, &target_tensor);
+            
+            let mut grad = loss_fn.gradient(&result, &target_tensor);
+            // Average the gradient across the batch
+            grad.as_cpu_mut().unwrap().map_inplace(|v| *v /= batch_size as f32);
+            
             total_loss += loss_fn.calculate(&result, &target_tensor);
 
             graph.backward(gran_prix::NodeId(self.output_node), grad)
                 .map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
-
-            graph.update_parameters(lr / batch_size as f32)
-                .map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
         }
+
+        use gran_prix::optim::Optimizer;
+        let mut opt = self.optimizer.borrow_mut();
+        opt.lr = lr;
+        opt.step(&mut graph)
+            .map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
 
         Ok(total_loss / batch_size as f32)
     }
