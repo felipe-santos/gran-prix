@@ -131,6 +131,14 @@ impl Population {
     pub fn count(&self) -> usize {
         self.brains.len()
     }
+    
+    /// Reset memory states for all brains in the population.
+    /// This is crucial for RNN/GRU networks at the start of a new episode.
+    pub fn reset_memories(&self) {
+        for brain in &self.brains {
+            brain.reset_memory();
+        }
+    }
 
     /// Compute forward pass for all agents
     /// Compute forward pass for all agents
