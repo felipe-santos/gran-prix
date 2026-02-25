@@ -1,5 +1,7 @@
 # Gran-Prix: Deterministic Intelligence in the Browser
 
+**Live Demo:** [felipe-santos.github.io/gran-prix/](https://felipe-santos.github.io/gran-prix/)
+
 **The market is using language tools to solve behavioral problems.**
 
 Today, there is a tendency to use cloud-based LLMs to classify user intentions, detect suspicious behavior, or predict conversions in real-time. The result? Orbital token costs, unacceptable network latency, complex infrastructure, and dependency on third-party APIs.
@@ -207,11 +209,21 @@ cargo run --example memory_demo
 
 ## Visual Web Simulation (WASM)
 
-Gran-Prix includes a high-performance visual simulation built with **React**, **Vite**, and **WebAssembly (Rust)**. It demonstrates neural networks evolving in real-time.
+Gran-Prix includes a high-performance visual simulation suite built with **React**, **Vite**, and **WebAssembly (Rust)**. It demonstrates neural networks evolving and training in real-time across various domains.
+
+**Live Demos available at:** [felipe-santos.github.io/gran-prix/](https://felipe-santos.github.io/gran-prix/)
+
+### Featured Web Demos:
+- **Smart Oven IoT**: Neural networks acting as advanced PID controllers for thermodynamics.
+- **AI Trader**: Market simulation and prediction using technical indicators.
+- **Drone Stabilizer**: 6-DOF attitude control under unpredictable wind conditions.
+- **Temporal Biped (GRU)**: Gait learning using internal Temporal Memory (Gated Recurrent Units).
+- **Predator vs Prey**: Co-evolutionary arms race between two specialized populations.
+- **Neural Playground**: Interactive laboratory to visualize decision boundaries and Backprop.
 
 ![Gran-Prix Simulation](demo-web/public/game-simulation.png)
 
-### Running the Web Demo:
+### Running the Web Demo locally:
 ```bash
 cd demo-web
 npm install
