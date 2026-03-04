@@ -18,6 +18,7 @@ import { EvolutionDemo } from '../components/evolution';
 import { ClassifierWrapper } from '../components/classifier';
 import { TurretDemo } from '../components/turret';
 import { NeuralPlayground } from '../components/playground';
+import { BipedDemo } from '../components/biped/BipedDemo';
 
 const DEMO_COMPONENTS: Record<string, React.FC> = {
     'oven': OvenDemo,
@@ -32,6 +33,7 @@ const DEMO_COMPONENTS: Record<string, React.FC> = {
     'training': ClassifierWrapper,
     'turret': TurretDemo,
     'playground': NeuralPlayground,
+    'biped': BipedDemo,
 };
 
 interface DemoLayoutProps {

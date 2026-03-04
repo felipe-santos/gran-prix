@@ -431,6 +431,13 @@ export class Population {
         return this;
     }
     /**
+     * Reset memory states for all brains in the population.
+     * This is crucial for RNN/GRU networks at the start of a new episode.
+     */
+    reset_memories() {
+        wasm.population_reset_memories(this.__wbg_ptr);
+    }
+    /**
      * Set global convolution kernel for all brains
      *
      * # Arguments

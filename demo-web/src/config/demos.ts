@@ -25,7 +25,8 @@ export type DemoId =
     | 'evolution'
     | 'training'
     | 'turret'
-    | 'playground';
+    | 'playground'
+    | 'biped';
 
 export interface DemoMetadata {
     id: DemoId;
@@ -145,5 +146,14 @@ export const DEMOS: DemoMetadata[] = [
         tags: ['Backprop', 'Classification', 'Gradients'],
         icon: BrainCircuit,
         color: 'from-purple-400 to-fuchsia-500',
+    },
+    {
+        id: 'biped',
+        title: 'Temporal Biped',
+        subtitle: 'GRU Memory Locomotion',
+        description: 'Bipedal agents learning to walk using internal Temporal Memory (GRU) to remember joint momentum across frames.',
+        tags: ['Temporal Memory', 'GRU', 'Locomotion'],
+        icon: PersonStanding,
+        color: 'from-slate-400 to-slate-600',
     }
 ];

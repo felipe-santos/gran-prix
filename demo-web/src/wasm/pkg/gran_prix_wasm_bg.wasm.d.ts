@@ -27,6 +27,7 @@ export const population_count: (a: number) => number;
 export const population_evolve: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
 export const population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
 export const population_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const population_reset_memories: (a: number) => void;
 export const population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
 export const __wbindgen_malloc_command_export: (a: number, b: number) => number;
 export const __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;

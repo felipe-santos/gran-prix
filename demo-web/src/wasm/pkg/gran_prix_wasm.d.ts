@@ -301,6 +301,11 @@ export class Population {
      */
     constructor(size: number, num_inputs: number, hidden_layers: Uint32Array, num_outputs: number);
     /**
+     * Reset memory states for all brains in the population.
+     * This is crucial for RNN/GRU networks at the start of a new episode.
+     */
+    reset_memories(): void;
+    /**
      * Set global convolution kernel for all brains
      *
      * # Arguments
@@ -367,6 +372,7 @@ export interface InitOutput {
     readonly population_evolve: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
     readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
     readonly population_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly population_reset_memories: (a: number) => void;
     readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
