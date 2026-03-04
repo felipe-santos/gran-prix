@@ -229,3 +229,48 @@ export {
     DRONE_SPEED_BASE,
 } from './turret';
 
+// ─── Network Builder ────────────────────────────────────────────────────────
+export type {
+    LayerConfig,
+    LayerConnection,
+    NetworkGraph,
+    NetworkMetadata,
+    NetworkTemplate,
+    ValidationResult,
+    ValidationMessage,
+    Position,
+    LayerParams,
+    InputLayerParams,
+    LinearLayerParams,
+    ActivationLayerParams,
+    DropoutLayerParams,
+    BatchNormLayerParams,
+    RNNLayerParams,
+    GRULayerParams,
+    OutputLayerParams,
+    SelectionState,
+    ConnectionDraftState,
+    CanvasViewState,
+    SerializedNetwork,
+    WasmLayerConfig,
+    WasmNetworkConfig,
+    DragItem,
+    PaletteLayerDragItem,
+    CanvasLayerDragItem,
+} from './network-builder';
+export {
+    LayerType,
+    ActivationType,
+    DragItemType,
+    DEFAULT_LAYER_PARAMS,
+    LAYER_TYPE_NAMES,
+    ACTIVATION_TYPE_NAMES,
+    NETWORK_FILE_VERSION,
+    isInputLayer,
+    isLinearLayer,
+    isActivationLayer,
+    isOutputLayer,
+    isRNNLayer,
+    isGRULayer,
+} from './network-builder';
+
