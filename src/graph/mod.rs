@@ -1,19 +1,28 @@
+pub mod architecture;
+pub mod engine;
 pub mod dsl;
 pub mod optimizer;
 pub mod memory_planner;
 pub mod verifier;
 pub mod buffer_pool;
 
+pub use architecture::Architecture;
+pub use engine::ExecutionEngine;
+
 use crate::backend::Backend;
 use crate::{GPError, GPResult, Tensor, NodeId};
+use crate::params::{ParamStore, ParamId};
 use serde::{Serialize, Deserialize};
 
 
 /// A node in the computation graph.
+///
+/// Parameter tensors are stored externally in [`ParamStore`] and referenced
+/// by [`ParamId`]. This decouples parameter management from graph topology.
 #[derive(Serialize, Deserialize)]
 pub enum Node {
     Input(Tensor),
-    Param(Tensor), // Trainable parameters
+    Param(ParamId),
     Op {
         op: OpType,
         inputs: Vec<NodeId>,
@@ -31,6 +40,14 @@ impl Node {
     pub fn inputs(&self) -> Option<&[NodeId]> {
         match self {
             Node::Op { inputs, .. } => Some(inputs),
+            _ => None,
+        }
+    }
+
+    /// Returns the ParamId if this is a Param node.
+    pub fn param_id(&self) -> Option<ParamId> {
+        match self {
+            Node::Param(id) => Some(*id),
             _ => None,
         }
     }
@@ -340,22 +357,33 @@ impl Clone for Box<dyn Operation> {
 }
 
 
-/// The Execution Graph (Planta).
+/// The Execution Graph — high-level facade composing topology, parameters, and execution.
+///
+/// `Graph` composes three independent components:
+/// - [`Architecture`] — DAG topology (nodes and connections)
+/// - [`ParamStore`] — trainable parameter tensors and gradients
+/// - [`ExecutionEngine`] — backend, value cache, forward/backward
+///
+/// For advanced use cases, access each component directly via
+/// `graph.arch()`, `graph.params()`, `graph.engine()`.
+///
+/// # Serialization
+///
+/// Only `Architecture` and `ParamStore` are serialized. The `ExecutionEngine`
+/// must be recreated after deserialization via `set_backend()`.
 #[derive(Serialize, Deserialize)]
 pub struct Graph {
-    nodes: Vec<Node>,
+    /// Computation graph topology.
+    arch: Architecture,
+    /// Trainable parameter tensors.
+    pub(crate) param_store: ParamStore,
+    /// Execution engine (backend + caches). Skipped during serialization.
     #[serde(skip)]
-    backend: Option<Box<dyn Backend>>,
-    /// Cache of values from the last forward pass
-    #[serde(skip)]
-    values: Vec<Option<Tensor>>,
-    /// Accumulated gradients
-    #[serde(skip)]
-    gradients: Vec<Option<Tensor>>,
-    /// Memory reuse plan
+    engine: Option<ExecutionEngine>,
+    /// Memory reuse plan.
     #[serde(skip)]
     pub memory_plan: Option<memory_planner::MemoryPlanner>,
-    /// Pre-allocated buffers
+    /// Pre-allocated buffers.
     #[serde(skip)]
     pub buffer_pool: Option<buffer_pool::BufferPool>,
 }
@@ -363,173 +391,167 @@ pub struct Graph {
 impl Graph {
     pub fn new(backend: Box<dyn Backend>) -> Self {
         Self {
-            nodes: Vec::new(),
-            backend: Some(backend),
-            values: Vec::new(),
-            gradients: Vec::new(),
+            arch: Architecture::new(),
+            param_store: ParamStore::new(),
+            engine: Some(ExecutionEngine::new(backend)),
             memory_plan: None,
             buffer_pool: None,
         }
     }
 
-    /// Sets the backend after deserialization and initializes internal state
+    /// Sets the backend after deserialization, creating a fresh execution engine.
     pub fn set_backend(&mut self, backend: Box<dyn Backend>) {
-        self.backend = Some(backend);
-        // Re-initialize caches after deserialization
-        if self.values.len() < self.nodes.len() {
-            self.values.resize(self.nodes.len(), None);
-        }
-        if self.gradients.len() < self.nodes.len() {
-            self.gradients.resize(self.nodes.len(), None);
-        }
+        self.engine = Some(ExecutionEngine::new(backend));
     }
+
+    // ── Component Access ───────────────────────────────────────────────────
+
+    /// Returns a reference to the graph topology.
+    pub fn arch(&self) -> &Architecture {
+        &self.arch
+    }
+
+    /// Returns a mutable reference to the graph topology.
+    pub fn arch_mut(&mut self) -> &mut Architecture {
+        &mut self.arch
+    }
+
+    /// Returns a reference to the parameter store.
+    pub fn params(&self) -> &ParamStore {
+        &self.param_store
+    }
+
+    /// Returns a mutable reference to the parameter store.
+    pub fn params_mut(&mut self) -> &mut ParamStore {
+        &mut self.param_store
+    }
+
+    /// Returns a reference to the execution engine.
+    pub fn engine(&self) -> Option<&ExecutionEngine> {
+        self.engine.as_ref()
+    }
+
+    /// Returns a mutable reference to the execution engine.
+    pub fn engine_mut(&mut self) -> Option<&mut ExecutionEngine> {
+        self.engine.as_mut()
+    }
+
+    // ── Node Construction (delegates to Architecture) ──────────────────────
 
     pub fn input(&mut self, tensor: Tensor) -> NodeId {
-        let id = NodeId(self.nodes.len());
-        self.nodes.push(Node::Input(tensor));
-        self.values.push(None);
-        self.gradients.push(None);
-        id
+        self.arch.input(tensor)
     }
 
+    /// Registers a parameter tensor in the [`ParamStore`] and adds a
+    /// `Node::Param` to the architecture.
     pub fn param(&mut self, tensor: Tensor) -> NodeId {
-        let id = NodeId(self.nodes.len());
-        self.nodes.push(Node::Param(tensor));
-        self.values.push(None);
-        self.gradients.push(None);
-        id
+        let param_id = self.param_store.register(tensor, "");
+        self.arch.param(param_id)
+    }
+
+    /// Registers a named parameter tensor and adds a node for it.
+    pub fn named_param(&mut self, tensor: Tensor, name: &str) -> NodeId {
+        let param_id = self.param_store.register(tensor, name);
+        self.arch.param(param_id)
     }
 
     pub fn op(&mut self, op: OpType, inputs: Vec<NodeId>) -> NodeId {
-        let id = NodeId(self.nodes.len());
-        self.nodes.push(Node::Op { op, inputs });
-        self.values.push(None);
-        self.gradients.push(None);
-        id
+        self.arch.op(op, inputs)
     }
 
-    /// Forward pass: Computes and caches values using iterative execution.
+    // ── Execution (delegates to ExecutionEngine) ───────────────────────────
+    //
+    // Note: We access `self.engine` via direct field destructuring to
+    // satisfy the borrow checker (split borrows across struct fields).
+
+    /// Forward pass: computes and caches values using iterative execution.
     pub fn execute(&mut self, target: NodeId) -> GPResult<Tensor> {
-        let order = self.topological_sort(target)?;
-        self.execute_with_order(&order, target)
+        let engine = self.engine.as_mut().ok_or(GPError::BackendNotInitialized)?;
+        engine.forward(&self.arch, &self.param_store, target)
     }
 
-    /// Executa o grafo usando uma ordem pré-calculada (Otimização para visualização)
+    /// Forward pass using a pre-computed topological order.
     pub fn execute_with_order(&mut self, order: &[NodeId], target: NodeId) -> GPResult<Tensor> {
-        // CRITICAL: Sync parameters from Nodes to Values cache before execution
-        // Otherwise we are using stale weights!
-        self.sync_params()?;
-
-        let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
-
-        // PARANOID: Ensure values vector is long enough for all nodes before splitting
-        if self.values.len() < self.nodes.len() {
-            self.values.resize(self.nodes.len(), None);
-        }
-
-        for &node_id in order {
-            // Check index validity to prevent OOB before split_at_mut
-            if node_id.0 >= self.nodes.len() || node_id.0 >= self.values.len() {
-                return Err(GPError::InferenceError(format!("PRIX: Node index {} out of bounds", node_id.0)));
-            }
-
-            match &self.nodes[node_id.0] {
-                Node::Input(t) => {
-                    // Always update input, but try to avoid reallocation if shape matches
-                    if let Some(Some(cached)) = self.values.get_mut(node_id.0) {
-                        if cached.shape() == t.shape() {
-                            cached.copy_from(t)?;
-                        } else {
-                            *cached = t.clone();
-                        }
-                    } else {
-                        if self.values.len() <= node_id.0 { self.values.resize(node_id.0 + 1, None); }
-                        self.values[node_id.0] = Some(t.clone());
-                    }
-                }
-                Node::Param(_) => {
-                    // Optimized: Params are now synced via sync_params() before the loop
-                }
-                Node::Op { op, inputs } => {
-                    // Safety: Split the values to borrow inputs (left) and output (right[0])
-                    let (left, right) = self.values.split_at_mut(node_id.0);
-                    let out_opt = &mut right[0];
-
-                    let mut input_refs = Vec::with_capacity(inputs.len());
-                    for &input_id in inputs {
-                        // All inputs in a topological sort MUST be to the left of the current node
-                        if input_id.0 >= node_id.0 || input_id.0 >= left.len() {
-                            return Err(GPError::InferenceError(format!("Input node {:?} is invalid or not before node {:?}", input_id, node_id)));
-                        }
-                        input_refs.push(left[input_id.0].as_ref()
-                            .ok_or_else(|| GPError::InferenceError(format!("Input value not found for node {:?}", input_id)))?);
-                    }
-                    
-                    if let Some(out) = out_opt {
-                        // REUSE BUFFER
-                        op.forward_inplace(&input_refs, out, backend)?;
-                    } else {
-                        // ALLOCATE (First frame only)
-                        let val = op.forward(&input_refs, backend)?;
-                        *out_opt = Some(val);
-                    }
-                }
-            };
-        }
-
-        self.values[target.0].as_ref().cloned()
-            .ok_or_else(|| GPError::InferenceError(format!("Target node {:?} not computed", target)))
+        let engine = self.engine.as_mut().ok_or(GPError::BackendNotInitialized)?;
+        engine.forward_with_order(&self.arch, &self.param_store, order, target)
     }
 
-    /// DEBUG ONLY: Executa um único nó para permitir rastreamento de corrupção entre chamadas
+    /// Executes a single node (used by WASM bridge for per-node execution).
     pub fn execute_single_node(&mut self, node_id: NodeId) -> GPResult<()> {
-        let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
-        
-        if self.values.len() < self.nodes.len() {
-            self.values.resize(self.nodes.len(), None);
-        }
-
-        match &self.nodes[node_id.0] {
-            Node::Input(t) => {
-                if let Some(Some(cached)) = self.values.get_mut(node_id.0) {
-                    if cached.shape() == t.shape() {
-                        cached.copy_from(t)?;
-                    } else {
-                        *cached = t.clone();
-                    }
-                } else {
-                    self.values[node_id.0] = Some(t.clone());
-                }
-            }
-            Node::Param(t) => {
-                if self.values[node_id.0].is_none() {
-                    self.values[node_id.0] = Some(t.clone());
-                }
-            }
-            Node::Op { op, inputs } => {
-                let (left, right) = self.values.split_at_mut(node_id.0);
-                let out_opt = &mut right[0];
-
-                let mut input_refs = Vec::with_capacity(inputs.len());
-                for &input_id in inputs {
-                    input_refs.push(left[input_id.0].as_ref()
-                        .ok_or_else(|| GPError::InferenceError(format!("Value not found for node {:?}", input_id)))?);
-                }
-                
-                if let Some(out) = out_opt {
-                    op.forward_inplace(&input_refs, out, backend)?;
-                } else {
-                    let val = op.forward(&input_refs, backend)?;
-                    *out_opt = Some(val);
-                }
-            }
-        };
-        Ok(())
+        let engine = self.engine.as_mut().ok_or(GPError::BackendNotInitialized)?;
+        engine.execute_single_node(&self.arch, &self.param_store, node_id)
     }
 
+    /// Backward pass: computes gradients via reverse-mode autodiff.
+    pub fn backward(&mut self, target: NodeId, grad_output: Tensor) -> GPResult<()> {
+        let engine = self.engine.as_mut().ok_or(GPError::BackendNotInitialized)?;
+        engine.backward(&self.arch, &mut self.param_store, target, grad_output)
+    }
+
+    // ── Cache Access (delegates to ExecutionEngine) ────────────────────────
+
+    /// Returns cached activation values from the last forward pass.
     pub fn values(&self) -> &[Option<Tensor>] {
-        &self.values
+        match &self.engine {
+            Some(e) => e.values(),
+            None => &[],
+        }
     }
+
+    /// Clears cached activation values.
+    pub fn clear_values(&mut self) {
+        if let Some(e) = &mut self.engine {
+            e.clear_values();
+        }
+    }
+
+    /// Clears all gradients (both node-level and parameter store).
+    pub fn clear_gradients(&mut self) {
+        if let Some(e) = &mut self.engine {
+            e.clear_node_gradients();
+        }
+        self.param_store.clear_gradients();
+    }
+
+    /// Syncs parameter tensors into the execution cache.
+    pub fn sync_params(&mut self) -> GPResult<()> {
+        let engine = self.engine.as_mut().ok_or(GPError::BackendNotInitialized)?;
+        engine.sync_params(&self.arch, &self.param_store)
+    }
+
+    /// Returns the gradient for a node.
+    ///
+    /// Checks engine node-gradients first, then parameter store.
+    pub fn get_gradient(&self, id: NodeId) -> Option<&Tensor> {
+        if let Some(engine) = &self.engine {
+            if let Some(grad) = engine.get_node_gradient(id) {
+                return Some(grad);
+            }
+        }
+        if let Some(Node::Param(param_id)) = self.arch.get_node(id) {
+            return self.param_store.gradient(*param_id);
+        }
+        None
+    }
+
+    // ── Topology Access (delegates to Architecture) ────────────────────────
+
+    /// Returns a reference to all nodes.
+    pub fn nodes(&self) -> &[Node] {
+        self.arch.nodes()
+    }
+
+    /// Returns a mutable reference to all nodes.
+    pub fn nodes_mut(&mut self) -> &mut [Node] {
+        self.arch.nodes_mut()
+    }
+
+    /// Computes topological execution order for the target node.
+    pub fn topological_sort(&self, target: NodeId) -> GPResult<Vec<NodeId>> {
+        self.arch.topological_sort(target)
+    }
+
+    // ── Memory Planning ────────────────────────────────────────────────────
 
     /// Plans memory reuse for the current graph.
     pub fn plan_memory(&mut self) -> GPResult<()> {
@@ -540,148 +562,13 @@ impl Graph {
         Ok(())
     }
 
-    /// Backward pass: Propagates gradients using iterative execution (reverse topological order).
-    pub fn backward(&mut self, target: NodeId, grad_output: Tensor) -> GPResult<()> {
-        let order = self.topological_sort(target)?;
-        let backend = self.backend.as_deref().ok_or(GPError::BackendNotInitialized)?;
-
-        if self.gradients.len() < self.nodes.len() {
-            self.gradients.resize(self.nodes.len(), None);
-        }
-
-        // Initialize/Accumulate target gradient
-        if let Some(existing) = &self.gradients[target.0] {
-            self.gradients[target.0] = Some(existing + &grad_output);
-        } else {
-            self.gradients[target.0] = Some(grad_output);
-        }
-
-        // Process in reverse topological order
-        for &node_id in order.iter().rev() {
-            let grad = match self.gradients[node_id.0].take() {
-                Some(g) => g,
-                None => continue, // No gradient for this node
-            };
-            
-            // Put it back because we might need it for parameter update or further accumulation
-            self.gradients[node_id.0] = Some(grad.clone());
-
-            let (op, inputs) = match &self.nodes[node_id.0] {
-                Node::Op { op, inputs } => (op, inputs),
-                _ => continue, // Leaf nodes don't propagate gradients
-            };
-
-            let mut input_refs = Vec::with_capacity(inputs.len());
-            for &id in inputs {
-                input_refs.push(self.values[id.0].as_ref()
-                    .ok_or_else(|| GPError::InferenceError(format!("Value not found for node {:?}", id)))?);
-            }
-
-            let input_grads = op.backward(&input_refs, &grad, backend)?;
-            for (i, &input_id) in inputs.iter().enumerate() {
-                if let Some(existing) = &self.gradients[input_id.0] {
-                    self.gradients[input_id.0] = Some(existing + &input_grads[i]);
-                } else {
-                    self.gradients[input_id.0] = Some(input_grads[i].clone());
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Computes topological order of nodes required for the target node (Iterative).
-    pub fn topological_sort(&self, target: NodeId) -> GPResult<Vec<NodeId>> {
-        let mut order = Vec::new();
-        let mut visited = vec![false; self.nodes.len()];
-        let mut on_stack = vec![false; self.nodes.len()];
-        let mut stack = vec![(target, false)]; // (node_id, processed_children)
-
-        while let Some((id, processed)) = stack.pop() {
-            if processed {
-                on_stack[id.0] = false;
-                order.push(id);
-                continue;
-            }
-
-            if visited[id.0] {
-                continue;
-            }
-
-            if on_stack[id.0] {
-                return Err(GPError::InferenceError("Cycle detected in graph".to_string()));
-            }
-
-            visited[id.0] = true;
-            on_stack[id.0] = true;
-            stack.push((id, true));
-
-            if let Node::Op { inputs, .. } = &self.nodes[id.0] {
-                for &input_id in inputs.iter().rev() {
-                    stack.push((input_id, false));
-                }
-            }
-        }
-        Ok(order)
-    }
-
-    pub fn get_gradient(&self, id: NodeId) -> Option<&Tensor> {
-        self.gradients.get(id.0).and_then(|g: &Option<Tensor>| g.as_ref())
-    }
-
-    pub fn nodes(&self) -> &[Node] {
-        &self.nodes
-    }
-
-    pub fn nodes_mut(&mut self) -> &mut [Node] {
-        &mut self.nodes
-    }
-
-    pub fn clear_values(&mut self) {
-        // Only clear if we really want to force recomputation or if we are training.
-        // For inference stabilization, we might prefer a reset() that keeps buffers.
-    }
-
-    /// Mark all values as needing recomputation while KEEPING the heap buffers.
-    pub fn reset_values(&mut self) {
-        // Currently, we use None as the "needs recomputation" signal.
-        // To reach 0 allocations, we need a separate bitset or just always recompute OPs.
-        // For now, let's just make clear_values NOT set to None if they already exist?
-        // No, that would break the current logic.
-    }
-
-    pub fn clear_gradients(&mut self) {
-        for g in &mut self.gradients {
-            *g = None;
-        }
-    }
-
-    /// Sincroniza os parâmetros mutáveis com o buffer de execução (Otimização)
-    pub fn sync_params(&mut self) -> GPResult<()> {
-        if self.values.len() < self.nodes.len() {
-            self.values.resize(self.nodes.len(), None);
-        }
-        for i in 0..self.nodes.len() {
-            if let Node::Param(t) = &self.nodes[i] {
-                if let Some(Some(cached)) = self.values.get_mut(i) {
-                    cached.copy_from(t)?;
-                } else {
-                    self.values[i] = Some(t.clone());
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Mutates parameters based on gradients and a learning rate.
-    /// This is a basic form of SGD implementation.
+    /// Updates parameters using a simple SGD step: param -= lr * grad.
     pub fn update_parameters(&mut self, learning_rate: f32) -> GPResult<()> {
-        let backend = self.backend.as_ref().ok_or(GPError::BackendNotInitialized)?;
-        for i in 0..self.nodes.len() {
-            if let Some(grad) = &self.gradients[i] {
-                if let Node::Param(ref mut param) = &mut self.nodes[i] {
-                    backend.update_parameter(param, grad, learning_rate)?;
-                }
-            }
+        let engine = self.engine.as_ref().ok_or(GPError::BackendNotInitialized)?;
+        let backend = engine.backend();
+        let trainable = self.param_store.trainable_params_with_grads();
+        for (_param_id, tensor, grad) in trainable {
+            backend.update_parameter(tensor, grad, learning_rate)?;
         }
         Ok(())
     }

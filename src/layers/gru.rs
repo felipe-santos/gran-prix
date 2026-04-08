@@ -96,10 +96,10 @@ impl Layer for GRUCell {
         let n_t = graph.node(OpType::Tanh, vec![n_sum]);
 
         // graph doesn't have a 1-x op directly. We can multiply z_t by -1 and add 1
-        let ones_tensor = Tensor::new_cpu(ndarray::Array::ones(ndarray::IxDyn(&[1, self.hidden_size])));
+        let ones_tensor = Tensor::new_ones(&[1, self.hidden_size]);
         let ones = graph.val(ones_tensor);
-        
-        let neg_one_tensor = Tensor::new_cpu(ndarray::Array::from_elem(ndarray::IxDyn(&[1, 1]), -1.0));
+
+        let neg_one_tensor = Tensor::from_elem(&[1, 1], -1.0);
         let neg_one = graph.val(neg_one_tensor);
         let neg_z_t = graph.node(OpType::Mul, vec![z_t, neg_one]);
         let one_minus_z = graph.node(OpType::Add, vec![ones, neg_z_t]);

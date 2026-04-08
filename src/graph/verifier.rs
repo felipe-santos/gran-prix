@@ -17,7 +17,11 @@ impl Verifier {
         for (i, node) in nodes.iter().enumerate() {
             let id = NodeId(i);
             match node {
-                Node::Input(tensor) | Node::Param(tensor) => {
+                Node::Input(tensor) => {
+                    predicted_shapes.insert(id, tensor.shape().to_vec());
+                }
+                Node::Param(param_id) => {
+                    let tensor = graph.params().tensor(*param_id);
                     predicted_shapes.insert(id, tensor.shape().to_vec());
                 }
                 Node::Op { op, inputs } => {

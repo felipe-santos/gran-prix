@@ -31,7 +31,9 @@ impl Tensor {
         Ok(())
     }
 
-    pub fn new_cpu(data: ArrayD<f32>) -> Self {
+    /// Creates a tensor from a raw ndarray. Crate-internal — external code
+    /// should use `from_shape_vec()`, `new_zeros()`, `from_elem()`, etc.
+    pub(crate) fn new_cpu(data: ArrayD<f32>) -> Self {
         let shape = Shape(data.raw_dim());
         Self {
             storage: Storage::Cpu(data),
@@ -57,8 +59,8 @@ impl Tensor {
         self.shape.ndim()
     }
 
-    /// Returns a view of the tensor as an ndarray ArrayViewD if it's on the CPU.
-    pub fn as_cpu(&self) -> GPResult<&ArrayD<f32>> {
+    /// Returns the underlying ndarray. Crate-internal — external code should use `as_slice()`.
+    pub(crate) fn as_cpu(&self) -> GPResult<&ArrayD<f32>> {
         match &self.storage {
             Storage::Cpu(data) => Ok(data),
             #[cfg(feature = "cuda")]
@@ -69,7 +71,7 @@ impl Tensor {
         }
     }
 
-    pub fn as_cpu_mut(&mut self) -> GPResult<&mut ArrayD<f32>> {
+    pub(crate) fn as_cpu_mut(&mut self) -> GPResult<&mut ArrayD<f32>> {
         match &mut self.storage {
             Storage::Cpu(data) => Ok(data),
             #[cfg(feature = "cuda")]
@@ -80,20 +82,20 @@ impl Tensor {
         }
     }
 
-    /// Helper to get ndarray view, with expectation it is on CPU.
-    pub fn view(&self) -> ArrayViewD<'_, f32> {
+    /// Returns an ndarray view. Crate-internal — external code should use `as_slice()`.
+    pub(crate) fn view(&self) -> ArrayViewD<'_, f32> {
         self.try_view().unwrap_or_else(|e| panic!("PRIX ERROR: Failed to get view: {}", e))
     }
 
-    pub fn try_view(&self) -> GPResult<ArrayViewD<'_, f32>> {
+    pub(crate) fn try_view(&self) -> GPResult<ArrayViewD<'_, f32>> {
         self.as_cpu().map(|a| a.view())
     }
 
-    pub fn try_view_mut(&mut self) -> GPResult<ndarray::ArrayViewMutD<'_, f32>> {
+    pub(crate) fn try_view_mut(&mut self) -> GPResult<ndarray::ArrayViewMutD<'_, f32>> {
         self.as_cpu_mut().map(|a| a.view_mut())
     }
 
-    pub fn view_mut(&mut self) -> ndarray::ArrayViewMutD<'_, f32> {
+    pub(crate) fn view_mut(&mut self) -> ndarray::ArrayViewMutD<'_, f32> {
         self.try_view_mut().unwrap_or_else(|e| panic!("PRIX ERROR: Failed to get view_mut: {}", e))
     }
 
@@ -174,15 +176,17 @@ impl Tensor {
         self
     }
     
-    pub fn iter(&self) -> ndarray::iter::Iter<'_, f32, IxDyn> {
+    /// Returns an ndarray iterator. Crate-internal — external code should use `as_slice()`.
+    pub(crate) fn iter(&self) -> ndarray::iter::Iter<'_, f32, IxDyn> {
         self.as_cpu().map(|a| a.iter()).unwrap_or_else(|_| panic!("iter() only supported on CPU tensors"))
     }
-    pub fn iter_mut(&mut self) -> ndarray::iter::IterMut<'_, f32, IxDyn> {
+    /// Returns a mutable ndarray iterator. Crate-internal.
+    pub(crate) fn iter_mut(&mut self) -> ndarray::iter::IterMut<'_, f32, IxDyn> {
         self.as_cpu_mut().map(|a| a.iter_mut()).unwrap_or_else(|_| panic!("iter_mut() only supported on CPU tensors"))
     }
 }
 
-// Implement basic traits for ease of transition
+// Crate-internal: allows backend code to convert ndarray → Tensor directly.
 impl From<ArrayD<f32>> for Tensor {
     fn from(data: ArrayD<f32>) -> Self {
         Self::new_cpu(data)
@@ -226,5 +230,110 @@ impl Tensor {
             #[cfg(feature = "cuda")]
             _ => Err(GPError::BackendError("Not a CPU tensor".to_string())),
         }
+    }
+
+    // ── Backend-agnostic constructors ──────────────────────────────────────
+    //
+    // These replace direct ndarray usage in layers, optimizers, and WASM code.
+
+    /// Creates a tensor filled with a constant value.
+    ///
+    /// ```rust
+    /// # use gran_prix::Tensor;
+    /// let t = Tensor::from_elem(&[2, 3], 1.0);
+    /// assert_eq!(t.shape(), &[2, 3]);
+    /// assert_eq!(t.as_slice().unwrap(), &[1.0; 6]);
+    /// ```
+    pub fn from_elem(dims: &[usize], value: f32) -> Self {
+        Self::new_cpu(ArrayD::from_elem(IxDyn(dims), value))
+    }
+
+    /// Creates a tensor filled with ones.
+    pub fn new_ones(dims: &[usize]) -> Self {
+        Self::from_elem(dims, 1.0)
+    }
+
+    /// Creates a tensor from a shape and flat data vector.
+    ///
+    /// Returns an error if `data.len()` doesn't match the product of `dims`.
+    pub fn from_shape_vec(dims: &[usize], data: Vec<f32>) -> GPResult<Self> {
+        let array = ArrayD::from_shape_vec(IxDyn(dims), data)
+            .map_err(|e| GPError::TensorError(format!(
+                "Shape/data mismatch: {}", e
+            )))?;
+        Ok(Self::new_cpu(array))
+    }
+
+    // ── In-place operations (backend-agnostic) ─────────────────────────────
+
+    /// Applies a function to every element in-place.
+    ///
+    /// Replaces direct `as_cpu_mut().unwrap().map_inplace(f)` calls.
+    pub fn map_inplace<F: FnMut(&mut f32)>(&mut self, mut f: F) -> GPResult<()> {
+        let slice = self.as_slice_mut()?;
+        for v in slice.iter_mut() {
+            f(v);
+        }
+        Ok(())
+    }
+
+    /// Scales all elements by a constant factor in-place.
+    pub fn scale_inplace(&mut self, factor: f32) -> GPResult<()> {
+        self.map_inplace(|v| *v *= factor)
+    }
+
+    // ── Indexed access (backend-agnostic) ──────────────────────────────────
+
+    /// Gets a mutable reference to an element at the given flat index.
+    pub fn get_flat_mut(&mut self, index: usize) -> GPResult<&mut f32> {
+        let len = self.len();
+        let slice = self.as_slice_mut()?;
+        slice.get_mut(index)
+            .ok_or_else(|| GPError::TensorError(format!(
+                "Index {} out of bounds (tensor has {} elements)", index, len
+            )))
+    }
+
+    /// Gets a reference to an element at the given flat index.
+    pub fn get_flat(&self, index: usize) -> GPResult<f32> {
+        let slice = self.as_slice()?;
+        slice.get(index)
+            .copied()
+            .ok_or_else(|| GPError::TensorError(format!(
+                "Index {} out of bounds (tensor has {} elements)", index, slice.len()
+            )))
+    }
+
+    /// Gets the value at a 2D index [row, col].
+    ///
+    /// Assumes row-major layout.
+    pub fn get_2d(&self, row: usize, col: usize) -> GPResult<f32> {
+        let shape = self.shape().to_vec();
+        if shape.len() < 2 || row >= shape[0] || col >= shape[1] {
+            return Err(GPError::TensorError(format!(
+                "2D index [{}, {}] out of bounds for shape {:?}", row, col, shape
+            )));
+        }
+        let flat_idx = row * shape[1] + col;
+        self.get_flat(flat_idx)
+    }
+
+    /// Gets a mutable reference to an element at a 2D index [row, col].
+    ///
+    /// Assumes row-major layout. Returns error if out of bounds.
+    pub fn get_2d_mut(&mut self, row: usize, col: usize) -> GPResult<&mut f32> {
+        let shape = self.shape().to_vec();
+        if shape.len() < 2 || row >= shape[0] || col >= shape[1] {
+            return Err(GPError::TensorError(format!(
+                "2D index [{}, {}] out of bounds for shape {:?}", row, col, shape
+            )));
+        }
+        let flat_idx = row * shape[1] + col;
+        self.get_flat_mut(flat_idx)
+    }
+
+    /// Copies this tensor's data into a new `Vec<f32>`.
+    pub fn to_vec(&self) -> GPResult<Vec<f32>> {
+        self.as_slice().map(|s| s.to_vec())
     }
 }

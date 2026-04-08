@@ -19,6 +19,7 @@ import { ClassifierWrapper } from '../components/classifier';
 import { TurretDemo } from '../components/turret';
 import { NeuralPlayground } from '../components/playground';
 import { BipedDemo } from '../components/biped/BipedDemo';
+import { NetworkBuilder } from '../components/playground/v2';
 
 const DEMO_COMPONENTS: Record<string, React.FC> = {
     'oven': OvenDemo,
@@ -33,6 +34,7 @@ const DEMO_COMPONENTS: Record<string, React.FC> = {
     'training': ClassifierWrapper,
     'turret': TurretDemo,
     'playground': NeuralPlayground,
+    'network-builder': NetworkBuilder,
     'biped': BipedDemo,
 };
 

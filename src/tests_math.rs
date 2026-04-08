@@ -10,7 +10,7 @@ fn test_multilayer_backprop_flow() {
     let mut gb = GraphBuilder::new(&mut graph);
 
     // 2 inputs, 1 hidden (4 neurons), 1 output
-    let input_val = Tensor::new_cpu(ndarray::ArrayD::from_shape_vec(ndarray::IxDyn(&[1, 2]), vec![1.0, -1.0]).unwrap());
+    let input_val = Tensor::from_shape_vec(&[1, 2], vec![1.0, -1.0]).unwrap();
     let input_id = gb.val(input_val);
     
     // Layer 1
@@ -31,7 +31,7 @@ fn test_multilayer_backprop_flow() {
     println!("Prediction: {:?}", pred.as_cpu().unwrap());
     
     // Backward Pass
-    let target = Tensor::new_cpu(ndarray::ArrayD::from_elem(ndarray::IxDyn(&[1, 1]), 1.0));
+    let target = Tensor::from_elem(&[1, 1], 1.0);
     let loss_fn = BCEWithLogits;
     let grad_output = loss_fn.gradient(&pred, &target);
     println!("Initial Gradient (Loss -> Output): {:?}", grad_output.as_cpu().unwrap());
@@ -55,7 +55,7 @@ fn test_multilayer_backprop_flow() {
         };
         
         if let Some(grad) = grad_opt {
-            let sum_abs: f32 = grad.as_cpu().unwrap().iter().map(|x| x.abs()).sum();
+            let sum_abs: f32 = grad.as_slice().unwrap().iter().map(|x| x.abs()).sum();
             println!("Node {} ({}): Abs-Sum Grad = {}", i, name, sum_abs);
         } else {
             println!("Node {} ({}): NO GRADIENT", i, name);
@@ -64,12 +64,12 @@ fn test_multilayer_backprop_flow() {
     
     // Check if w1 and w2 have gradients
     let w2_grad = graph.get_gradient(crate::NodeId(w2_idx.unwrap())).expect("W2 should have gradient");
-    let w2_sum: f32 = w2_grad.as_cpu().unwrap().iter().map(|x| x.abs()).sum();
+    let w2_sum: f32 = w2_grad.as_slice().unwrap().iter().map(|x| x.abs()).sum();
     println!("Final Check W2 (Output Layer): {}", w2_sum);
     assert!(w2_sum > 0.0, "W2 (Output Layer) gradient is zero!");
 
     let w1_grad = graph.get_gradient(crate::NodeId(w1_idx.unwrap())).expect("W1 should have gradient");
-    let w1_sum: f32 = w1_grad.as_cpu().unwrap().iter().map(|x| x.abs()).sum();
+    let w1_sum: f32 = w1_grad.as_slice().unwrap().iter().map(|x| x.abs()).sum();
     println!("Final Check W1 (Hidden Layer): {}", w1_sum);
     assert!(w1_sum > 0.0, "W1 (Hidden Layer) gradient is zero! Signal lost at layer 2.");
 }

@@ -26,12 +26,10 @@ use std::cell::RefCell;
 
 use wasm_bindgen::prelude::*;
 use serde::Serialize;
-use ndarray::{Array, IxDyn};
-
 use gran_prix::{Tensor, GPError, Layer};
-use gran_prix::layers::{Linear, Activation, ActivationType};
-use gran_prix::graph::{Graph, dsl::GraphBuilder};
+use gran_prix::graph::Graph;
 use gran_prix::backend::cpu::CPUBackend;
+use gran_prix::network_def::{NetworkDef, ActivationDef};
 
 use crate::mutation::{MutationStrategy, XorShift};
 use crate::errors::IntoJsResult;
@@ -125,71 +123,48 @@ impl NeuralBrain {
         hidden_layers: Vec<usize>,
         num_outputs: usize,
     ) -> Result<NeuralBrain, JsValue> {
-        let backend = Box::new(CPUBackend);
-        let mut graph = Graph::new(backend);
-        let mut gb = GraphBuilder::new(&mut graph);
+        // 1. Define architecture declaratively
+        let net = NetworkDef::mlp(
+            num_inputs,
+            &hidden_layers,
+            num_outputs,
+            ActivationDef::ReLU,
+            Some(ActivationDef::Sigmoid),
+        );
 
-        let input_tensor = Tensor::new_zeros(&[1, num_inputs]);
-        let input_id = gb.val(input_tensor);
+        // 2. Compile to live graph
+        let compiled = net.compile(Box::new(CPUBackend))
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
-        // Deterministic alternating weights to GUARANTEE steering variance.
-        let alternating_tensor = |rows, cols, offset| {
-            let total = rows * cols;
-            let mut data = Vec::with_capacity(total);
-            for i in 0..total {
-                let sign = if (i + offset) % 2 == 0 { 1.0 } else { -1.0 };
-                data.push(sign * 0.1);
+        let input_node = compiled.input_node.0;
+        let output_node = compiled.output_node.0;
+        let mut graph = compiled.graph;
+
+        // 3. Override weights with deterministic alternating pattern.
+        // This GUARANTEES steering variance in the population at generation 0.
+        // Without this, all agents would behave identically.
+        {
+            let params = graph.params_mut();
+            let mut flat = params.export_flat()
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            for (i, val) in flat.iter_mut().enumerate() {
+                let sign = if (i + seed_offset) % 2 == 0 { 1.0 } else { -1.0 };
+                *val = sign * 0.1;
             }
-            Tensor::new_cpu(
-                Array::from_shape_vec(IxDyn(&[rows, cols]), data)
-                    .expect("Shape mismatch in alternating_tensor")
-            )
-        };
-
-        let mut current_size = num_inputs;
-        let mut last_node = input_id;
-        let mut preserved_layers: Vec<Box<dyn Layer>> = Vec::new();
-
-        // Build Hidden Layers using Composable Layers
-        for (i, &hidden_size) in hidden_layers.iter().enumerate() {
-            let mut linear = Linear::new(current_size, hidden_size);
-            linear.weights = alternating_tensor(current_size, hidden_size, seed_offset + i * 100);
-            linear.biases = Tensor::new_zeros(&[1, hidden_size]);
-            
-            let layer_out = linear.forward(last_node, &mut gb);
-            
-            let mut relu = Activation::new(ActivationType::ReLU);
-            last_node = relu.forward(layer_out, &mut gb);
-            
-            preserved_layers.push(Box::new(linear));
-            preserved_layers.push(Box::new(relu));
-            
-            current_size = hidden_size;
+            params.import_flat(&flat)
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
         }
-
-        // Final Output Layer using Composable Layers
-        let mut linear_final = Linear::new(current_size, num_outputs);
-        linear_final.weights = alternating_tensor(current_size, num_outputs, seed_offset + 1000);
-        linear_final.biases = Tensor::new_zeros(&[1, num_outputs]);
-        
-        let out_layer = linear_final.forward(last_node, &mut gb);
-        
-        let mut sigmoid = Activation::new(ActivationType::Sigmoid);
-        let final_output = sigmoid.forward(out_layer, &mut gb);
-        
-        preserved_layers.push(Box::new(linear_final));
-        preserved_layers.push(Box::new(sigmoid));
 
         Ok(NeuralBrain {
             graph: RefCell::new(graph),
-            input_node: input_id.0,
-            output_node: final_output.0,
+            input_node,
+            output_node,
             input_tensor: RefCell::new(Tensor::new_zeros(&[1, num_inputs])),
             output_tensor: RefCell::new(Tensor::new_zeros(&[1, num_outputs])),
             magic: BRAIN_MAGIC,
             computing: RefCell::new(false),
-            custom_kernel: RefCell::new(vec![0.0, 1.0, 0.0]), // Identity kernel
-            layers: RefCell::new(preserved_layers),
+            custom_kernel: RefCell::new(vec![0.0, 1.0, 0.0]),
+            layers: RefCell::new(compiled.stateful_layers),
         })
     }
 
@@ -271,8 +246,8 @@ impl NeuralBrain {
         // ── Optimized 1D Convolution ───────────────────────────────────────────
         // Apply kernel in-place to the pre-allocated input_buffer to avoid Vec alloc.
         {
-            let mut view = input_buffer
-                .try_view_mut()
+            let slice = input_buffer
+                .as_slice_mut()
                 .map_err(|e| GPError::TensorError(e.to_string()))?;
 
             let kernel = self.custom_kernel.borrow();
@@ -285,14 +260,12 @@ impl NeuralBrain {
                         acc += inputs[idx as usize] * kernel[k];
                     }
                 }
-                if let Some(v) = view.get_mut(ndarray::IxDyn(&[0, i])) {
-                    *v = acc;
-                }
+                slice[i] = acc;
             }
         }
 
         let mut graph = self.graph.borrow_mut();
-        graph.sync_params().map_err(|e| GPError::BackendError(e.to_string()))?;
+        graph.sync_params().map_err(|e: GPError| GPError::BackendError(e.to_string()))?;
 
         // ── Inject input into graph ───────────────────────────────────────────
         {
@@ -306,7 +279,7 @@ impl NeuralBrain {
         let output_id = gran_prix::NodeId(self.output_node);
         let order = graph
             .topological_sort(output_id)
-            .map_err(|e| GPError::BackendError(e.to_string()))?;
+            .map_err(|e: GPError| GPError::BackendError(e.to_string()))?;
 
         // ── Execute Graph ──────────────────────────────────────────────────────
         for node_id in order {
@@ -323,8 +296,9 @@ impl NeuralBrain {
         let mut layers = self.layers.borrow_mut();
         for layer in layers.iter_mut() {
             if let Some(state_node_id) = layer.state_node() {
-                if let Some(Some(tensor)) = graph.values().get(state_node_id.0) {
-                    layer.update_state(tensor.clone());
+                if let Some(Some(ref tensor)) = graph.values().get(state_node_id.0) {
+                    let t: Tensor = tensor.clone();
+                    layer.update_state(t);
                 }
             }
         }
@@ -340,11 +314,11 @@ impl NeuralBrain {
         out_buffer.copy_from(result_tensor)
             .map_err(|e| GPError::TensorError(e.to_string()))?;
 
-        let cpu_view = out_buffer
-            .as_cpu()
+        let slice = out_buffer
+            .as_slice()
             .map_err(|e| GPError::TensorError(format!("Failed to get CPU view: {}", e)))?;
 
-        Ok(cpu_view.iter().cloned().collect())
+        Ok(slice.to_vec())
     }
 
     /// Reset cached values and gradients in the graph
@@ -400,29 +374,7 @@ impl NeuralBrain {
 
     fn export_weights_typed(&self) -> Result<Vec<f32>, GPError> {
         let graph = self.graph.borrow();
-        let nodes = graph.nodes();
-
-        // 1. Pre-calculate total capacity to avoid continuous reallocation during push
-        let mut total_size = 0;
-        for node in nodes.iter() {
-            if let gran_prix::graph::Node::Param(t) = node {
-                total_size += t.len();
-            }
-        }
-
-        // 2. Allocate exact needed space once
-        let mut weights = Vec::with_capacity(total_size);
-
-        for node in nodes.iter() {
-            if let gran_prix::graph::Node::Param(t) = node {
-                let view = t
-                    .as_cpu()
-                    .map_err(|e| GPError::TensorError(e.to_string()))?;
-                weights.extend(view.iter());
-            }
-        }
-
-        Ok(weights)
+        graph.params().export_flat()
     }
 
     /// Import weights into network
@@ -449,35 +401,7 @@ impl NeuralBrain {
 
     fn import_weights_typed(&self, weights: &[f32]) -> Result<(), GPError> {
         let mut graph = self.graph.borrow_mut();
-        let nodes = graph.nodes_mut();
-
-        let mut w_idx = 0;
-
-        for node in nodes.iter_mut() {
-            if let gran_prix::graph::Node::Param(ref mut t) = node {
-                let shape = t.shape().to_vec();
-                let count = t.len();
-
-                if w_idx + count > weights.len() {
-                    return Err(GPError::WeightLengthMismatch { 
-                        expected: w_idx + count, 
-                        found: weights.len() 
-                    });
-                }
-
-                let slice = &weights[w_idx..w_idx + count];
-                // SAFETY: Shape matches count by construction (count = t.len())
-                let new_tensor = Tensor::new_cpu(
-                    Array::from_shape_vec(IxDyn(&shape), slice.to_vec())
-                        .expect("Shape mismatch in import_weights (bug in logic)")
-                );
-                *t = new_tensor;
-
-                w_idx += count;
-            }
-        }
-
-        Ok(())
+        graph.params_mut().import_flat(weights)
     }
 
     /// Mutate weights in-place
@@ -504,28 +428,15 @@ impl NeuralBrain {
         strategy: MutationStrategy,
     ) -> Result<(), JsValue> {
         let mut graph = self.graph.borrow_mut();
-        let nodes = graph.nodes_mut();
+        let params = graph.params_mut();
 
-        for node in nodes.iter_mut() {
-            if let gran_prix::graph::Node::Param(ref mut t) = node {
-                let cpu = t
-                    .as_cpu()
-                    .map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
-                let mut valid_data = cpu.iter().cloned().collect::<Vec<_>>();
-                let shape = t.shape().to_vec();
-
-                for val in valid_data.iter_mut() {
-                    if rng.next_f32() < rate {
-                        *val = strategy.apply(*val, scale, rng);
-                    }
+        for (_id, tensor) in params.iter_mut() {
+            let slice = tensor.as_slice_mut()
+                .map_err(|e: GPError| JsValue::from_str(&e.to_string()))?;
+            for val in slice.iter_mut() {
+                if rng.next_f32() < rate {
+                    *val = strategy.apply(*val, scale, rng);
                 }
-
-                // SAFETY: Shape matches valid_data length (extracted from same tensor)
-                let new_tensor = Tensor::new_cpu(
-                    Array::from_shape_vec(IxDyn(&shape), valid_data)
-                        .expect("Shape mismatch in mutate (bug in logic)")
-                );
-                *t = new_tensor;
             }
         }
 
@@ -558,9 +469,9 @@ impl NeuralBrain {
                 .get(i)
                 .and_then(|t: &Option<Tensor>| t.as_ref())
                 .and_then(|t: &Tensor| {
-                    t.as_cpu()
+                    t.as_slice()
                         .ok()
-                        .map(|v| v.iter().cloned().take(12).collect::<Vec<f32>>())
+                        .map(|s| s.iter().cloned().take(12).collect::<Vec<f32>>())
                 });
 
             snapshots.push(NodeSnapshot {

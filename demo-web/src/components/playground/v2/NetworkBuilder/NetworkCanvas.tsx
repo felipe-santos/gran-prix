@@ -82,17 +82,17 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
         panY: 0,
     });
 
-    // Setup drag sensors
+    // Setup drag sensors with minimal activation constraint for smooth dragging
     const sensors = useSensors(
         useSensor(MouseSensor, {
             activationConstraint: {
-                distance: 5, // 5px movement required to start drag
+                distance: 2, // Reduced from 5px for smoother feel
             },
         }),
         useSensor(TouchSensor, {
             activationConstraint: {
-                delay: 200,
-                tolerance: 5,
+                delay: 100,
+                tolerance: 2,
             },
         })
     );
@@ -122,10 +122,16 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
 
                 // Get drop position relative to canvas
                 const rect = canvasRef.current?.getBoundingClientRect();
-                if (!rect) return;
+                if (!rect || !delta) return;
 
-                const dropX = (event.activatorEvent as MouseEvent).clientX - rect.left - viewState.panX;
-                const dropY = (event.activatorEvent as MouseEvent).clientY - rect.top - viewState.panY;
+                // Calculate drop position: initial click position + drag delta
+                const initialEvent = event.activatorEvent as MouseEvent;
+                const initialX = initialEvent.clientX - rect.left;
+                const initialY = initialEvent.clientY - rect.top;
+
+                // Apply delta (simplified - no zoom/pan for now)
+                const dropX = initialX + delta.x;
+                const dropY = initialY + delta.y;
 
                 // Create new layer
                 const params = { ...DEFAULT_LAYER_PARAMS[layerType] };
@@ -143,13 +149,13 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
 
                 if (layer && delta) {
                     networkGraph.moveLayer(layerId, {
-                        x: layer.position.x + delta.x / viewState.zoom,
-                        y: layer.position.y + delta.y / viewState.zoom,
+                        x: layer.position.x + delta.x,
+                        y: layer.position.y + delta.y,
                     });
                 }
             }
         },
-        [networkGraph, viewState]
+        [networkGraph]
     );
 
     // ─── Connection Handlers ────────────────────────────────────────────────
@@ -207,8 +213,8 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
                     ? {
                           ...prev,
                           currentPosition: {
-                              x: e.clientX - rect.left - viewState.panX,
-                              y: e.clientY - rect.top - viewState.panY,
+                              x: e.clientX - rect.left,
+                              y: e.clientY - rect.top,
                           },
                       }
                     : null
@@ -228,7 +234,7 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, [drawingConnection, viewState]);
+    }, [drawingConnection]);
 
     // ─── Zoom/Pan Controls ──────────────────────────────────────────────────
 
@@ -352,10 +358,6 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
                         width={width}
                         height={height}
                         className="absolute inset-0 pointer-events-none"
-                        style={{
-                            transform: `scale(${viewState.zoom}) translate(${viewState.panX}px, ${viewState.panY}px)`,
-                            transformOrigin: '0 0',
-                        }}
                     >
                         <ConnectionMarkers />
                         <TemporaryConnectionMarker />
@@ -405,13 +407,7 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
                     </svg>
 
                     {/* Layers */}
-                    <div
-                        className="absolute inset-0"
-                        style={{
-                            transform: `scale(${viewState.zoom}) translate(${viewState.panX}px, ${viewState.panY}px)`,
-                            transformOrigin: '0 0',
-                        }}
-                    >
+                    <div className="absolute inset-0">
                         {networkGraph.graph.layers.map(layer => (
                             <LayerNode
                                 key={layer.id}

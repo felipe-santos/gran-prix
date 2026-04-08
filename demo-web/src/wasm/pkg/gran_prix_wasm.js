@@ -462,6 +462,13 @@ export class Population {
 if (Symbol.dispose) Population.prototype[Symbol.dispose] = Population.prototype.free;
 
 export class Trainer {
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(Trainer.prototype);
+        obj.__wbg_ptr = ptr;
+        TrainerFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
@@ -471,6 +478,20 @@ export class Trainer {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_trainer_free(ptr, 0);
+    }
+    /**
+     * Create trainer from JSON architecture built in Network Builder
+     * @param {string} json
+     * @returns {Trainer}
+     */
+    static fromArchitecture(json) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_fromArchitecture(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return Trainer.__wrap(ret[0]);
     }
     /**
      * @param {number} resolution

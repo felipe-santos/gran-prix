@@ -1,14 +1,37 @@
+//! Gradient descent optimizers.
+//!
+//! Optimizers update parameter tensors based on accumulated gradients.
+//! They work directly with [`ParamStore`], without knowledge of the
+//! computation graph topology.
+//!
+//! # Design
+//!
+//! The [`Optimizer`] trait takes a mutable [`ParamStore`] reference,
+//! not a `Graph`. This decouples parameter updates from graph structure.
+//!
+//! For backward compatibility, there is also a `step_graph` method that
+//! takes `&mut Graph` and delegates to the param store within.
+
 use std::collections::HashMap;
 use crate::{Tensor, GPResult};
-use crate::graph::{Graph, Node};
-#[cfg(feature = "rayon")]
-use ndarray::Zip;
+use crate::params::{ParamStore, ParamId};
+use crate::graph::Graph;
 
-/// Advanced Gradient Descent Optimizers
+/// Trait for parameter optimizers.
+///
+/// Implementations should iterate over trainable parameters in the store,
+/// apply their update rule, and clear gradients when done.
 pub trait Optimizer {
-    fn step(&mut self, graph: &mut Graph) -> GPResult<()>;
+    /// Updates all trainable parameters in the store using accumulated gradients.
+    fn step(&mut self, params: &mut ParamStore) -> GPResult<()>;
+
+    /// Convenience: updates parameters within a Graph's embedded ParamStore.
+    fn step_graph(&mut self, graph: &mut Graph) -> GPResult<()> {
+        self.step(graph.params_mut())
+    }
 }
 
+/// Stochastic Gradient Descent with optional momentum and weight decay.
 pub struct SGD {
     pub lr: f32,
     pub momentum: f32,
@@ -28,52 +51,66 @@ impl SGD {
 }
 
 impl Optimizer for SGD {
-    fn step(&mut self, graph: &mut Graph) -> GPResult<()> {
-        for i in 0..graph.nodes().len() {
-            let grad_opt = graph.get_gradient(crate::NodeId(i)).cloned();
-            if let Some(mut grad) = grad_opt {
-                if let Node::Param(param) = &mut graph.nodes_mut()[i] {
-                    // Weight decay
-                    if self.weight_decay != 0.0 {
-                        // grad += weight_decay * param
-                        let mut g_view = grad.try_view_mut()?;
-                        let p_view = param.try_view()?;
-                        
-                        #[cfg(feature = "rayon")]
-                        {
-                            use rayon::prelude::*;
-                            nd_zip_mut!(g_view, p_view, |g, p| { *g += self.weight_decay * p });
-                        }
-                        #[cfg(not(feature = "rayon"))]
-                        {
-                            ndarray::Zip::from(&mut g_view).and(&p_view).for_each(|g, &p| { *g += self.weight_decay * p });
-                        }
+    fn step(&mut self, params: &mut ParamStore) -> GPResult<()> {
+        for i in 0..params.len() {
+            let id = ParamId(i);
+            if params.is_frozen(id) {
+                continue;
+            }
+            // Clone the gradient to release the borrow on params
+            let grad = match params.gradient(id) {
+                Some(g) => g.clone(),
+                None => continue,
+            };
+
+            let tensor = params.tensor_mut(id);
+
+            // Apply weight decay: grad += weight_decay * param
+            if self.weight_decay != 0.0 {
+                let p_slice = tensor.as_slice()?;
+                let mut grad_data: Vec<f32> = grad.as_slice()?.to_vec();
+                for (g, &p) in grad_data.iter_mut().zip(p_slice.iter()) {
+                    *g += self.weight_decay * p;
+                }
+                // Rebuild grad tensor with decay applied
+                let grad_with_decay = Tensor::from_shape_vec(grad.shape(), grad_data)?;
+
+                let v = self.velocities.entry(i)
+                    .or_insert_with(|| Tensor::new_zeros(tensor.shape()));
+
+                if self.momentum != 0.0 {
+                    let v_slice = v.as_slice_mut()?;
+                    let g_slice = grad_with_decay.as_slice()?;
+                    let p_slice = tensor.as_slice_mut()?;
+                    for j in 0..p_slice.len() {
+                        v_slice[j] = self.momentum * v_slice[j] + g_slice[j];
+                        p_slice[j] -= self.lr * v_slice[j];
                     }
+                } else {
+                    let g_slice = grad_with_decay.as_slice()?;
+                    let p_slice = tensor.as_slice_mut()?;
+                    for j in 0..p_slice.len() {
+                        p_slice[j] -= self.lr * g_slice[j];
+                    }
+                }
+            } else {
+                // No weight decay — simpler path
+                let v = self.velocities.entry(i)
+                    .or_insert_with(|| Tensor::new_zeros(tensor.shape()));
 
-                    // Momentum
-                    let g_view = grad.try_view()?;
-                    let v = self.velocities.entry(i).or_insert_with(|| Tensor::new_zeros(param.shape()));
-                    let mut v_view = v.try_view_mut()?;
-                    let mut p_view = param.try_view_mut()?;
-
-                    if self.momentum != 0.0 {
-                        #[cfg(not(feature = "rayon"))]
-                        {
-                            ndarray::Zip::from(&mut v_view).and(&g_view).for_each(|v, &g| {
-                                *v = self.momentum * *v + g;
-                            });
-                            ndarray::Zip::from(&mut p_view).and(&v_view).for_each(|p, &v| {
-                                *p -= self.lr * v;
-                            });
-                        }
-                    } else {
-                        // Plain SGD
-                        #[cfg(not(feature = "rayon"))]
-                        {
-                            ndarray::Zip::from(&mut p_view).and(&g_view).for_each(|p, &g| {
-                                *p -= self.lr * g;
-                            });
-                        }
+                if self.momentum != 0.0 {
+                    let v_slice = v.as_slice_mut()?;
+                    let g_slice = grad.as_slice()?;
+                    let p_slice = tensor.as_slice_mut()?;
+                    for j in 0..p_slice.len() {
+                        v_slice[j] = self.momentum * v_slice[j] + g_slice[j];
+                        p_slice[j] -= self.lr * v_slice[j];
+                    }
+                } else {
+                    let g_slice = grad.as_slice()?;
+                    let p_slice = tensor.as_slice_mut()?;
+                    for j in 0..p_slice.len() {
+                        p_slice[j] -= self.lr * g_slice[j];
                     }
                 }
             }
@@ -82,6 +119,10 @@ impl Optimizer for SGD {
     }
 }
 
+/// Adam optimizer (Adaptive Moment Estimation).
+///
+/// Maintains per-parameter first moment (m) and second moment (v) estimates
+/// with bias correction.
 pub struct Adam {
     pub lr: f32,
     pub beta1: f32,
@@ -109,52 +150,52 @@ impl Adam {
 }
 
 impl Optimizer for Adam {
-    fn step(&mut self, graph: &mut Graph) -> GPResult<()> {
+    fn step(&mut self, params: &mut ParamStore) -> GPResult<()> {
         self.t += 1;
-        
+
         let beta1_t = 1.0 - self.beta1.powi(self.t as i32);
         let beta2_t = 1.0 - self.beta2.powi(self.t as i32);
-        
-        for i in 0..graph.nodes().len() {
-            let grad_opt = graph.get_gradient(crate::NodeId(i)).cloned();
-            if let Some(mut grad) = grad_opt {
-                if let Node::Param(param) = &mut graph.nodes_mut()[i] {
-                    // Weight decay
-                    if self.weight_decay != 0.0 {
-                        let mut g_view = grad.try_view_mut()?;
-                        let p_view = param.try_view()?;
-                        
-                        #[cfg(not(feature = "rayon"))]
-                        {
-                            ndarray::Zip::from(&mut g_view).and(&p_view).for_each(|g, &p| { *g += self.weight_decay * p });
-                        }
-                    }
 
-                    let m = self.m.entry(i).or_insert_with(|| Tensor::new_zeros(param.shape()));
-                    let v = self.v.entry(i).or_insert_with(|| Tensor::new_zeros(param.shape()));
-                    
-                    let mut m_view = m.try_view_mut()?;
-                    let mut v_view = v.try_view_mut()?;
-                    let mut p_view = param.try_view_mut()?;
-                    let g_view = grad.try_view()?;
+        for i in 0..params.len() {
+            let id = ParamId(i);
+            if params.is_frozen(id) {
+                continue;
+            }
+            let grad = match params.gradient(id) {
+                Some(g) => g.clone(),
+                None => continue,
+            };
 
-                    #[cfg(not(feature = "rayon"))]
-                    {
-                        ndarray::Zip::from(&mut p_view)
-                            .and(&mut m_view)
-                            .and(&mut v_view)
-                            .and(&g_view)
-                            .for_each(|p, m_val, v_val, &g| {
-                                *m_val = self.beta1 * *m_val + (1.0 - self.beta1) * g;
-                                *v_val = self.beta2 * *v_val + (1.0 - self.beta2) * g * g;
-                                
-                                let m_hat = *m_val / beta1_t;
-                                let v_hat = *v_val / beta2_t;
-                                
-                                *p -= self.lr * m_hat / (v_hat.sqrt() + self.epsilon);
-                            });
-                    }
+            let tensor = params.tensor_mut(id);
+
+            let m = self.m.entry(i)
+                .or_insert_with(|| Tensor::new_zeros(tensor.shape()));
+            let v = self.v.entry(i)
+                .or_insert_with(|| Tensor::new_zeros(tensor.shape()));
+
+            let m_slice = m.as_slice_mut()?;
+            let v_slice = v.as_slice_mut()?;
+            let p_slice = tensor.as_slice_mut()?;
+            let g_slice = grad.as_slice()?;
+
+            for j in 0..p_slice.len() {
+                let mut g = g_slice[j];
+
+                // Weight decay
+                if self.weight_decay != 0.0 {
+                    g += self.weight_decay * p_slice[j];
                 }
+
+                // Update moments
+                m_slice[j] = self.beta1 * m_slice[j] + (1.0 - self.beta1) * g;
+                v_slice[j] = self.beta2 * v_slice[j] + (1.0 - self.beta2) * g * g;
+
+                // Bias-corrected estimates
+                let m_hat = m_slice[j] / beta1_t;
+                let v_hat = v_slice[j] / beta2_t;
+
+                // Update parameter
+                p_slice[j] -= self.lr * m_hat / (v_hat.sqrt() + self.epsilon);
             }
         }
         Ok(())

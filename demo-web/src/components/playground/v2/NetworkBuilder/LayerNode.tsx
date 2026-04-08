@@ -92,7 +92,6 @@ export const LayerNode: React.FC<LayerNodeProps> = ({
                 left: layer.position.x,
                 top: layer.position.y,
                 opacity: isDragging ? 0.5 : 1,
-                cursor: isLocked ? 'default' : 'move',
                 zIndex: isSelected ? 10 : 1,
                 ...style,
             }}
@@ -107,9 +106,8 @@ export const LayerNode: React.FC<LayerNodeProps> = ({
                 ${!isLocked ? 'hover:ring-2 hover:ring-border' : ''}
             `}
             {...attributes}
-            {...listeners}
         >
-            {/* Header */}
+            {/* Header - DRAG HANDLE */}
             <div
                 className={`
                     flex items-center justify-between
@@ -117,7 +115,9 @@ export const LayerNode: React.FC<LayerNodeProps> = ({
                     bg-gradient-to-r ${colorClass}
                     rounded-t-xl
                     border-b-2 border-white/10
+                    ${!isLocked ? 'cursor-move' : 'cursor-default'}
                 `}
+                {...listeners}
             >
                 <div className="flex items-center gap-2">
                     <span className="text-base" role="img" aria-label={layer.type}>

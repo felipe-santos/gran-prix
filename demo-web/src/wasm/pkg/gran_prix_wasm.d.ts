@@ -326,6 +326,10 @@ export class Population {
 export class Trainer {
     free(): void;
     [Symbol.dispose](): void;
+    /**
+     * Create trainer from JSON architecture built in Network Builder
+     */
+    static fromArchitecture(json: string): Trainer;
     get_decision_boundary(resolution: number, feature_map: Function): Float32Array;
     /**
      * Diagnostic: Returns the sum of absolute gradients for each parameter node.
@@ -346,6 +350,16 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_trainer_free: (a: number, b: number) => void;
+    readonly trainer_fromArchitecture: (a: number, b: number) => [number, number, number];
+    readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly trainer_get_gradient_norms: (a: number) => [number, number, number, number];
+    readonly trainer_get_weights: (a: number) => [number, number, number, number];
+    readonly trainer_import_weights: (a: number, b: number, c: number) => [number, number];
+    readonly trainer_new: (a: number, b: number, c: number) => [number, number, number];
+    readonly trainer_predict: (a: number, b: number, c: number) => [number, number, number];
+    readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly __wbg_neuralbrain_free: (a: number, b: number) => void;
     readonly neuralbrain_compute: (a: number, b: number, c: number) => [number, number, number, number];
     readonly neuralbrain_export_weights: (a: number) => [number, number, number, number];
@@ -356,16 +370,6 @@ export interface InitOutput {
     readonly neuralbrain_reset_memory: (a: number) => void;
     readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly __wbg_trainer_free: (a: number, b: number) => void;
-    readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
-    readonly trainer_get_gradient_norms: (a: number) => [number, number, number, number];
-    readonly trainer_get_weights: (a: number) => [number, number, number, number];
-    readonly trainer_import_weights: (a: number, b: number, c: number) => [number, number];
-    readonly trainer_new: (a: number, b: number, c: number) => [number, number, number];
-    readonly trainer_predict: (a: number, b: number, c: number) => [number, number, number];
-    readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
-    readonly trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly init_panic_hook: () => void;
     readonly __wbg_population_free: (a: number, b: number) => void;
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
     readonly population_count: (a: number) => number;
@@ -374,6 +378,7 @@ export interface InitOutput {
     readonly population_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly population_reset_memories: (a: number) => void;
     readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store_command_export: (a: number) => void;

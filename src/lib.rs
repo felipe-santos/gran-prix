@@ -6,10 +6,14 @@ pub mod errors;
 pub mod types;
 pub mod loss;
 pub mod optim;
+pub mod params;
+pub mod network_def;
 
 pub use tensor::Tensor;
 pub use errors::{GPError, GPResult};
 pub use types::{NodeId, Shape, Device};
+pub use params::{ParamStore, ParamId};
+pub use graph::{Architecture, ExecutionEngine};
 
 /// Base trait for all neural network layers.
 #[typetag::serde]

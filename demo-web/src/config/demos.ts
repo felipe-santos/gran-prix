@@ -10,7 +10,8 @@ import {
     CarFront,
     BrainCircuit,
     LucideIcon,
-    Network
+    Network,
+    Blocks
 } from 'lucide-react';
 
 export type DemoId =
@@ -26,6 +27,7 @@ export type DemoId =
     | 'training'
     | 'turret'
     | 'playground'
+    | 'network-builder'
     | 'biped';
 
 export interface DemoMetadata {
@@ -128,6 +130,15 @@ export const DEMOS: DemoMetadata[] = [
         tags: ['Backprop', 'Interactive', 'Data'],
         icon: Network,
         color: 'from-purple-500 to-pink-500',
+    },
+    {
+        id: 'network-builder',
+        title: 'Network Builder',
+        subtitle: 'Drag-and-Drop Architecture Design',
+        description: 'Visual drag-and-drop neural network builder with validation, templates, and WASM export. Build custom architectures interactively.',
+        tags: ['Drag-Drop', 'Visual', 'Builder', 'Templates'],
+        icon: Blocks,
+        color: 'from-cyan-400 to-purple-500',
     },
     {
         id: 'evolution',
