@@ -58,10 +58,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let prediction = graph.execute(output_node)?;
 
         // Loss
-        let loss = loss_fn.calculate(&prediction, &targets_data);
+        let loss = loss_fn.calculate(&prediction, &targets_data)?;
 
         // Backward
-        let gradient = loss_fn.gradient(&prediction, &targets_data);
+        let gradient = loss_fn.gradient(&prediction, &targets_data)?;
         graph.backward(output_node, gradient)?;
 
         // Update

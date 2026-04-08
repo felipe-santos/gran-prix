@@ -49,9 +49,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let pred = graph.execute(output_node)?;
-        let loss = loss_fn.calculate(&pred, &targets_data);
+        let loss = loss_fn.calculate(&pred, &targets_data)?;
 
-        let grad = loss_fn.gradient(&pred, &targets_data);
+        let grad = loss_fn.gradient(&pred, &targets_data)?;
         graph.backward(output_node, grad)?;
         graph.update_parameters(learning_rate)?;
 
