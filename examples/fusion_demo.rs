@@ -1,33 +1,25 @@
 use gran_prix::graph::Graph;
 use gran_prix::graph::dsl::GraphBuilder;
-use gran_prix::graph::optimizer::GraphOptimizer;
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::Tensor;
 
 fn main() -> anyhow::Result<()> {
-    println!("Gran-Prix Optimization Demo: Kernel Fusion (Add + ReLU)");
+    println!("Gran-Prix Fused Operations Demo: AddReLU");
 
     let backend = Box::new(CPUBackend);
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
 
-    // 1. Construct a sub-optimal graph: (A + B) -> ReLU
-    let a = gb.val(Tensor::from_shape_vec(&[1, 2], vec![1.0, -2.0])?);
-    let b = gb.val(Tensor::from_shape_vec(&[1, 2], vec![0.5, 0.5])?);
-    let sum = gb.add(a, b);
-    let output = gb.relu(sum);
+    let a = gb.val(Tensor::from_shape_vec(&[1, 4], vec![1.0, -2.0, 0.5, -0.1])?);
+    let b = gb.val(Tensor::from_shape_vec(&[1, 4], vec![0.5, 0.5, -1.0, 0.2])?);
 
-    println!("Graph constructed (Node {} is ReLU pointing to Node {} Add)", output.0, sum.0);
+    // Fused Add+ReLU: max(a + b, 0) in a single pass
+    let output = gb.node(gran_prix::graph::OpType::AddReLU, vec![a, b]);
 
-    // 2. Run the Optimizer
-    let _ = GraphOptimizer::optimize(&mut graph);
-
-    // 3. Execution
-    println!("\nExecuting Optimized Graph...");
     let result = graph.execute(output)?;
-
-    println!("Final Result: {:?}", result);
-    println!("(Expected: ReLU([1.5, -1.5]) = [1.5, 0.0])");
+    println!("AddReLU([1.0,-2.0,0.5,-0.1] + [0.5,0.5,-1.0,0.2]):");
+    println!("Result: {:?}", result.as_slice()?);
+    println!("Expected: [1.5, 0.0, 0.0, 0.1]");
 
     Ok(())
 }

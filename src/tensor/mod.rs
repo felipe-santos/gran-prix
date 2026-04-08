@@ -82,21 +82,12 @@ impl Tensor {
         }
     }
 
-    /// Returns an ndarray view. Crate-internal — external code should use `as_slice()`.
-    pub(crate) fn view(&self) -> ArrayViewD<'_, f32> {
-        self.try_view().unwrap_or_else(|e| panic!("PRIX ERROR: Failed to get view: {}", e))
-    }
-
     pub(crate) fn try_view(&self) -> GPResult<ArrayViewD<'_, f32>> {
         self.as_cpu().map(|a| a.view())
     }
 
     pub(crate) fn try_view_mut(&mut self) -> GPResult<ndarray::ArrayViewMutD<'_, f32>> {
         self.as_cpu_mut().map(|a| a.view_mut())
-    }
-
-    pub(crate) fn view_mut(&mut self) -> ndarray::ArrayViewMutD<'_, f32> {
-        self.try_view_mut().unwrap_or_else(|e| panic!("PRIX ERROR: Failed to get view_mut: {}", e))
     }
 
     #[cfg(feature = "cuda")]
@@ -176,14 +167,6 @@ impl Tensor {
         self
     }
     
-    /// Returns an ndarray iterator. Crate-internal — external code should use `as_slice()`.
-    pub(crate) fn iter(&self) -> ndarray::iter::Iter<'_, f32, IxDyn> {
-        self.as_cpu().map(|a| a.iter()).unwrap_or_else(|_| panic!("iter() only supported on CPU tensors"))
-    }
-    /// Returns a mutable ndarray iterator. Crate-internal.
-    pub(crate) fn iter_mut(&mut self) -> ndarray::iter::IterMut<'_, f32, IxDyn> {
-        self.as_cpu_mut().map(|a| a.iter_mut()).unwrap_or_else(|_| panic!("iter_mut() only supported on CPU tensors"))
-    }
 }
 
 // Crate-internal: allows backend code to convert ndarray → Tensor directly.

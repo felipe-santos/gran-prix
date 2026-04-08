@@ -4,7 +4,6 @@ use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::{Tensor, GPResult};
 
 use serde::{Serialize, Deserialize};
-use ndarray::array;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct CustomAddOp;
@@ -31,21 +30,21 @@ fn test_full_persistence_with_custom_op() {
     let backend = Box::new(CPUBackend);
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
-    
-    let x = gb.val(array![[1.0, 1.0]].into_dyn().into());
-    let y = gb.val(array![[2.0, 2.0]].into_dyn().into());
+
+    let x = gb.val(Tensor::from_shape_vec(&[1, 2], vec![1.0, 1.0]).unwrap());
+    let y = gb.val(Tensor::from_shape_vec(&[1, 2], vec![2.0, 2.0]).unwrap());
     let node = graph.op(gran_prix::graph::OpType::Custom(Box::new(CustomAddOp)), vec![x, y]);
-    
+
     let result = graph.execute(node).unwrap();
-    assert_eq!(result, array![[3.0, 3.0]].into_dyn().into());
-    
+    assert_eq!(result, Tensor::from_shape_vec(&[1, 2], vec![3.0, 3.0]).unwrap());
+
     // Serialize
     let json = serde_json::to_string(&graph).unwrap();
-    
+
     // Deserialize
     let mut new_graph: Graph = serde_json::from_str(&json).unwrap();
     new_graph.set_backend(Box::new(CPUBackend));
-    
+
     let result_loaded = new_graph.execute(node).unwrap();
-    assert_eq!(result_loaded, array![[3.0, 3.0]].into_dyn().into());
+    assert_eq!(result_loaded, Tensor::from_shape_vec(&[1, 2], vec![3.0, 3.0]).unwrap());
 }

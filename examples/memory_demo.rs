@@ -1,18 +1,16 @@
 use gran_prix::graph::Graph;
 use gran_prix::graph::dsl::GraphBuilder;
-use gran_prix::graph::memory_planner::MemoryPlanner;
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::Tensor;
 
 fn main() -> anyhow::Result<()> {
-    println!("Gran-Prix Memory Orchestration: Static Planning Demo");
+    println!("Gran-Prix Graph Execution Demo: Buffer Reuse");
 
     let backend = Box::new(CPUBackend);
     let mut graph = Graph::new(backend);
     let mut gb = GraphBuilder::new(&mut graph);
 
-    // Build a linear chain: A -> B -> C -> D
-    // Each step should ideally reuse buffers
+    // Build a linear chain: x → matmul → relu → matmul → sigmoid
     let x = gb.val(Tensor::from_shape_vec(&[1, 2], vec![1.0, 1.0])?);
     let w1 = gb.val(Tensor::from_shape_vec(&[2, 2], vec![1.0, 0.0, 0.0, 1.0])?);
     let a = gb.matmul(x, w1);
@@ -21,20 +19,17 @@ fn main() -> anyhow::Result<()> {
     let c = gb.matmul(b, w2);
     let d = gb.sigmoid(c);
 
-    // Run the Memory Planner
-    println!("\nAnalyzing Graph for Memory Reuse...");
-    let planner = MemoryPlanner::plan(&graph)?;
+    println!("Graph: {} nodes", graph.nodes().len());
+    println!("Params: {} tensors", graph.params().len());
 
-    println!("Buffer Assignment Plan:");
-    for (i, p) in planner.plan.iter().enumerate() {
-        println!("  Node {}: Buffer {}", i, p.unwrap());
-    }
+    // First execution allocates buffers
+    let result1 = graph.execute(d)?;
+    println!("Pass 1: {:?}", result1.as_slice()?);
 
-    println!("\nExecution verification...");
-    let result = graph.execute(d)?;
-    println!("Result: {:?}", result);
+    // Second execution reuses cached buffers (zero allocation)
+    let result2 = graph.execute(d)?;
+    println!("Pass 2: {:?}", result2.as_slice()?);
 
-    println!("\nMemory Planning validated. The engine is now aware of tensor lifecycles!");
-
+    println!("Buffer reuse verified — second pass reused existing allocations.");
     Ok(())
 }

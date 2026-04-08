@@ -1,10 +1,7 @@
 pub mod architecture;
 pub mod engine;
 pub mod dsl;
-pub mod optimizer;
-pub mod memory_planner;
 pub mod verifier;
-pub mod buffer_pool;
 
 pub use architecture::Architecture;
 pub use engine::ExecutionEngine;
@@ -380,12 +377,6 @@ pub struct Graph {
     /// Execution engine (backend + caches). Skipped during serialization.
     #[serde(skip)]
     engine: Option<ExecutionEngine>,
-    /// Memory reuse plan.
-    #[serde(skip)]
-    pub memory_plan: Option<memory_planner::MemoryPlanner>,
-    /// Pre-allocated buffers.
-    #[serde(skip)]
-    pub buffer_pool: Option<buffer_pool::BufferPool>,
 }
 
 impl Graph {
@@ -394,8 +385,6 @@ impl Graph {
             arch: Architecture::new(),
             param_store: ParamStore::new(),
             engine: Some(ExecutionEngine::new(backend)),
-            memory_plan: None,
-            buffer_pool: None,
         }
     }
 
@@ -549,17 +538,6 @@ impl Graph {
     /// Computes topological execution order for the target node.
     pub fn topological_sort(&self, target: NodeId) -> GPResult<Vec<NodeId>> {
         self.arch.topological_sort(target)
-    }
-
-    // ── Memory Planning ────────────────────────────────────────────────────
-
-    /// Plans memory reuse for the current graph.
-    pub fn plan_memory(&mut self) -> GPResult<()> {
-        let planner = memory_planner::MemoryPlanner::plan(self)?;
-        let pool = buffer_pool::BufferPool::new(planner.buffer_count);
-        self.memory_plan = Some(planner);
-        self.buffer_pool = Some(pool);
-        Ok(())
     }
 
     /// Updates parameters using a simple SGD step: param -= lr * grad.
