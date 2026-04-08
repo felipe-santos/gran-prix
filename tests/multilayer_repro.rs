@@ -43,7 +43,7 @@ fn test_multilayer_gradient_flow() {
 
     // Loss & Gradient
     let loss_fn = BCEWithLogits;
-    let grad_out = loss_fn.gradient(&result, &target);
+    let grad_out = loss_fn.gradient(&result, &target).unwrap();
     println!("Loss gradient: {:?}", grad_out);
 
     // Backward

@@ -158,10 +158,10 @@ impl Trainer {
             let target_tensor = Tensor::from_shape_vec(&[1, 1], vec![targets[i]]).unwrap();
             let loss_fn = gran_prix::loss::BCEWithLogits;
 
-            let mut grad = loss_fn.gradient(&result, &target_tensor);
+            let mut grad = loss_fn.gradient(&result, &target_tensor).map_err(js_err)?;
             grad.map_inplace(|v| *v /= batch_size as f32).unwrap();
 
-            total_loss += loss_fn.calculate(&result, &target_tensor);
+            total_loss += loss_fn.calculate(&result, &target_tensor).map_err(js_err)?;
 
             graph.backward(NodeId(self.output_node), grad).map_err(js_err)?;
         }
@@ -329,6 +329,7 @@ fn convert_legacy_architecture(json: &str) -> Result<NetworkDef, JsValue> {
                     "relu" => ActivationDef::ReLU,
                     "sigmoid" => ActivationDef::Sigmoid,
                     "tanh" => ActivationDef::Tanh,
+                    "softmax" => ActivationDef::Softmax,
                     _ => return Err(JsValue::from_str(&format!("Unknown activation: {}", act_str))),
                 };
                 layer_defs.push(LayerDef::Activation { function });

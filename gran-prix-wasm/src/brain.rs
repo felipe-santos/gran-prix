@@ -335,28 +335,9 @@ impl NeuralBrain {
         }
     }
     
-    // Maintain old alias for backwards compatibility
+    /// Alias for `reset_memory()`. Maintained for backward compatibility.
     pub fn reset(&self) {
         self.reset_memory();
-    }
-
-    /// Simple training step (placeholder for reinforcement learning)
-    ///
-    /// # Arguments
-    ///
-    /// * `_sensors` - Input sensor data (unused currently)
-    /// * `_target` - Target value (unused currently)
-    ///
-    /// # Returns
-    ///
-    /// Always `Ok(())` (no-op implementation)
-    ///
-    /// # Design Note
-    ///
-    /// This is a placeholder for future RL integration. Current evolution
-    /// doesn't use gradient-based learning.
-    pub fn train(&self, _sensors: &[f32], _target: f32) -> Result<(), JsValue> {
-        Ok(())
     }
 
     /// Export all network weights as flat vector

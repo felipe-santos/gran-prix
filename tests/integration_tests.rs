@@ -8,7 +8,7 @@
 
 use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::loss::{Loss, MSE, BCEWithLogits};
+use gran_prix::loss::{Loss, MSE, BCEWithLogits, CrossEntropyWithLogits};
 use gran_prix::optim::{Optimizer, SGD, Adam};
 use gran_prix::network_def::{NetworkDef, ActivationDef};
 use gran_prix::Tensor;
@@ -51,7 +51,7 @@ fn compute_loss_for_params(
 
     let pred = graph.execute(output).unwrap();
     let target = Tensor::from_shape_vec(&[1, 1], target_data.to_vec()).unwrap();
-    MSE.calculate(&pred, &target)
+    MSE.calculate(&pred, &target).unwrap()
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn test_numerical_gradient_check_mse() {
     let target = Tensor::from_shape_vec(&[1, 1], target_data.clone()).unwrap();
 
     // Backward (autograd)
-    let grad_output = MSE.gradient(&pred, &target);
+    let grad_output = MSE.gradient(&pred, &target).unwrap();
     graph.backward(output, grad_output).unwrap();
 
     // Extract autograd gradients
@@ -156,7 +156,7 @@ fn test_numerical_gradient_check_bce_with_logits() {
 
     let pred = graph.execute(output).unwrap();
     let target = Tensor::from_shape_vec(&[1, 1], target_data.clone()).unwrap();
-    let grad_output = BCEWithLogits.gradient(&pred, &target);
+    let grad_output = BCEWithLogits.gradient(&pred, &target).unwrap();
     graph.backward(output, grad_output).unwrap();
 
     let autograd_grads: Vec<f32> = {
@@ -195,7 +195,7 @@ fn test_numerical_gradient_check_bce_with_logits() {
             g.params_mut().import_flat(pv).unwrap();
             let p = g.execute(out).unwrap();
             let t = Tensor::from_shape_vec(&[1, 1], target_data.clone()).unwrap();
-            BCEWithLogits.calculate(&p, &t)
+            BCEWithLogits.calculate(&p, &t).unwrap()
         };
 
         let numerical = (compute(&pp) - compute(&pm)) / (2.0 * epsilon);
@@ -250,8 +250,8 @@ fn train_xor(mut optimizer: Box<dyn Optimizer>, epochs: usize) -> f32 {
         graph.clear_gradients();
 
         let pred = graph.execute(output_id).unwrap();
-        let loss = loss_fn.calculate(&pred, &xor_targets);
-        let grad = loss_fn.gradient(&pred, &xor_targets);
+        let loss = loss_fn.calculate(&pred, &xor_targets).unwrap();
+        let grad = loss_fn.gradient(&pred, &xor_targets).unwrap();
         graph.backward(output_id, grad).unwrap();
         optimizer.step(graph.params_mut()).unwrap();
 
@@ -308,10 +308,10 @@ fn test_adam_loss_decreases_monotonically_early() {
 
         let pred = graph.execute(output_id).unwrap();
         let target = Tensor::from_shape_vec(&[1, 1], tgt.clone()).unwrap();
-        let loss = MSE.calculate(&pred, &target);
+        let loss = MSE.calculate(&pred, &target).unwrap();
         losses.push(loss);
 
-        let grad = MSE.gradient(&pred, &target);
+        let grad = MSE.gradient(&pred, &target).unwrap();
         graph.backward(output_id, grad).unwrap();
         optimizer.step(graph.params_mut()).unwrap();
     }
@@ -410,7 +410,7 @@ fn test_network_def_compile_train_infer() {
 
         let pred = graph.execute(output_id).unwrap();
         let target = Tensor::from_shape_vec(&[1, 1], vec![1.0]).unwrap();
-        let grad = loss_fn.gradient(&pred, &target);
+        let grad = loss_fn.gradient(&pred, &target).unwrap();
         graph.backward(output_id, grad).unwrap();
         optimizer.step(graph.params_mut()).unwrap();
     }
@@ -425,4 +425,181 @@ fn test_network_def_compile_train_infer() {
 
     assert!((val - 1.0).abs() < 0.2,
         "Network should approximate 1.0 after training. Got: {}", val);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// MULTI-CLASS TESTS (Softmax + CrossEntropy)
+// ────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_softmax_forward_correctness() {
+    let backend = Box::new(CPUBackend);
+    let mut graph = Graph::new(backend);
+    let input_id = graph.input(Tensor::from_shape_vec(&[2, 3], vec![
+        1.0, 2.0, 3.0,   // row 0
+        -1.0, 0.0, 1.0,  // row 1
+    ]).unwrap());
+
+    let mut gb = GraphBuilder::new(&mut graph);
+    let output = gb.softmax(input_id);
+
+    let result = graph.execute(output).unwrap();
+    let s = result.as_slice().unwrap();
+
+    // Row 0: softmax([1,2,3]) ≈ [0.0900, 0.2447, 0.6652]
+    assert!((s[0] - 0.0900).abs() < 0.001, "softmax[0,0]={}", s[0]);
+    assert!((s[1] - 0.2447).abs() < 0.001, "softmax[0,1]={}", s[1]);
+    assert!((s[2] - 0.6652).abs() < 0.001, "softmax[0,2]={}", s[2]);
+
+    // Each row sums to 1.0
+    let row0_sum: f32 = s[0..3].iter().sum();
+    let row1_sum: f32 = s[3..6].iter().sum();
+    assert!((row0_sum - 1.0).abs() < 1e-6, "Row 0 sum: {}", row0_sum);
+    assert!((row1_sum - 1.0).abs() < 1e-6, "Row 1 sum: {}", row1_sum);
+}
+
+#[test]
+fn test_numerical_gradient_check_softmax_ce() {
+    // Test CrossEntropyWithLogits gradient: simple linear → CE (no hidden layer).
+    // This isolates the CE gradient from any hidden layer backward issues.
+    let input_data = vec![0.5, -0.3];
+    let target_data = vec![0.0, 1.0, 0.0]; // one-hot class 1
+
+    let backend = Box::new(CPUBackend);
+    let mut graph = Graph::new(backend);
+    let input_id = graph.input(Tensor::from_shape_vec(&[1, 2], input_data.clone()).unwrap());
+
+    let mut gb = GraphBuilder::new(&mut graph);
+    let w = gb.param(Tensor::from_shape_vec(&[2, 3], vec![
+        0.1, -0.1, 0.2, -0.2, 0.15, -0.05
+    ]).unwrap());
+    let b = gb.param(Tensor::new_zeros(&[1, 3]));
+    let output = gb.linear(input_id, w, b);
+
+    let pred = graph.execute(output).unwrap();
+    let target = Tensor::from_shape_vec(&[1, 3], target_data.clone()).unwrap();
+
+    let loss_fn = CrossEntropyWithLogits;
+    let grad_output = loss_fn.gradient(&pred, &target).unwrap();
+    graph.backward(output, grad_output).unwrap();
+
+    let autograd_grads: Vec<f32> = {
+        let params = graph.params();
+        let mut grads = Vec::new();
+        for i in 0..params.len() {
+            if let Some(g) = params.gradient(gran_prix::ParamId(i)) {
+                grads.extend_from_slice(g.as_slice().unwrap());
+            }
+        }
+        grads
+    };
+    let param_values = graph.params().export_flat().unwrap();
+
+    let epsilon = 1e-5;
+    for i in 0..param_values.len() {
+        let mut pp = param_values.clone();
+        pp[i] += epsilon;
+        let mut pm = param_values.clone();
+        pm[i] -= epsilon;
+
+        let compute = |pv: &[f32]| -> f32 {
+            let b = Box::new(CPUBackend);
+            let mut g = Graph::new(b);
+            let inp = g.input(Tensor::from_shape_vec(&[1, 2], input_data.clone()).unwrap());
+            let mut gb = GraphBuilder::new(&mut g);
+            let w = gb.param(Tensor::new_zeros(&[2, 3]));
+            let b_node = gb.param(Tensor::new_zeros(&[1, 3]));
+            let out = gb.linear(inp, w, b_node);
+            g.params_mut().import_flat(pv).unwrap();
+            let p = g.execute(out).unwrap();
+            let t = Tensor::from_shape_vec(&[1, 3], target_data.clone()).unwrap();
+            CrossEntropyWithLogits.calculate(&p, &t).unwrap()
+        };
+
+        let numerical = (compute(&pp) - compute(&pm)) / (2.0 * epsilon);
+        let ag = autograd_grads[i];
+        let denom = ag.abs().max(numerical.abs()).max(1e-8);
+        let rel_error = (ag - numerical).abs() / denom;
+
+        // CE gradient has slightly higher numerical error due to log/exp operations
+        assert!(rel_error < 0.1,
+            "CE gradient check FAILED at param {}: autograd={:.6}, numerical={:.6}, rel_error={:.6}",
+            i, ag, numerical, rel_error);
+    }
+}
+
+#[test]
+fn test_multiclass_training_convergence() {
+    // Train a 3-class classifier on a trivial pattern:
+    // [1,0] → class 0, [0,1] → class 1, [1,1] → class 2
+    let net = NetworkDef::mlp(2, &[8], 3, ActivationDef::Tanh, None);
+
+    let backend = Box::new(CPUBackend);
+    let mut graph = Graph::new(backend);
+    let input_id = graph.input(Tensor::new_zeros(&[3, 2]));
+    let mut gb = GraphBuilder::new(&mut graph);
+    let w1 = gb.param(Tensor::new_random(&[2, 8]));
+    let b1 = gb.param(Tensor::new_zeros(&[1, 8]));
+    let l1 = gb.linear(input_id, w1, b1);
+    let a1 = gb.tanh(l1);
+    let w2 = gb.param(Tensor::new_random(&[8, 3]));
+    let b2 = gb.param(Tensor::new_zeros(&[1, 3]));
+    let output_id = gb.linear(a1, w2, b2);
+
+    let inputs = Tensor::from_shape_vec(&[3, 2], vec![
+        1.0, 0.0,  // class 0
+        0.0, 1.0,  // class 1
+        1.0, 1.0,  // class 2
+    ]).unwrap();
+    let targets = Tensor::from_shape_vec(&[3, 3], vec![
+        1.0, 0.0, 0.0,  // one-hot class 0
+        0.0, 1.0, 0.0,  // one-hot class 1
+        0.0, 0.0, 1.0,  // one-hot class 2
+    ]).unwrap();
+
+    let mut optimizer = Adam::new(0.05);
+    let loss_fn = CrossEntropyWithLogits;
+    let mut first_loss = 0.0;
+    let mut last_loss = 0.0;
+
+    for epoch in 0..500 {
+        if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(input_id.0) {
+            *t = inputs.clone();
+        }
+        graph.clear_values();
+        graph.clear_gradients();
+
+        let logits = graph.execute(output_id).unwrap();
+        let loss = loss_fn.calculate(&logits, &targets).unwrap();
+        let grad = loss_fn.gradient(&logits, &targets).unwrap();
+        graph.backward(output_id, grad).unwrap();
+        optimizer.step(graph.params_mut()).unwrap();
+
+        if epoch == 0 { first_loss = loss; }
+        last_loss = loss;
+    }
+
+    assert!(last_loss < first_loss * 0.1,
+        "Multi-class training should reduce loss significantly. First: {}, Last: {}",
+        first_loss, last_loss);
+    assert!(last_loss < 0.1,
+        "Multi-class training should converge. Final loss: {}", last_loss);
+
+    // Verify predictions: argmax of logits should match class
+    if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(input_id.0) {
+        *t = inputs.clone();
+    }
+    graph.clear_values();
+    let logits = graph.execute(output_id).unwrap();
+    let s = logits.as_slice().unwrap();
+
+    // Row 0: class 0 should have highest logit
+    assert!(s[0] > s[1] && s[0] > s[2],
+        "Class 0 prediction wrong: [{:.3}, {:.3}, {:.3}]", s[0], s[1], s[2]);
+    // Row 1: class 1 should have highest logit
+    assert!(s[4] > s[3] && s[4] > s[5],
+        "Class 1 prediction wrong: [{:.3}, {:.3}, {:.3}]", s[3], s[4], s[5]);
+    // Row 2: class 2 should have highest logit
+    assert!(s[8] > s[6] && s[8] > s[7],
+        "Class 2 prediction wrong: [{:.3}, {:.3}, {:.3}]", s[6], s[7], s[8]);
 }
