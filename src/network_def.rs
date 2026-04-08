@@ -66,6 +66,7 @@ pub enum ActivationDef {
     ReLU,
     Sigmoid,
     Tanh,
+    Softmax,
 }
 
 impl From<ActivationDef> for ActivationType {
@@ -74,6 +75,7 @@ impl From<ActivationDef> for ActivationType {
             ActivationDef::ReLU => ActivationType::ReLU,
             ActivationDef::Sigmoid => ActivationType::Sigmoid,
             ActivationDef::Tanh => ActivationType::Tanh,
+            ActivationDef::Softmax => ActivationType::Softmax,
         }
     }
 }
@@ -318,7 +320,7 @@ impl NetworkDef {
     ///
     /// let net = NetworkDef::mlp(2, &[8, 4], 1, ActivationDef::ReLU, Some(ActivationDef::Sigmoid));
     /// assert_eq!(net.output_dim(), 1);
-    /// assert_eq!(net.layer_count(), 7); // 3 Linear + 2 hidden act + 1 output act + ... wait
+    /// assert_eq!(net.layer_count(), 6); // 2×(Linear+Act) + Linear + Act = 6
     /// ```
     pub fn mlp(
         input_dim: usize,

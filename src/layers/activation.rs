@@ -7,6 +7,7 @@ pub enum ActivationType {
     ReLU,
     Sigmoid,
     Tanh,
+    Softmax,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -27,6 +28,7 @@ impl Layer for Activation {
             ActivationType::ReLU => graph.relu(input),
             ActivationType::Sigmoid => graph.sigmoid(input),
             ActivationType::Tanh => graph.tanh(input),
+            ActivationType::Softmax => graph.softmax(input),
         }
     }
 }

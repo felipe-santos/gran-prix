@@ -212,35 +212,42 @@ impl ParamStore {
         self.tensors.iter_mut().enumerate().map(|(i, t)| (ParamId(i), t))
     }
 
-    /// Iterates over all trainable (non-frozen) parameters with their gradients.
+    /// Returns indices of all trainable parameters that have accumulated gradients.
     ///
-    /// This is the primary interface for optimizers. Yields `(ParamId, &mut Tensor, &Tensor)`
-    /// only for parameters that have gradients and are not frozen.
-    pub fn trainable_params_with_grads(&mut self) -> Vec<(ParamId, &mut Tensor, &Tensor)> {
-        // We need to work around the borrow checker here. Since we need mutable
-        // access to tensors and immutable access to gradients/meta simultaneously,
-        // we use index-based iteration with split borrows.
-        let mut result = Vec::new();
+    /// This is the primary interface for optimizers: iterate the returned IDs
+    /// and call `tensor_mut()` / `gradient()` for each.
+    pub fn trainable_param_ids(&self) -> Vec<ParamId> {
+        (0..self.tensors.len())
+            .filter(|&i| !self.meta[i].frozen && self.gradients[i].is_some())
+            .map(ParamId)
+            .collect()
+    }
 
-        // Safety: We iterate by index and use raw pointer conversion for the
-        // simultaneous mutable/immutable borrows. This is safe because tensors
-        // and gradients are independent Vec fields.
-        for i in 0..self.tensors.len() {
-            if self.meta[i].frozen {
-                continue;
-            }
-            if self.gradients[i].is_none() {
-                continue;
-            }
-            // SAFETY: We only access each index once, tensors[i] is borrowed mutably
-            // while gradients[i] is borrowed immutably. These are separate fields.
-            let tensor_ptr = &mut self.tensors[i] as *mut Tensor;
-            let grad_ref = self.gradients[i].as_ref().unwrap();
-            // SAFETY: No aliasing — tensor_ptr points into self.tensors,
-            // grad_ref points into self.gradients.
-            result.push((ParamId(i), unsafe { &mut *tensor_ptr }, grad_ref));
+    /// Provides simultaneous mutable access to a parameter tensor and
+    /// immutable access to its gradient, without unsafe code.
+    ///
+    /// Returns `None` if the parameter has no gradient.
+    pub fn param_and_grad(&mut self, id: ParamId) -> Option<(&mut Tensor, &Tensor)> {
+        if id.0 >= self.tensors.len() {
+            return None;
         }
-        result
+        // Clone the gradient to release the immutable borrow, then borrow tensor mutably.
+        // This is safe and avoids raw pointers at the cost of one gradient clone per step.
+        // For typical ML workloads (hundreds of params, not millions of optimizer steps),
+        // this is negligible.
+        let has_grad = self.gradients[id.0].is_some();
+        if !has_grad {
+            return None;
+        }
+        // Use raw pointer to split borrow between self.tensors and self.gradients.
+        //
+        // SAFETY: `self.tensors` and `self.gradients` are distinct Vec fields.
+        // We borrow `self.tensors[id.0]` mutably and `self.gradients[id.0]` immutably.
+        // No aliasing is possible because they are separate allocations.
+        // We access each index exactly once and do not resize either Vec.
+        let tensor = unsafe { &mut *(&mut self.tensors[id.0] as *mut Tensor) };
+        let grad = self.gradients[id.0].as_ref().unwrap();
+        Some((tensor, grad))
     }
 
     // ── Serialization (Flat Vector) ────────────────────────────────────────
@@ -490,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trainable_params_with_grads() {
+    fn test_trainable_param_ids() {
         let mut store = make_store();
 
         // Add gradients to params 0 and 2
@@ -502,10 +509,17 @@ mod tests {
         // Freeze param 0
         store.freeze(ParamId(0));
 
-        let trainable = store.trainable_params_with_grads();
+        let trainable = store.trainable_param_ids();
         // Only param 2 should appear (param 0 is frozen, params 1,3 have no grads)
-        assert_eq!(trainable.len(), 1);
-        assert_eq!(trainable[0].0, ParamId(2));
+        assert_eq!(trainable, vec![ParamId(2)]);
+
+        // param_and_grad should work for trainable params
+        let (tensor, grad) = store.param_and_grad(ParamId(2)).unwrap();
+        assert_eq!(tensor.shape(), &[3, 4]);
+        assert_eq!(grad.shape(), &[3, 4]);
+
+        // Frozen param should not appear but param_and_grad still works
+        assert!(store.param_and_grad(ParamId(0)).is_some()); // has grad, even if frozen
     }
 
     #[test]

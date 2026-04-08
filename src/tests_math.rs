@@ -33,9 +33,8 @@ fn test_multilayer_backprop_flow() {
     // Backward Pass
     let target = Tensor::from_elem(&[1, 1], 1.0);
     let loss_fn = BCEWithLogits;
-    let grad_output = loss_fn.gradient(&pred, &target);
-    println!("Initial Gradient (Loss -> Output): {:?}", grad_output.as_cpu().unwrap());
-    
+    let grad_output = loss_fn.gradient(&pred, &target).unwrap();
+
     graph.backward(output_node, grad_output).unwrap();
     
     // Check Gradients for ALL nodes

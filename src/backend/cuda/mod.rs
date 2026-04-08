@@ -1,3 +1,11 @@
+//! CUDA backend — **EXPERIMENTAL / UNTESTED**.
+//!
+//! This module provides GPU acceleration via cudarc (NVIDIA CUDA).
+//! It is feature-gated behind `cuda` and has **not been tested** against
+//! the current API. Use at your own risk.
+//!
+//! The CPU backend (`backend::cpu`) is the production-ready implementation.
+
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaDevice, LaunchConfig, LaunchAsync};
 #[cfg(feature = "cuda")]
