@@ -35,17 +35,21 @@ fn test_dropout_training_zeroes_some_elements() {
     let result = graph.execute(output).unwrap();
     let slice = result.as_slice().unwrap();
 
-    // With 50% dropout, some should be 0 and others non-zero (scaled by 1/(1-rate))
+    // With 50% dropout, roughly half should be zero, half scaled by 2.0
     let zeros = slice.iter().filter(|&&x| x == 0.0).count();
     let nonzeros = slice.iter().filter(|&&x| x != 0.0).count();
+    let zero_ratio = zeros as f32 / 100.0;
 
-    assert!(zeros > 10, "Should have some zeroed elements, got {}", zeros);
-    assert!(nonzeros > 10, "Should have some non-zero elements, got {}", nonzeros);
+    // Statistical check: 50% ± 15% is a reasonable tolerance for 100 samples
+    assert!((zero_ratio - 0.5).abs() < 0.2,
+        "Zero ratio should be ~50%, got {:.0}% ({} zeros, {} nonzeros)",
+        zero_ratio * 100.0, zeros, nonzeros);
     assert_eq!(zeros + nonzeros, 100);
 
-    // Non-zero values should be scaled by 1/(1-0.5) = 2.0
+    // Non-zero values must be scaled by 1/(1-0.5) = 2.0 (inverted dropout)
     for &v in slice.iter().filter(|&&x| x != 0.0) {
-        assert!((v - 2.0).abs() < 1e-4, "Non-zero should be ~2.0, got {}", v);
+        assert!((v - 2.0).abs() < 1e-4,
+            "Non-zero should be 2.0 (inverted scaling), got {}", v);
     }
 }
 

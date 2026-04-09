@@ -127,7 +127,8 @@ impl Loss for CrossEntropyWithLogits {
             let rs = r * cols;
             let row = &x[rs..rs + cols];
             let max_val = row.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-            let log_sum_exp: f32 = row.iter().map(|&v| (v - max_val).exp()).sum::<f32>().ln();
+            let sum_exp: f32 = row.iter().map(|&v| (v - max_val).exp()).sum::<f32>();
+            let log_sum_exp: f32 = sum_exp.max(1e-10).ln();
 
             for c in 0..cols {
                 if t[rs + c] > 0.0 {
@@ -157,8 +158,9 @@ impl Loss for CrossEntropyWithLogits {
                 grad[rs + c] = e;
                 sum += e;
             }
+            let safe_sum = if sum > 0.0 { sum } else { 1e-10 };
             for c in 0..cols {
-                grad[rs + c] = (grad[rs + c] / sum - t[rs + c]) / n;
+                grad[rs + c] = (grad[rs + c] / safe_sum - t[rs + c]) / n;
             }
         }
 

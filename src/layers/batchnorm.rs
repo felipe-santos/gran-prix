@@ -3,8 +3,16 @@
 //! Normalizes inputs per-feature across the batch dimension, then applies
 //! a learnable affine transform: `output = gamma * normalized + beta`.
 //!
-//! Implemented as a dedicated `OpType::BatchNorm` that computes batch
-//! statistics (mean, variance) inline during the forward pass.
+//! Uses `OpType::BatchNorm` which computes batch statistics at execution time.
+//! Running statistics are NOT maintained across batches — each forward pass
+//! computes fresh statistics from the current batch.
+//!
+//! This is acceptable for:
+//! - Training (always uses batch stats)
+//! - Inference with batch_size > 1 (uses batch stats)
+//! - WASM/neuroevolution (small batches)
+//!
+//! For inference with batch_size=1, falls back to affine transform (gamma*x+beta).
 
 use crate::{Tensor, Layer, NodeId};
 use crate::graph::dsl::GraphBuilder;
@@ -14,8 +22,7 @@ use serde::{Serialize, Deserialize};
 /// Batch Normalization: `y = gamma * (x - mean) / sqrt(var + eps) + beta`.
 ///
 /// - `gamma` (scale) and `beta` (shift) are learnable parameters.
-/// - Statistics are computed per-feature across the batch dimension.
-/// - Backward pass computes gradients for gamma, beta, and input correctly.
+/// - Statistics computed per-feature across the batch dimension.
 ///
 /// # Shape
 ///
@@ -44,10 +51,6 @@ impl Layer for BatchNorm {
     fn forward(&mut self, input: NodeId, graph: &mut GraphBuilder) -> NodeId {
         let gamma_node = graph.param(self.gamma.clone());
         let beta_node = graph.param(self.beta.clone());
-
-        // Use the dedicated BatchNorm op that handles normalization internally.
-        // The op takes 3 inputs: [input, gamma, beta] and the epsilon is
-        // stored in the OpType variant.
         graph.node(
             OpType::BatchNorm { epsilon: self.epsilon },
             vec![input, gamma_node, beta_node],

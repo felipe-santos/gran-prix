@@ -83,24 +83,32 @@ impl OpType {
             OpType::AddReLU => backend.add_relu(inputs[0], inputs[1]),
             OpType::BatchNorm { epsilon } => batchnorm_forward(inputs[0], inputs[1], inputs[2], *epsilon),
             OpType::Dropout { rate } => {
-                if !training || *rate <= 0.0 {
-                    return Ok(inputs[0].clone()); // Inference mode: identity
+                if !training || *rate <= 0.0 || *rate >= 1.0 {
+                    return Ok(inputs[0].clone()); // Inference or invalid rate: identity
                 }
-                // Training mode: apply inverted dropout mask
-                // mask[i] = 0 with probability `rate`, else 1/(1-rate)
+                // Training mode: inverted dropout
+                // mask[i] = 0 with probability `rate`, else scale by 1/(1-rate)
                 let x = inputs[0];
                 let slice = x.as_slice()?;
                 let scale = 1.0 / (1.0 - rate);
                 let mut out = Vec::with_capacity(slice.len());
-                // Deterministic xorshift64 RNG for reproducibility
-                let mut state: u64 = rng_seed.wrapping_add(0xDEADBEEFCAFEBABE);
-                if state == 0 { state = 1; }
+
+                // Deterministic xorshift64 RNG.
+                // Seed mixing: combine rng_seed with a large odd constant to ensure
+                // good initial state even for sequential seed values (0, 1, 2, ...).
+                let mut state: u64 = rng_seed
+                    .wrapping_mul(2862933555777941757)
+                    .wrapping_add(3037000493);
+                if state == 0 { state = 0xDEADBEEFCAFEBABE; }
+
                 for &val in slice {
-                    // xorshift64
+                    // xorshift64 step
                     state ^= state << 13;
                     state ^= state >> 7;
                     state ^= state << 17;
-                    let rand_val = (state as f32) / (u64::MAX as f32);
+                    // Convert to uniform [0, 1): extract upper 24 bits for full
+                    // mantissa precision in f32, then divide by 2^24.
+                    let rand_val = ((state >> 40) as f32) / ((1u64 << 24) as f32);
                     if rand_val < *rate {
                         out.push(0.0);
                     } else {
@@ -109,7 +117,7 @@ impl OpType {
                 }
                 Tensor::from_shape_vec(x.shape(), out)
             }
-            OpType::Custom(op) => op.forward(inputs, backend),
+            OpType::Custom(op) => op.forward(inputs, backend, training, rng_seed),
         }
     }
 
@@ -123,7 +131,7 @@ impl OpType {
             OpType::Tanh => elementwise_inplace(inputs[0], out, |x| x.tanh()),
             OpType::Sigmoid => elementwise_inplace(inputs[0], out, |x| 1.0 / (1.0 + (-x).exp())),
             OpType::AddReLU => { backend.relu_inplace(out)?; Ok(()) }
-            OpType::Custom(op) => op.forward_inplace(inputs, out, backend),
+            OpType::Custom(op) => op.forward_inplace(inputs, out, backend, training, rng_seed),
             _ => {
                 let res = self.forward(inputs, backend, training, rng_seed)?;
                 out.copy_from(&res)
@@ -133,7 +141,13 @@ impl OpType {
 
     // ── Backward Pass (Gradient) ───────────────────────────────────────────
 
-    pub fn backward(&self, inputs: &[&Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+    /// Computes gradients for each input given the gradient of the output.
+    ///
+    /// * `inputs` — cached forward-pass values at each input node.
+    /// * `output` — cached forward-pass output of THIS node (needed by Dropout
+    ///   to reconstruct the mask without storing extra state).
+    /// * `grad_output` — gradient flowing back from downstream.
+    pub fn backward(&self, inputs: &[&Tensor], output: Option<&Tensor>, grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
         match self {
             OpType::MatMul => {
                 let grad_a = backend.matmul_t(grad_output, inputs[1], false, true)?;
@@ -180,8 +194,31 @@ impl OpType {
                 ])
             }
             OpType::BatchNorm { epsilon } => batchnorm_backward(inputs[0], inputs[1], grad_output, *epsilon),
-            OpType::Dropout { .. } => Ok(vec![grad_output.clone()]),
-            OpType::Custom(op) => op.backward(inputs, grad_output, backend),
+            OpType::Dropout { rate } => {
+                if *rate <= 0.0 || *rate >= 1.0 {
+                    // No dropout applied → gradient passes through unchanged
+                    return Ok(vec![grad_output.clone()]);
+                }
+                // Reconstruct mask from the forward output:
+                // where output[i] == 0, the element was dropped → gradient is 0.
+                // where output[i] != 0, element was kept and scaled → gradient is scaled.
+                let scale = 1.0 / (1.0 - rate);
+                match output {
+                    Some(fwd_out) => {
+                        let out_slice = fwd_out.as_slice()?;
+                        let go_slice = grad_output.as_slice()?;
+                        let grad_data: Vec<f32> = out_slice.iter().zip(go_slice.iter())
+                            .map(|(&o, &g)| if o == 0.0 { 0.0 } else { g * scale })
+                            .collect();
+                        Ok(vec![Tensor::from_shape_vec(grad_output.shape(), grad_data)?])
+                    }
+                    None => {
+                        // No cached output → conservative: pass through (inference mode)
+                        Ok(vec![grad_output.clone()])
+                    }
+                }
+            }
+            OpType::Custom(op) => op.backward(inputs, output, grad_output, backend),
         }
     }
 
@@ -268,25 +305,38 @@ fn batchnorm_forward(x: &Tensor, gamma: &Tensor, beta: &Tensor, epsilon: f32) ->
     let g_slice = gamma.as_slice()?;
     let b_slice = beta.as_slice()?;
 
+    // Guard: batch_size=1 makes normalization degenerate (var=0).
+    // Pass through with just the affine transform: gamma * x + beta.
+    if batch <= 1 {
+        let mut out = vec![0.0f32; batch * features];
+        for i in 0..batch * features {
+            let f = i % features;
+            out[i] = g_slice[f] * x_slice[i] + b_slice[f];
+        }
+        return Tensor::from_shape_vec(shape, out);
+    }
+
+    let n = batch as f32;
     let mut out = vec![0.0f32; batch * features];
 
     for f in 0..features {
-        // Compute mean for feature f
+        // Mean per feature
         let mut mean = 0.0f32;
         for b_idx in 0..batch {
             mean += x_slice[b_idx * features + f];
         }
-        mean /= batch as f32;
+        mean /= n;
 
-        // Compute variance for feature f
+        // Variance per feature (biased estimator, matching PyTorch's default for training)
         let mut var = 0.0f32;
         for b_idx in 0..batch {
             let diff = x_slice[b_idx * features + f] - mean;
             var += diff * diff;
         }
-        var /= batch as f32;
+        var /= n;
 
-        // Normalize and apply affine transform
+        // Normalize: x_norm = (x - mean) / sqrt(var + eps)
+        // Apply affine: out = gamma * x_norm + beta
         let inv_std = 1.0 / (var + epsilon).sqrt();
         for b_idx in 0..batch {
             let idx = b_idx * features + f;
@@ -305,11 +355,30 @@ fn batchnorm_backward(x: &Tensor, gamma: &Tensor, grad_output: &Tensor, epsilon:
     let shape = x.shape();
     let batch = shape[0];
     let features = shape[1];
-    let n = batch as f32;
     let x_slice = x.as_slice()?;
     let g_slice = gamma.as_slice()?;
     let go_slice = grad_output.as_slice()?;
 
+    // Guard: batch_size=1 → forward was affine only (gamma * x + beta).
+    // Gradients: dx = gamma * dout, dgamma = x * dout, dbeta = dout.
+    if batch <= 1 {
+        let mut grad_x = vec![0.0f32; batch * features];
+        let mut grad_gamma = vec![0.0f32; features];
+        let mut grad_beta = vec![0.0f32; features];
+        for i in 0..batch * features {
+            let f = i % features;
+            grad_x[i] = g_slice[f] * go_slice[i];
+            grad_gamma[f] += x_slice[i] * go_slice[i];
+            grad_beta[f] += go_slice[i];
+        }
+        return Ok(vec![
+            Tensor::from_shape_vec(shape, grad_x)?,
+            Tensor::from_shape_vec(&[1, features], grad_gamma)?,
+            Tensor::from_shape_vec(&[1, features], grad_beta)?,
+        ]);
+    }
+
+    let n = batch as f32;
     let mut grad_x = vec![0.0f32; batch * features];
     let mut grad_gamma = vec![0.0f32; features];
     let mut grad_beta = vec![0.0f32; features];
@@ -472,15 +541,19 @@ pub(crate) fn resolve_grad(target_shape: &[usize], grad: &Tensor, backend: &dyn 
 /// Trait for user-defined graph operations.
 ///
 /// Implement this to add custom operations beyond the built-in [`OpType`] variants.
+///
+/// * `training` — whether the engine is in training mode (affects Dropout, etc.)
+/// * `rng_seed` — deterministic seed for stochastic operations.
+/// * `output` — cached output from forward pass (available during backward).
 #[typetag::serde(tag = "type")]
 pub trait Operation: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;
-    fn forward(&self, inputs: &[&Tensor], backend: &dyn Backend) -> GPResult<Tensor>;
-    fn backward(&self, inputs: &[&Tensor], grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>>;
+    fn forward(&self, inputs: &[&Tensor], backend: &dyn Backend, training: bool, rng_seed: u64) -> GPResult<Tensor>;
+    fn backward(&self, inputs: &[&Tensor], output: Option<&Tensor>, grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>>;
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>>;
 
-    fn forward_inplace(&self, inputs: &[&Tensor], out: &mut Tensor, backend: &dyn Backend) -> GPResult<()> {
-        let res = self.forward(inputs, backend)?;
+    fn forward_inplace(&self, inputs: &[&Tensor], out: &mut Tensor, backend: &dyn Backend, training: bool, rng_seed: u64) -> GPResult<()> {
+        let res = self.forward(inputs, backend, training, rng_seed)?;
         out.copy_from(&res)
     }
 

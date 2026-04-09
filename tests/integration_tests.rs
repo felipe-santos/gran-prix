@@ -532,7 +532,7 @@ fn test_numerical_gradient_check_softmax_ce() {
 fn test_multiclass_training_convergence() {
     // Train a 3-class classifier on a trivial pattern:
     // [1,0] → class 0, [0,1] → class 1, [1,1] → class 2
-    let net = NetworkDef::mlp(2, &[8], 3, ActivationType::Tanh, None);
+    let _net = NetworkDef::mlp(2, &[8], 3, ActivationType::Tanh, None);
 
     let backend = Box::new(CPUBackend);
     let mut graph = Graph::new(backend);

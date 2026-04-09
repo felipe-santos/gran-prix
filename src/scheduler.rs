@@ -53,7 +53,11 @@ pub struct StepLR {
 }
 
 impl StepLR {
+    /// # Panics
+    /// Panics if `step_size == 0` or `initial_lr <= 0.0`.
     pub fn new(initial_lr: f32, step_size: usize, gamma: f32) -> Self {
+        assert!(step_size > 0, "step_size must be > 0");
+        assert!(initial_lr > 0.0, "initial_lr must be > 0");
         Self { initial_lr, step_size, gamma, current_epoch: 0, lr: initial_lr }
     }
 }
@@ -79,7 +83,11 @@ pub struct ExponentialLR {
 }
 
 impl ExponentialLR {
+    /// # Panics
+    /// Panics if `initial_lr <= 0.0` or `gamma <= 0.0`.
     pub fn new(initial_lr: f32, gamma: f32) -> Self {
+        assert!(initial_lr > 0.0, "initial_lr must be > 0");
+        assert!(gamma > 0.0, "gamma must be > 0");
         Self { initial_lr, gamma, current_epoch: 0, lr: initial_lr }
     }
 }
@@ -106,7 +114,12 @@ pub struct CosineAnnealingLR {
 }
 
 impl CosineAnnealingLR {
+    /// # Panics
+    /// Panics if `t_max == 0`, `initial_lr <= 0.0`, or `min_lr < 0.0`.
     pub fn new(initial_lr: f32, t_max: usize, min_lr: f32) -> Self {
+        assert!(t_max > 0, "t_max must be > 0");
+        assert!(initial_lr > 0.0, "initial_lr must be > 0");
+        assert!(min_lr >= 0.0, "min_lr must be >= 0");
         Self { initial_lr, min_lr, t_max, current_epoch: 0, lr: initial_lr }
     }
 }

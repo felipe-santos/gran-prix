@@ -8,7 +8,7 @@ pub struct NodeId(pub usize);
 /// Represents the shape of a tensor.
 /// Wrapper around IxDyn to provide a more domain-specific API.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Shape(pub IxDyn);
+pub struct Shape(pub(crate) IxDyn);
 
 impl Shape {
     pub fn from_slice(dims: &[usize]) -> Self {

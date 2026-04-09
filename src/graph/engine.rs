@@ -318,7 +318,9 @@ impl ExecutionEngine {
                 })?);
             }
 
-            let input_grads = op.backward(&input_refs, &grad, backend)?;
+            // Pass the cached output of this node to backward (needed by Dropout)
+            let node_output = self.values[node_id.0].as_ref();
+            let input_grads = op.backward(&input_refs, node_output, &grad, backend)?;
             for (i, &input_id) in inputs.iter().enumerate() {
                 if let Some(existing) = &self.node_gradients[input_id.0] {
                     self.node_gradients[input_id.0] = Some(existing + &input_grads[i]);

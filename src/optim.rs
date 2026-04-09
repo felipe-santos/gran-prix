@@ -144,13 +144,35 @@ pub struct Adam {
 }
 
 impl Adam {
+    /// Creates an Adam optimizer with default betas (0.9, 0.999) and epsilon (1e-8).
+    ///
+    /// # Panics
+    /// Panics if `lr <= 0.0`.
     pub fn new(lr: f32) -> Self {
+        assert!(lr > 0.0, "learning rate must be > 0");
         Self {
             lr,
             beta1: 0.9,
             beta2: 0.999,
             epsilon: 1e-8,
             weight_decay: 0.0,
+            t: 0,
+            m: HashMap::new(),
+            v: HashMap::new(),
+        }
+    }
+
+    /// Creates an Adam optimizer with custom parameters.
+    ///
+    /// # Panics
+    /// Panics if betas are not in (0, 1) or lr/epsilon are not positive.
+    pub fn with_params(lr: f32, beta1: f32, beta2: f32, epsilon: f32, weight_decay: f32) -> Self {
+        assert!(lr > 0.0, "learning rate must be > 0");
+        assert!(beta1 > 0.0 && beta1 < 1.0, "beta1 must be in (0, 1), got {}", beta1);
+        assert!(beta2 > 0.0 && beta2 < 1.0, "beta2 must be in (0, 1), got {}", beta2);
+        assert!(epsilon > 0.0, "epsilon must be > 0");
+        Self {
+            lr, beta1, beta2, epsilon, weight_decay,
             t: 0,
             m: HashMap::new(),
             v: HashMap::new(),

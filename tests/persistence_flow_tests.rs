@@ -11,10 +11,10 @@ struct CustomAddOp;
 #[typetag::serde]
 impl Operation for CustomAddOp {
     fn name(&self) -> &str { "CustomAdd" }
-    fn forward(&self, inputs: &[&Tensor], _backend: &dyn gran_prix::backend::Backend) -> GPResult<Tensor> {
+    fn forward(&self, inputs: &[&Tensor], _backend: &dyn gran_prix::backend::Backend, _training: bool, _rng_seed: u64) -> GPResult<Tensor> {
         Ok(inputs[0] + inputs[1])
     }
-    fn backward(&self, _inputs: &[&Tensor], grad_output: &Tensor, _backend: &dyn gran_prix::backend::Backend) -> GPResult<Vec<Tensor>> {
+    fn backward(&self, _inputs: &[&Tensor], _output: Option<&Tensor>, grad_output: &Tensor, _backend: &dyn gran_prix::backend::Backend) -> GPResult<Vec<Tensor>> {
         Ok(vec![grad_output.clone(), grad_output.clone()])
     }
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>> {
