@@ -10,7 +10,7 @@ use gran_prix::graph::{Graph, dsl::GraphBuilder};
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::loss::{Loss, MSE, BCEWithLogits, CrossEntropyWithLogits};
 use gran_prix::optim::{Optimizer, SGD, Adam};
-use gran_prix::network_def::{NetworkDef, ActivationDef};
+use gran_prix::network_def::{NetworkDef, ActivationType};
 use gran_prix::Tensor;
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -288,7 +288,7 @@ fn test_adam_convergence_on_xor() {
 #[test]
 fn test_adam_loss_decreases_monotonically_early() {
     // Adam should decrease loss in the first 50 epochs on a simple problem
-    let net = NetworkDef::mlp(2, &[4], 1, ActivationDef::Tanh, None);
+    let net = NetworkDef::mlp(2, &[4], 1, ActivationType::Tanh, None);
     let compiled = net.compile(Box::new(CPUBackend)).unwrap();
     let mut graph = compiled.graph;
     let input_id = compiled.input_node;
@@ -329,7 +329,7 @@ fn test_adam_loss_decreases_monotonically_early() {
 #[test]
 fn test_network_def_save_load_roundtrip() {
     // 1. Define and compile
-    let net = NetworkDef::mlp(2, &[8, 4], 1, ActivationDef::ReLU, Some(ActivationDef::Sigmoid));
+    let net = NetworkDef::mlp(2, &[8, 4], 1, ActivationType::ReLU, Some(ActivationType::Sigmoid));
 
     let compiled = net.compile(Box::new(CPUBackend)).unwrap();
     let mut graph = compiled.graph;
@@ -364,7 +364,7 @@ fn test_network_def_save_load_roundtrip() {
 
 #[test]
 fn test_param_store_serialization_preserves_values() {
-    let net = NetworkDef::mlp(4, &[8], 2, ActivationDef::Tanh, None);
+    let net = NetworkDef::mlp(4, &[8], 2, ActivationType::Tanh, None);
     let compiled = net.compile(Box::new(CPUBackend)).unwrap();
 
     let params = compiled.graph.params();
@@ -391,7 +391,7 @@ fn test_param_store_serialization_preserves_values() {
 #[test]
 fn test_network_def_compile_train_infer() {
     // The "happy path": define → compile → train → infer
-    let net = NetworkDef::mlp(2, &[8], 1, ActivationDef::Tanh, None);
+    let net = NetworkDef::mlp(2, &[8], 1, ActivationType::Tanh, None);
     let compiled = net.compile(Box::new(CPUBackend)).unwrap();
     let mut graph = compiled.graph;
     let input_id = compiled.input_node;
@@ -532,7 +532,7 @@ fn test_numerical_gradient_check_softmax_ce() {
 fn test_multiclass_training_convergence() {
     // Train a 3-class classifier on a trivial pattern:
     // [1,0] → class 0, [0,1] → class 1, [1,1] → class 2
-    let net = NetworkDef::mlp(2, &[8], 3, ActivationDef::Tanh, None);
+    let net = NetworkDef::mlp(2, &[8], 3, ActivationType::Tanh, None);
 
     let backend = Box::new(CPUBackend);
     let mut graph = Graph::new(backend);
