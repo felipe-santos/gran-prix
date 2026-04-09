@@ -38,21 +38,40 @@ pub struct ExecutionEngine {
     values: Vec<Option<Tensor>>,
     /// Per-node gradient accumulator for the backward pass.
     node_gradients: Vec<Option<Tensor>>,
+    /// Whether the engine is in training mode (affects Dropout, BatchNorm, etc.).
+    training: bool,
+    /// RNG seed counter for deterministic dropout masks.
+    rng_counter: u64,
 }
 
 impl ExecutionEngine {
     /// Creates a new execution engine with the given backend.
+    /// Defaults to inference mode (training = false).
     pub fn new(backend: Box<dyn Backend>) -> Self {
         Self {
             backend,
             values: Vec::new(),
             node_gradients: Vec::new(),
+            training: false,
+            rng_counter: 0,
         }
     }
 
     /// Returns a reference to the backend.
     pub fn backend(&self) -> &dyn Backend {
         self.backend.as_ref()
+    }
+
+    /// Sets training mode. When true, Dropout applies random masking
+    /// and BatchNorm uses batch statistics. When false (default), both
+    /// are identity/use running stats.
+    pub fn set_training(&mut self, training: bool) {
+        self.training = training;
+    }
+
+    /// Returns whether the engine is in training mode.
+    pub fn is_training(&self) -> bool {
+        self.training
     }
 
     /// Returns the cached values from the last forward pass.
@@ -173,10 +192,14 @@ impl ExecutionEngine {
                         })?);
                     }
 
+                    // Advance RNG seed per-node for unique Dropout masks
+                    let seed = self.rng_counter;
+                    self.rng_counter = self.rng_counter.wrapping_add(1);
+
                     if let Some(out) = out_opt {
-                        op.forward_inplace(&input_refs, out, backend)?;
+                        op.forward_inplace(&input_refs, out, backend, self.training, seed)?;
                     } else {
-                        let val = op.forward(&input_refs, backend)?;
+                        let val = op.forward(&input_refs, backend, self.training, seed)?;
                         *out_opt = Some(val);
                     }
                 }
@@ -233,10 +256,13 @@ impl ExecutionEngine {
                     })?);
                 }
 
+                let seed = self.rng_counter;
+                self.rng_counter = self.rng_counter.wrapping_add(1);
+
                 if let Some(out) = out_opt {
-                    op.forward_inplace(&input_refs, out, backend)?;
+                    op.forward_inplace(&input_refs, out, backend, self.training, seed)?;
                 } else {
-                    let val = op.forward(&input_refs, backend)?;
+                    let val = op.forward(&input_refs, backend, self.training, seed)?;
                     *out_opt = Some(val);
                 }
             }

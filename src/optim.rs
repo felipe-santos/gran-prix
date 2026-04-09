@@ -29,6 +29,12 @@ pub trait Optimizer {
     fn step_graph(&mut self, graph: &mut Graph) -> GPResult<()> {
         self.step(graph.params_mut())
     }
+
+    /// Sets the learning rate. Used by LR schedulers.
+    fn set_lr(&mut self, lr: f32);
+
+    /// Returns the current learning rate.
+    fn get_lr(&self) -> f32;
 }
 
 /// Stochastic Gradient Descent with optional momentum and weight decay.
@@ -117,6 +123,9 @@ impl Optimizer for SGD {
         }
         Ok(())
     }
+
+    fn set_lr(&mut self, lr: f32) { self.lr = lr; }
+    fn get_lr(&self) -> f32 { self.lr }
 }
 
 /// Adam optimizer (Adaptive Moment Estimation).
@@ -200,4 +209,7 @@ impl Optimizer for Adam {
         }
         Ok(())
     }
+
+    fn set_lr(&mut self, lr: f32) { self.lr = lr; }
+    fn get_lr(&self) -> f32 { self.lr }
 }

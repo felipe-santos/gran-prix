@@ -23,7 +23,10 @@
 
 use serde::{Serialize, Deserialize};
 use crate::{GPError, GPResult, Tensor};
-use crate::layers::{Linear, Activation, ActivationType, RNNCell, GRUCell};
+use crate::layers::{Linear, Activation, RNNCell, GRUCell, BatchNorm};
+
+// Re-export ActivationType as the canonical activation enum for this module.
+pub use crate::layers::ActivationType;
 use crate::graph::{Graph, dsl::GraphBuilder};
 use crate::backend::Backend;
 use crate::Layer;
@@ -45,7 +48,7 @@ pub enum LayerDef {
     /// Activation function applied element-wise.
     Activation {
         #[serde(rename = "function")]
-        function: ActivationDef,
+        function: ActivationType,
     },
     /// Simple recurrent cell: `h_t = tanh(W_ih * x + W_hh * h_{t-1} + b)`
     Rnn {
@@ -57,27 +60,14 @@ pub enum LayerDef {
         input_size: usize,
         hidden_size: usize,
     },
-}
-
-/// Supported activation functions.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum ActivationDef {
-    ReLU,
-    Sigmoid,
-    Tanh,
-    Softmax,
-}
-
-impl From<ActivationDef> for ActivationType {
-    fn from(def: ActivationDef) -> Self {
-        match def {
-            ActivationDef::ReLU => ActivationType::ReLU,
-            ActivationDef::Sigmoid => ActivationType::Sigmoid,
-            ActivationDef::Tanh => ActivationType::Tanh,
-            ActivationDef::Softmax => ActivationType::Softmax,
-        }
-    }
+    /// Dropout: zeroes random elements during training (identity during inference).
+    Dropout {
+        rate: f32,
+    },
+    /// Batch Normalization: learnable affine transform per feature.
+    BatchNorm {
+        num_features: usize,
+    },
 }
 
 impl LayerDef {
@@ -87,7 +77,7 @@ impl LayerDef {
     pub fn output_dim(&self, input_dim: usize) -> usize {
         match self {
             LayerDef::Linear { out_features, .. } => *out_features,
-            LayerDef::Activation { .. } => input_dim,
+            LayerDef::Activation { .. } | LayerDef::Dropout { .. } | LayerDef::BatchNorm { .. } => input_dim,
             LayerDef::Rnn { hidden_size, .. } => *hidden_size,
             LayerDef::Gru { hidden_size, .. } => *hidden_size,
         }
@@ -99,7 +89,7 @@ impl LayerDef {
             LayerDef::Linear { in_features, .. } => Some(*in_features),
             LayerDef::Rnn { input_size, .. } => Some(*input_size),
             LayerDef::Gru { input_size, .. } => Some(*input_size),
-            LayerDef::Activation { .. } => None, // accepts any input size
+            LayerDef::Activation { .. } | LayerDef::Dropout { .. } | LayerDef::BatchNorm { .. } => None,
         }
     }
 }
@@ -114,13 +104,13 @@ impl LayerDef {
 /// # Example
 ///
 /// ```rust
-/// use gran_prix::network_def::{NetworkDef, LayerDef, ActivationDef};
+/// use gran_prix::network_def::{NetworkDef, LayerDef, ActivationType};
 ///
 /// let net = NetworkDef::new(2, vec![
 ///     LayerDef::Linear { in_features: 2, out_features: 8 },
-///     LayerDef::Activation { function: ActivationDef::ReLU },
+///     LayerDef::Activation { function: ActivationType::ReLU },
 ///     LayerDef::Linear { in_features: 8, out_features: 1 },
-///     LayerDef::Activation { function: ActivationDef::Sigmoid },
+///     LayerDef::Activation { function: ActivationType::Sigmoid },
 /// ]);
 ///
 /// assert!(net.validate().is_ok());
@@ -225,7 +215,7 @@ impl NetworkDef {
                     last_node = linear.forward(last_node, &mut gb);
                 }
                 LayerDef::Activation { function } => {
-                    let mut act = Activation::new(function.clone().into());
+                    let mut act = Activation::new(function.clone());
                     last_node = act.forward(last_node, &mut gb);
                 }
                 LayerDef::Rnn { input_size, hidden_size } => {
@@ -237,6 +227,13 @@ impl NetworkDef {
                     let mut gru = GRUCell::new(*input_size, *hidden_size);
                     last_node = gru.forward(last_node, &mut gb);
                     stateful_layers.push(Box::new(gru));
+                }
+                LayerDef::Dropout { rate } => {
+                    last_node = gb.dropout(last_node, *rate);
+                }
+                LayerDef::BatchNorm { num_features } => {
+                    let mut bn = BatchNorm::new(*num_features);
+                    last_node = bn.forward(last_node, &mut gb);
                 }
             }
         }
@@ -316,9 +313,9 @@ impl NetworkDef {
     /// # Example
     ///
     /// ```rust
-    /// use gran_prix::network_def::{NetworkDef, ActivationDef};
+    /// use gran_prix::network_def::{NetworkDef, ActivationType};
     ///
-    /// let net = NetworkDef::mlp(2, &[8, 4], 1, ActivationDef::ReLU, Some(ActivationDef::Sigmoid));
+    /// let net = NetworkDef::mlp(2, &[8, 4], 1, ActivationType::ReLU, Some(ActivationType::Sigmoid));
     /// assert_eq!(net.output_dim(), 1);
     /// assert_eq!(net.layer_count(), 6); // 2×(Linear+Act) + Linear + Act = 6
     /// ```
@@ -326,8 +323,8 @@ impl NetworkDef {
         input_dim: usize,
         hidden_sizes: &[usize],
         output_dim: usize,
-        hidden_activation: ActivationDef,
-        output_activation: Option<ActivationDef>,
+        hidden_activation: ActivationType,
+        output_activation: Option<ActivationType>,
     ) -> Self {
         let mut layers = Vec::new();
         let mut current = input_dim;
@@ -358,8 +355,8 @@ mod tests {
     fn test_mlp_builder() {
         let net = NetworkDef::mlp(
             4, &[8, 4], 2,
-            ActivationDef::ReLU,
-            Some(ActivationDef::Sigmoid),
+            ActivationType::ReLU,
+            Some(ActivationType::Sigmoid),
         );
         assert_eq!(net.input_dim, 4);
         assert_eq!(net.output_dim(), 2);
@@ -397,7 +394,7 @@ mod tests {
     fn test_validate_correct_chain() {
         let net = NetworkDef::new(4, vec![
             LayerDef::Linear { in_features: 4, out_features: 8 },
-            LayerDef::Activation { function: ActivationDef::ReLU },
+            LayerDef::Activation { function: ActivationType::ReLU },
             LayerDef::Linear { in_features: 8, out_features: 2 },
         ]);
         assert!(net.validate().is_ok());
@@ -417,7 +414,7 @@ mod tests {
     fn test_validate_gru_chain() {
         let net = NetworkDef::new(4, vec![
             LayerDef::Gru { input_size: 4, hidden_size: 16 },
-            LayerDef::Activation { function: ActivationDef::Tanh },
+            LayerDef::Activation { function: ActivationType::Tanh },
             LayerDef::Linear { in_features: 16, out_features: 2 },
         ]);
         assert!(net.validate().is_ok());
@@ -428,8 +425,8 @@ mod tests {
     fn test_json_roundtrip() {
         let net = NetworkDef::mlp(
             2, &[8], 1,
-            ActivationDef::Tanh,
-            Some(ActivationDef::Sigmoid),
+            ActivationType::Tanh,
+            Some(ActivationType::Sigmoid),
         );
         let json = net.to_json().unwrap();
         let restored = NetworkDef::from_json(&json).unwrap();
@@ -442,8 +439,8 @@ mod tests {
     fn test_compile_mlp() {
         let net = NetworkDef::mlp(
             2, &[4], 1,
-            ActivationDef::ReLU,
-            Some(ActivationDef::Sigmoid),
+            ActivationType::ReLU,
+            Some(ActivationType::Sigmoid),
         );
         let compiled = net.compile(Box::new(CPUBackend)).unwrap();
 
@@ -516,7 +513,7 @@ mod tests {
             8
         );
         assert_eq!(
-            LayerDef::Activation { function: ActivationDef::ReLU }.output_dim(8),
+            LayerDef::Activation { function: ActivationType::ReLU }.output_dim(8),
             8
         );
         assert_eq!(

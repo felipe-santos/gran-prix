@@ -56,6 +56,10 @@ impl<'a> GraphBuilder<'a> {
         self.graph.op(OpType::Softmax, vec![input])
     }
 
+    pub fn dropout(&mut self, input: NodeId, rate: f32) -> NodeId {
+        self.graph.op(OpType::Dropout { rate }, vec![input])
+    }
+
     pub fn conv2d(&mut self, input: NodeId, weight: NodeId, stride: usize, padding: usize) -> NodeId {
         self.graph.op(OpType::Conv2D { stride, padding }, vec![input, weight])
     }

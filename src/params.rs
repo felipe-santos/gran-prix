@@ -223,31 +223,19 @@ impl ParamStore {
             .collect()
     }
 
-    /// Provides simultaneous mutable access to a parameter tensor and
-    /// immutable access to its gradient, without unsafe code.
+    /// Returns the parameter tensor mutably and a **clone** of its gradient.
+    ///
+    /// The gradient is cloned to avoid the need for simultaneous mutable+immutable
+    /// borrows on different struct fields. For typical ML workloads (hundreds of
+    /// params, not millions of optimizer steps), this cost is negligible.
     ///
     /// Returns `None` if the parameter has no gradient.
-    pub fn param_and_grad(&mut self, id: ParamId) -> Option<(&mut Tensor, &Tensor)> {
-        if id.0 >= self.tensors.len() {
+    pub fn param_and_grad(&mut self, id: ParamId) -> Option<(&mut Tensor, Tensor)> {
+        if id.0 >= self.tensors.len() || self.gradients[id.0].is_none() {
             return None;
         }
-        // Clone the gradient to release the immutable borrow, then borrow tensor mutably.
-        // This is safe and avoids raw pointers at the cost of one gradient clone per step.
-        // For typical ML workloads (hundreds of params, not millions of optimizer steps),
-        // this is negligible.
-        let has_grad = self.gradients[id.0].is_some();
-        if !has_grad {
-            return None;
-        }
-        // Use raw pointer to split borrow between self.tensors and self.gradients.
-        //
-        // SAFETY: `self.tensors` and `self.gradients` are distinct Vec fields.
-        // We borrow `self.tensors[id.0]` mutably and `self.gradients[id.0]` immutably.
-        // No aliasing is possible because they are separate allocations.
-        // We access each index exactly once and do not resize either Vec.
-        let tensor = unsafe { &mut *(&mut self.tensors[id.0] as *mut Tensor) };
-        let grad = self.gradients[id.0].as_ref().unwrap();
-        Some((tensor, grad))
+        let grad_clone = self.gradients[id.0].as_ref().unwrap().clone();
+        Some((&mut self.tensors[id.0], grad_clone))
     }
 
     // ── Serialization (Flat Vector) ────────────────────────────────────────

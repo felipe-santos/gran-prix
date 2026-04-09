@@ -91,6 +91,20 @@ impl Graph {
         self.engine = Some(ExecutionEngine::new(backend));
     }
 
+    // ── Training Mode ───────────────────────────────────────────────────────
+
+    /// Sets training mode. Affects Dropout (masking vs identity) and BatchNorm.
+    pub fn set_training(&mut self, training: bool) {
+        if let Some(e) = &mut self.engine {
+            e.set_training(training);
+        }
+    }
+
+    /// Returns whether the graph is in training mode.
+    pub fn is_training(&self) -> bool {
+        self.engine.as_ref().map_or(false, |e| e.is_training())
+    }
+
     // ── Component Access ───────────────────────────────────────────────────
 
     /// Returns a reference to the graph topology.
@@ -245,7 +259,7 @@ impl Graph {
         let ids = self.param_store.trainable_param_ids();
         for id in ids {
             if let Some((tensor, grad)) = self.param_store.param_and_grad(id) {
-                backend.update_parameter(tensor, grad, learning_rate)?;
+                backend.update_parameter(tensor, &grad, learning_rate)?;
             }
         }
         Ok(())

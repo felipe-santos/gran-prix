@@ -2,7 +2,8 @@ use crate::{Layer, NodeId};
 use crate::graph::dsl::GraphBuilder;
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum ActivationType {
     ReLU,
     Sigmoid,

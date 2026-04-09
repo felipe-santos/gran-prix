@@ -29,6 +29,11 @@ pub enum OpType {
     Reshape { target_shape: Vec<usize> },
     /// Fused Add + ReLU for reduced memory bandwidth.
     AddReLU,
+    /// Dropout: identity during inference, random zeroing during training.
+    Dropout { rate: f32 },
+    /// Batch Normalization: normalizes per-feature, then applies gamma*x_norm+beta.
+    /// Takes 3 inputs: [input, gamma, beta]. Epsilon stored in variant.
+    BatchNorm { epsilon: f32 },
     /// User-defined operation via the [`Operation`] trait.
     Custom(Box<dyn Operation>),
 }
@@ -47,13 +52,20 @@ impl OpType {
             OpType::Softmax => "Softmax",
             OpType::Reshape { .. } => "Reshape",
             OpType::AddReLU => "AddReLU",
+            OpType::Dropout { .. } => "Dropout",
+            OpType::BatchNorm { .. } => "BatchNorm",
             OpType::Custom(op) => op.name(),
         }
     }
 
     // ── Forward Pass ───────────────────────────────────────────────────────
 
-    pub fn forward(&self, inputs: &[&Tensor], backend: &dyn Backend) -> GPResult<Tensor> {
+    /// Executes the forward pass.
+    ///
+    /// * `training` — when true, Dropout applies random masking (scaled by 1/(1-p)).
+    ///   When false, Dropout is identity.
+    /// * `rng_seed` — deterministic seed for Dropout mask generation.
+    pub fn forward(&self, inputs: &[&Tensor], backend: &dyn Backend, training: bool, rng_seed: u64) -> GPResult<Tensor> {
         match self {
             OpType::MatMul => backend.matmul_t(inputs[0], inputs[1], false, false),
             OpType::Conv2D { stride, padding } => backend.conv2d(inputs[0], inputs[1], *stride, *padding),
@@ -69,12 +81,40 @@ impl OpType {
                 Ok(t.into_shape(target_shape.as_slice())?.into_dyn())
             }
             OpType::AddReLU => backend.add_relu(inputs[0], inputs[1]),
+            OpType::BatchNorm { epsilon } => batchnorm_forward(inputs[0], inputs[1], inputs[2], *epsilon),
+            OpType::Dropout { rate } => {
+                if !training || *rate <= 0.0 {
+                    return Ok(inputs[0].clone()); // Inference mode: identity
+                }
+                // Training mode: apply inverted dropout mask
+                // mask[i] = 0 with probability `rate`, else 1/(1-rate)
+                let x = inputs[0];
+                let slice = x.as_slice()?;
+                let scale = 1.0 / (1.0 - rate);
+                let mut out = Vec::with_capacity(slice.len());
+                // Deterministic xorshift64 RNG for reproducibility
+                let mut state: u64 = rng_seed.wrapping_add(0xDEADBEEFCAFEBABE);
+                if state == 0 { state = 1; }
+                for &val in slice {
+                    // xorshift64
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    let rand_val = (state as f32) / (u64::MAX as f32);
+                    if rand_val < *rate {
+                        out.push(0.0);
+                    } else {
+                        out.push(val * scale);
+                    }
+                }
+                Tensor::from_shape_vec(x.shape(), out)
+            }
             OpType::Custom(op) => op.forward(inputs, backend),
         }
     }
 
     /// In-place forward pass. Falls back to allocating version for complex ops.
-    pub fn forward_inplace(&self, inputs: &[&Tensor], out: &mut Tensor, backend: &dyn Backend) -> GPResult<()> {
+    pub fn forward_inplace(&self, inputs: &[&Tensor], out: &mut Tensor, backend: &dyn Backend, training: bool, rng_seed: u64) -> GPResult<()> {
         match self {
             OpType::MatMul => backend.matmul_into(inputs[0], inputs[1], false, false, out),
             OpType::Add => backend.add_into(inputs[0], inputs[1], out),
@@ -85,7 +125,7 @@ impl OpType {
             OpType::AddReLU => { backend.relu_inplace(out)?; Ok(()) }
             OpType::Custom(op) => op.forward_inplace(inputs, out, backend),
             _ => {
-                let res = self.forward(inputs, backend)?;
+                let res = self.forward(inputs, backend, training, rng_seed)?;
                 out.copy_from(&res)
             }
         }
@@ -139,6 +179,8 @@ impl OpType {
                     resolve_grad(inputs[1].shape(), &relu_grad, backend)?,
                 ])
             }
+            OpType::BatchNorm { epsilon } => batchnorm_backward(inputs[0], inputs[1], grad_output, *epsilon),
+            OpType::Dropout { .. } => Ok(vec![grad_output.clone()]),
             OpType::Custom(op) => op.backward(inputs, grad_output, backend),
         }
     }
@@ -180,7 +222,8 @@ impl OpType {
                 }
                 Ok(input_shapes[0].clone())
             }
-            OpType::ReLU | OpType::Sigmoid | OpType::Tanh | OpType::Softmax => {
+            OpType::ReLU | OpType::Sigmoid | OpType::Tanh | OpType::Softmax
+            | OpType::Dropout { .. } | OpType::BatchNorm { .. } => {
                 Ok(input_shapes[0].clone())
             }
             OpType::Reshape { target_shape } => Ok(target_shape.clone()),
@@ -209,6 +252,113 @@ fn elementwise_inplace(input: &Tensor, out: &mut Tensor, f: fn(f32) -> f32) -> G
         out_slice[i] = f(in_slice[i]);
     }
     Ok(())
+}
+
+// ── BatchNorm ──────────────────────────────────────────────────────────────
+
+/// BatchNorm forward: `y = gamma * (x - mean) / sqrt(var + eps) + beta`.
+///
+/// Input x: [batch, features], gamma: [1, features], beta: [1, features].
+/// Statistics computed per-feature across the batch dimension.
+fn batchnorm_forward(x: &Tensor, gamma: &Tensor, beta: &Tensor, epsilon: f32) -> GPResult<Tensor> {
+    let shape = x.shape();
+    let batch = shape[0];
+    let features = shape[1];
+    let x_slice = x.as_slice()?;
+    let g_slice = gamma.as_slice()?;
+    let b_slice = beta.as_slice()?;
+
+    let mut out = vec![0.0f32; batch * features];
+
+    for f in 0..features {
+        // Compute mean for feature f
+        let mut mean = 0.0f32;
+        for b_idx in 0..batch {
+            mean += x_slice[b_idx * features + f];
+        }
+        mean /= batch as f32;
+
+        // Compute variance for feature f
+        let mut var = 0.0f32;
+        for b_idx in 0..batch {
+            let diff = x_slice[b_idx * features + f] - mean;
+            var += diff * diff;
+        }
+        var /= batch as f32;
+
+        // Normalize and apply affine transform
+        let inv_std = 1.0 / (var + epsilon).sqrt();
+        for b_idx in 0..batch {
+            let idx = b_idx * features + f;
+            let x_norm = (x_slice[idx] - mean) * inv_std;
+            out[idx] = g_slice[f] * x_norm + b_slice[f];
+        }
+    }
+
+    Tensor::from_shape_vec(shape, out)
+}
+
+/// BatchNorm backward: computes gradients for x, gamma, and beta.
+///
+/// Returns [grad_x, grad_gamma, grad_beta].
+fn batchnorm_backward(x: &Tensor, gamma: &Tensor, grad_output: &Tensor, epsilon: f32) -> GPResult<Vec<Tensor>> {
+    let shape = x.shape();
+    let batch = shape[0];
+    let features = shape[1];
+    let n = batch as f32;
+    let x_slice = x.as_slice()?;
+    let g_slice = gamma.as_slice()?;
+    let go_slice = grad_output.as_slice()?;
+
+    let mut grad_x = vec![0.0f32; batch * features];
+    let mut grad_gamma = vec![0.0f32; features];
+    let mut grad_beta = vec![0.0f32; features];
+
+    for f in 0..features {
+        // Recompute mean and variance
+        let mut mean = 0.0f32;
+        for b_idx in 0..batch { mean += x_slice[b_idx * features + f]; }
+        mean /= n;
+
+        let mut var = 0.0f32;
+        for b_idx in 0..batch {
+            let diff = x_slice[b_idx * features + f] - mean;
+            var += diff * diff;
+        }
+        var /= n;
+        let inv_std = 1.0 / (var + epsilon).sqrt();
+
+        // Compute x_norm and accumulate grad_gamma, grad_beta
+        let mut x_norm_vals = vec![0.0f32; batch];
+        for b_idx in 0..batch {
+            let idx = b_idx * features + f;
+            x_norm_vals[b_idx] = (x_slice[idx] - mean) * inv_std;
+            grad_gamma[f] += go_slice[idx] * x_norm_vals[b_idx];
+            grad_beta[f] += go_slice[idx];
+        }
+
+        // Compute grad_x using the full BatchNorm backward formula:
+        // dx = (1/N) * gamma * inv_std * (N * dy - sum(dy) - x_norm * sum(dy * x_norm))
+        let mut sum_go = 0.0f32;
+        let mut sum_go_xn = 0.0f32;
+        for b_idx in 0..batch {
+            let idx = b_idx * features + f;
+            sum_go += go_slice[idx];
+            sum_go_xn += go_slice[idx] * x_norm_vals[b_idx];
+        }
+
+        for b_idx in 0..batch {
+            let idx = b_idx * features + f;
+            grad_x[idx] = g_slice[f] * inv_std / n
+                * (n * go_slice[idx] - sum_go - x_norm_vals[b_idx] * sum_go_xn);
+        }
+    }
+
+    Ok(vec![
+        Tensor::from_shape_vec(shape, grad_x)?,
+        Tensor::from_shape_vec(&[1, features], grad_gamma)?,
+        Tensor::from_shape_vec(&[1, features], grad_beta)?,
+    ])
 }
 
 /// Numerically stable row-wise softmax forward.

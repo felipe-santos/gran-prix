@@ -29,7 +29,8 @@ use serde::Serialize;
 use gran_prix::{Tensor, GPError, Layer};
 use gran_prix::graph::Graph;
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::network_def::{NetworkDef, ActivationDef};
+use gran_prix::network_def::NetworkDef;
+use gran_prix::layers::ActivationType;
 
 use crate::mutation::{MutationStrategy, XorShift};
 use crate::errors::IntoJsResult;
@@ -128,8 +129,8 @@ impl NeuralBrain {
             num_inputs,
             &hidden_layers,
             num_outputs,
-            ActivationDef::ReLU,
-            Some(ActivationDef::Sigmoid),
+            ActivationType::ReLU,
+            Some(ActivationType::Sigmoid),
         );
 
         // 2. Compile to live graph

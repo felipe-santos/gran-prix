@@ -9,7 +9,8 @@ use gran_prix::{Tensor, GPError, NodeId};
 use gran_prix::graph::Graph;
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::loss::Loss;
-use gran_prix::network_def::{NetworkDef, LayerDef, ActivationDef};
+use gran_prix::network_def::{NetworkDef, LayerDef};
+use gran_prix::layers::ActivationType;
 
 #[wasm_bindgen]
 pub struct Trainer {
@@ -37,7 +38,7 @@ impl Trainer {
             input_dim,
             &hidden_layers,
             1, // single output for binary classification
-            ActivationDef::Tanh,
+            ActivationType::Tanh,
             None, // no output activation (logits — BCE with logits applies sigmoid)
         );
 
@@ -326,10 +327,10 @@ fn convert_legacy_architecture(json: &str) -> Result<NetworkDef, JsValue> {
             "activation" => {
                 let act_str = layer.params.activation_type.as_deref().unwrap_or("relu");
                 let function = match act_str {
-                    "relu" => ActivationDef::ReLU,
-                    "sigmoid" => ActivationDef::Sigmoid,
-                    "tanh" => ActivationDef::Tanh,
-                    "softmax" => ActivationDef::Softmax,
+                    "relu" => ActivationType::ReLU,
+                    "sigmoid" => ActivationType::Sigmoid,
+                    "tanh" => ActivationType::Tanh,
+                    "softmax" => ActivationType::Softmax,
                     _ => return Err(JsValue::from_str(&format!("Unknown activation: {}", act_str))),
                 };
                 layer_defs.push(LayerDef::Activation { function });
