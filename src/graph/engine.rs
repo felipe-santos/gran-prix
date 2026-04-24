@@ -110,12 +110,16 @@ impl ExecutionEngine {
         Ok(())
     }
 
-    /// Copies per-node gradients for parameter nodes into the [`ParamStore`].
+    /// Accumulates per-node gradients for parameter nodes into the [`ParamStore`].
+    ///
+    /// Uses `accumulate_gradient` (not `set_gradient`) so that multiple backward
+    /// calls within a batch correctly sum their gradients.
     fn sync_param_gradients(&mut self, arch: &Architecture, params: &mut ParamStore) {
         for (node_idx, node) in arch.nodes().iter().enumerate() {
             if let Node::Param(param_id) = node {
                 if let Some(grad) = self.node_gradients[node_idx].take() {
-                    params.set_gradient(*param_id, grad);
+                    // Accumulate, not replace — critical for multi-sample batches
+                    let _ = params.accumulate_gradient(*param_id, grad);
                 }
             }
         }

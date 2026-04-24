@@ -9,15 +9,19 @@ pub struct Linear {
 }
 
 impl Linear {
+    /// Creates a new Linear layer with Xavier-uniform initialization.
+    ///
+    /// Weights are initialized from `Uniform(-limit, limit)` where
+    /// `limit = sqrt(6 / (input_dim + output_dim))` (Glorot/Xavier).
+    /// This prevents activation saturation in Tanh/Sigmoid networks.
     pub fn new(input_dim: usize, output_dim: usize) -> Self {
-        // Use standard initialization (He or Xavier would be better, but standard normal for now)
-        let weights = Tensor::new_random(&[input_dim, output_dim]);
+        let mut weights = Tensor::new_random(&[input_dim, output_dim]);
+        // Apply Xavier scaling: Uniform(-1,1) * sqrt(6/(in+out))
+        let scale = (6.0 / (input_dim as f32 + output_dim as f32)).sqrt();
+        weights.scale_inplace(scale).unwrap();
         let biases = Tensor::new_zeros(&[1, output_dim]);
 
-        Self {
-            weights,
-            biases,
-        }
+        Self { weights, biases }
     }
 }
 

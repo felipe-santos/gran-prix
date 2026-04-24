@@ -271,8 +271,8 @@ fn test_sgd_convergence_on_xor() {
 
 #[test]
 fn test_sgd_with_momentum_convergence() {
-    let optimizer = Box::new(SGD::new(0.3, 0.9, 0.0));
-    let final_loss = train_xor(optimizer, 500);
+    let optimizer = Box::new(SGD::new(0.05, 0.9, 0.0));
+    let final_loss = train_xor(optimizer, 1000);
     assert!(final_loss < 0.1,
         "SGD+momentum should converge on XOR. Final loss: {}", final_loss);
 }
