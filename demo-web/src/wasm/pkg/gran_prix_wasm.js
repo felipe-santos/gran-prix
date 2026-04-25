@@ -200,6 +200,9 @@ export class NeuralBrain {
         NeuralBrainFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
+    /**
+     * Alias for `reset_memory()`. Maintained for backward compatibility.
+     */
     reset() {
         wasm.neuralbrain_reset(this.__wbg_ptr);
     }
@@ -231,33 +234,6 @@ export class NeuralBrain {
      */
     set_kernel(k1, k2, k3) {
         wasm.neuralbrain_set_kernel(this.__wbg_ptr, k1, k2, k3);
-    }
-    /**
-     * Simple training step (placeholder for reinforcement learning)
-     *
-     * # Arguments
-     *
-     * * `_sensors` - Input sensor data (unused currently)
-     * * `_target` - Target value (unused currently)
-     *
-     * # Returns
-     *
-     * Always `Ok(())` (no-op implementation)
-     *
-     * # Design Note
-     *
-     * This is a placeholder for future RL integration. Current evolution
-     * doesn't use gradient-based learning.
-     * @param {Float32Array} _sensors
-     * @param {number} _target
-     */
-    train(_sensors, _target) {
-        const ptr0 = passArrayF32ToWasm0(_sensors, wasm.__wbindgen_malloc_command_export);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.neuralbrain_train(this.__wbg_ptr, ptr0, len0, _target);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
-        }
     }
 }
 if (Symbol.dispose) NeuralBrain.prototype[Symbol.dispose] = NeuralBrain.prototype.free;
@@ -480,7 +456,11 @@ export class Trainer {
         wasm.__wbg_trainer_free(ptr, 0);
     }
     /**
-     * Create trainer from JSON architecture built in Network Builder
+     * Backward-compatible: parses the old `WasmArchitecture` JSON format
+     * by converting it to a [`NetworkDef`] internally.
+     *
+     * Supported layer types: Input, Linear, Activation (relu/sigmoid/tanh),
+     * Rnn, Gru, Output, Dropout (passthrough), Batchnorm (passthrough).
      * @param {string} json
      * @returns {Trainer}
      */
@@ -488,6 +468,34 @@ export class Trainer {
         const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.trainer_fromArchitecture(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return Trainer.__wrap(ret[0]);
+    }
+    /**
+     * Creates a trainer from a [`NetworkDef`] JSON string.
+     *
+     * This replaces the old `WasmArchitecture` format. The JSON schema
+     * is defined by the core `NetworkDef` type:
+     *
+     * ```json
+     * {
+     *   "input_dim": 2,
+     *   "layers": [
+     *     { "type": "linear", "in_features": 2, "out_features": 8 },
+     *     { "type": "activation", "function": "relu" },
+     *     { "type": "linear", "in_features": 8, "out_features": 1 }
+     *   ]
+     * }
+     * ```
+     * @param {string} json
+     * @returns {Trainer}
+     */
+    static fromNetworkDef(json) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_fromNetworkDef(ptr0, len0);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -508,8 +516,6 @@ export class Trainer {
         return v1;
     }
     /**
-     * Diagnostic: Returns the sum of absolute gradients for each parameter node.
-     * Used to verify that backprop is reaching all layers.
      * @returns {Float32Array}
      */
     get_gradient_norms() {
@@ -545,6 +551,9 @@ export class Trainer {
         }
     }
     /**
+     * Creates a trainer with a simple MLP: Input → (Linear+Tanh)×N → Linear(1).
+     *
+     * This is the constructor used by the Playground for binary classification.
      * @param {number} input_dim
      * @param {Uint32Array} hidden_layers
      */

@@ -145,6 +145,9 @@ export class NeuralBrain {
      * w[i] = sign * 0.1 where sign = (-1)^(i + seed_offset)
      */
     constructor(seed_offset: number, num_inputs: number, hidden_layers: Uint32Array, num_outputs: number);
+    /**
+     * Alias for `reset_memory()`. Maintained for backward compatibility.
+     */
     reset(): void;
     /**
      * Reset cached values and gradients in the graph
@@ -168,24 +171,6 @@ export class NeuralBrain {
      * ```
      */
     set_kernel(k1: number, k2: number, k3: number): void;
-    /**
-     * Simple training step (placeholder for reinforcement learning)
-     *
-     * # Arguments
-     *
-     * * `_sensors` - Input sensor data (unused currently)
-     * * `_target` - Target value (unused currently)
-     *
-     * # Returns
-     *
-     * Always `Ok(())` (no-op implementation)
-     *
-     * # Design Note
-     *
-     * This is a placeholder for future RL integration. Current evolution
-     * doesn't use gradient-based learning.
-     */
-    train(_sensors: Float32Array, _target: number): void;
 }
 
 /**
@@ -327,17 +312,40 @@ export class Trainer {
     free(): void;
     [Symbol.dispose](): void;
     /**
-     * Create trainer from JSON architecture built in Network Builder
+     * Backward-compatible: parses the old `WasmArchitecture` JSON format
+     * by converting it to a [`NetworkDef`] internally.
+     *
+     * Supported layer types: Input, Linear, Activation (relu/sigmoid/tanh),
+     * Rnn, Gru, Output, Dropout (passthrough), Batchnorm (passthrough).
      */
     static fromArchitecture(json: string): Trainer;
-    get_decision_boundary(resolution: number, feature_map: Function): Float32Array;
     /**
-     * Diagnostic: Returns the sum of absolute gradients for each parameter node.
-     * Used to verify that backprop is reaching all layers.
+     * Creates a trainer from a [`NetworkDef`] JSON string.
+     *
+     * This replaces the old `WasmArchitecture` format. The JSON schema
+     * is defined by the core `NetworkDef` type:
+     *
+     * ```json
+     * {
+     *   "input_dim": 2,
+     *   "layers": [
+     *     { "type": "linear", "in_features": 2, "out_features": 8 },
+     *     { "type": "activation", "function": "relu" },
+     *     { "type": "linear", "in_features": 8, "out_features": 1 }
+     *   ]
+     * }
+     * ```
      */
+    static fromNetworkDef(json: string): Trainer;
+    get_decision_boundary(resolution: number, feature_map: Function): Float32Array;
     get_gradient_norms(): Float32Array;
     get_weights(): Float32Array;
     import_weights(weights: Float32Array): void;
+    /**
+     * Creates a trainer with a simple MLP: Input → (Linear+Tanh)×N → Linear(1).
+     *
+     * This is the constructor used by the Playground for binary classification.
+     */
     constructor(input_dim: number, hidden_layers: Uint32Array);
     predict(features: Float32Array): number;
     train_batch(inputs: Float32Array, targets: Float32Array, lr: number): number;
@@ -352,6 +360,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_trainer_free: (a: number, b: number) => void;
     readonly trainer_fromArchitecture: (a: number, b: number) => [number, number, number];
+    readonly trainer_fromNetworkDef: (a: number, b: number) => [number, number, number];
     readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
     readonly trainer_get_gradient_norms: (a: number) => [number, number, number, number];
     readonly trainer_get_weights: (a: number) => [number, number, number, number];
@@ -369,7 +378,6 @@ export interface InitOutput {
     readonly neuralbrain_reset: (a: number) => void;
     readonly neuralbrain_reset_memory: (a: number) => void;
     readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
-    readonly neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
     readonly __wbg_population_free: (a: number, b: number) => void;
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
     readonly population_count: (a: number) => number;

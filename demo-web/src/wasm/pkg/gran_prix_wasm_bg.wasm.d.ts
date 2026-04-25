@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const __wbg_trainer_free: (a: number, b: number) => void;
 export const trainer_fromArchitecture: (a: number, b: number) => [number, number, number];
+export const trainer_fromNetworkDef: (a: number, b: number) => [number, number, number];
 export const trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
 export const trainer_get_gradient_norms: (a: number) => [number, number, number, number];
 export const trainer_get_weights: (a: number) => [number, number, number, number];
@@ -20,7 +21,6 @@ export const neuralbrain_new: (a: number, b: number, c: number, d: number, e: nu
 export const neuralbrain_reset: (a: number) => void;
 export const neuralbrain_reset_memory: (a: number) => void;
 export const neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
-export const neuralbrain_train: (a: number, b: number, c: number, d: number) => [number, number];
 export const __wbg_population_free: (a: number, b: number) => void;
 export const population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
 export const population_count: (a: number) => number;

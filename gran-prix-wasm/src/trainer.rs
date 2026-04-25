@@ -11,6 +11,7 @@ use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::loss::Loss;
 use gran_prix::network_def::{NetworkDef, LayerDef};
 use gran_prix::layers::ActivationType;
+use gran_prix::params::ParamId;
 
 #[wasm_bindgen]
 pub struct Trainer {
@@ -18,8 +19,10 @@ pub struct Trainer {
     input_node: usize,
     output_node: usize,
     input_dim: usize,
+    output_dim: usize,
     input_tensor: RefCell<Tensor>,
     optimizer: RefCell<gran_prix::optim::Adam>,
+    net_json: String,
 }
 
 /// Helper: convert GPError to JsValue.
@@ -42,6 +45,8 @@ impl Trainer {
             None, // no output activation (logits — BCE with logits applies sigmoid)
         );
 
+        let output_dim = net.output_dim();
+        let net_json = net.to_json().map_err(js_err)?;
         let compiled = net.compile(Box::new(CPUBackend)).map_err(js_err)?;
         let input_node = compiled.input_node.0;
         let output_node = compiled.output_node.0;
@@ -51,8 +56,10 @@ impl Trainer {
             input_node,
             output_node,
             input_dim,
+            output_dim,
             input_tensor: RefCell::new(Tensor::new_zeros(&[1, input_dim])),
             optimizer: RefCell::new(gran_prix::optim::Adam::new(0.01)),
+            net_json,
         })
     }
 
@@ -75,6 +82,10 @@ impl Trainer {
     pub fn from_network_def(json: &str) -> Result<Trainer, JsValue> {
         let net = NetworkDef::from_json(json).map_err(js_err)?;
         let input_dim = net.input_dim;
+        let output_dim = net.output_dim();
+        // Re-serialize from the parsed NetworkDef so the stored JSON is canonical
+        // (whitespace-normalized) and provably round-trip-safe.
+        let net_json = net.to_json().map_err(js_err)?;
         let compiled = net.compile(Box::new(CPUBackend)).map_err(js_err)?;
 
         Ok(Trainer {
@@ -82,8 +93,10 @@ impl Trainer {
             input_node: compiled.input_node.0,
             output_node: compiled.output_node.0,
             input_dim,
+            output_dim,
             input_tensor: RefCell::new(Tensor::new_zeros(&[1, input_dim])),
             optimizer: RefCell::new(gran_prix::optim::Adam::new(0.01)),
+            net_json,
         })
     }
 
@@ -96,6 +109,10 @@ impl Trainer {
     pub fn from_architecture(json: &str) -> Result<Trainer, JsValue> {
         let net_def = convert_legacy_architecture(json)?;
         let input_dim = net_def.input_dim;
+        let output_dim = net_def.output_dim();
+        // The canonical NetworkDef JSON — callers can use this to round-trip
+        // even though they passed a legacy WasmArchitecture format.
+        let net_json = net_def.to_json().map_err(js_err)?;
         let compiled = net_def.compile(Box::new(CPUBackend)).map_err(js_err)?;
 
         Ok(Trainer {
@@ -103,8 +120,10 @@ impl Trainer {
             input_node: compiled.input_node.0,
             output_node: compiled.output_node.0,
             input_dim,
+            output_dim,
             input_tensor: RefCell::new(Tensor::new_zeros(&[1, input_dim])),
             optimizer: RefCell::new(gran_prix::optim::Adam::new(0.01)),
+            net_json,
         })
     }
 
@@ -201,6 +220,181 @@ impl Trainer {
         let slice = result.as_slice().map_err(js_err)?;
         let logit = slice[0];
         Ok(1.0 / (1.0 + (-logit).exp()))
+    }
+
+    /// Batched inference over a flat input buffer.
+    ///
+    /// The expected layout is row-major: `inputs[i * input_dim + d]` is the
+    /// `d`-th feature of the `i`-th sample. The output is laid out the same way
+    /// over `output_dim`. Sigmoid is applied element-wise to the network's
+    /// raw logits, matching the BCE-with-logits training objective used by
+    /// [`train_batch`].
+    ///
+    /// Performance: the topological order is computed once before the loop
+    /// and reused across all samples. Crossing the JS↔WASM boundary happens
+    /// twice per call (one input copy, one output copy) regardless of
+    /// `batch_size`. For DOM classification with thousands of nodes per page,
+    /// this is the expected fast path.
+    #[wasm_bindgen(js_name = predictBatch)]
+    pub fn predict_batch(&self, inputs: Vec<f32>, batch_size: usize) -> Result<Vec<f32>, JsValue> {
+        if batch_size == 0 {
+            return Ok(Vec::new());
+        }
+        let expected_input_len = batch_size
+            .checked_mul(self.input_dim)
+            .ok_or_else(|| JsValue::from_str("predict_batch: batch_size * input_dim overflow"))?;
+        if inputs.len() != expected_input_len {
+            return Err(JsValue::from_str(&format!(
+                "predict_batch: inputs length {} != batch_size {} * input_dim {}",
+                inputs.len(), batch_size, self.input_dim
+            )));
+        }
+
+        let mut graph = self.graph.borrow_mut();
+        let target = NodeId(self.output_node);
+
+        // Sync params into the engine cache once, then reuse the topological
+        // order across every sample. `execute_with_order` skips the re-sort
+        // that `execute()` does on each call.
+        graph.sync_params().map_err(js_err)?;
+        let order = graph.topological_sort(target).map_err(js_err)?;
+
+        let mut outputs = Vec::with_capacity(batch_size * self.output_dim);
+
+        for i in 0..batch_size {
+            {
+                let mut input_buffer = self.input_tensor.borrow_mut();
+                let slice = input_buffer.as_slice_mut().map_err(js_err)?;
+                let start = i * self.input_dim;
+                for d in 0..self.input_dim {
+                    slice[d] = inputs[start + d];
+                }
+                if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(self.input_node) {
+                    t.copy_from(&input_buffer).map_err(js_err)?;
+                }
+            }
+
+            let result = graph.execute_with_order(&order, target).map_err(js_err)?;
+            let result_slice = result.as_slice().map_err(js_err)?;
+
+            // The trainer's loss is BCEWithLogits: it applies sigmoid internally
+            // during gradient computation, so the network's output node is a logit.
+            // Apply sigmoid here to return a probability — matching `predict()`.
+            for &logit in result_slice.iter().take(self.output_dim) {
+                outputs.push(1.0 / (1.0 + (-logit).exp()));
+            }
+        }
+
+        Ok(outputs)
+    }
+
+    // ── Architecture introspection ─────────────────────────────────────────
+
+    /// Returns the canonical `NetworkDef` JSON used to construct this trainer.
+    ///
+    /// The pair `(network_def_json(), get_weights())` is the canonical
+    /// serialization contract for this trainer — sufficient to reconstruct
+    /// it from scratch via [`from_network_def`] + [`import_weights`]. We do
+    /// **not** serialize the live `Graph`, because there is no end-to-end
+    /// test guaranteeing that path preserves trained-model behavior; the
+    /// `(NetworkDef, flat weights)` path uses only primitives that are
+    /// covered by unit tests.
+    #[wasm_bindgen(js_name = networkDefJson)]
+    pub fn network_def_json(&self) -> String {
+        self.net_json.clone()
+    }
+
+    /// Returns the input feature dimensionality.
+    #[wasm_bindgen(js_name = inputDim)]
+    pub fn input_dim(&self) -> usize {
+        self.input_dim
+    }
+
+    /// Returns the output dimensionality (1 for binary classification).
+    #[wasm_bindgen(js_name = outputDim)]
+    pub fn output_dim(&self) -> usize {
+        self.output_dim
+    }
+
+    // ── Param freeze (transfer-learning support) ───────────────────────────
+
+    /// Returns the total number of trainable parameter tensors registered
+    /// in the underlying `ParamStore`.
+    ///
+    /// For a Linear layer this is 2 (weight + bias); for activation/dropout
+    /// layers it is 0; for BatchNorm it is 2. The order of registration
+    /// follows the order of layers in the `NetworkDef`.
+    #[wasm_bindgen(js_name = paramCount)]
+    pub fn param_count(&self) -> usize {
+        self.graph.borrow().params().len()
+    }
+
+    /// Replaces the frozen-parameter set with exactly the given indices.
+    ///
+    /// All other parameters are explicitly unfrozen. This is the recommended
+    /// API for the backbone+head pattern: pass the indices that belong to the
+    /// backbone, leave the head trainable.
+    ///
+    /// All indices are validated up front; on any out-of-bounds index the
+    /// store is left unchanged and an error is returned.
+    #[wasm_bindgen(js_name = setFrozenParams)]
+    pub fn set_frozen_params(&self, indices: Vec<usize>) -> Result<(), JsValue> {
+        let mut graph = self.graph.borrow_mut();
+        let n = graph.params().len();
+        for &i in &indices {
+            if i >= n {
+                return Err(JsValue::from_str(&format!(
+                    "setFrozenParams: index {} out of bounds (param_count = {})", i, n
+                )));
+            }
+        }
+        let store = graph.params_mut();
+        for i in 0..n {
+            store.unfreeze(ParamId(i));
+        }
+        for &i in &indices {
+            store.freeze(ParamId(i));
+        }
+        Ok(())
+    }
+
+    /// Freezes a single parameter by index.
+    #[wasm_bindgen(js_name = freezeParam)]
+    pub fn freeze_param(&self, index: usize) -> Result<(), JsValue> {
+        let mut graph = self.graph.borrow_mut();
+        let n = graph.params().len();
+        if index >= n {
+            return Err(JsValue::from_str(&format!(
+                "freezeParam: index {} out of bounds (param_count = {})", index, n
+            )));
+        }
+        graph.params_mut().freeze(ParamId(index));
+        Ok(())
+    }
+
+    /// Unfreezes a single parameter by index.
+    #[wasm_bindgen(js_name = unfreezeParam)]
+    pub fn unfreeze_param(&self, index: usize) -> Result<(), JsValue> {
+        let mut graph = self.graph.borrow_mut();
+        let n = graph.params().len();
+        if index >= n {
+            return Err(JsValue::from_str(&format!(
+                "unfreezeParam: index {} out of bounds (param_count = {})", index, n
+            )));
+        }
+        graph.params_mut().unfreeze(ParamId(index));
+        Ok(())
+    }
+
+    /// Returns a boolean vector of length `param_count` indicating which
+    /// parameters are currently frozen.
+    #[wasm_bindgen(js_name = frozenMask)]
+    pub fn frozen_mask(&self) -> Vec<u8> {
+        let graph = self.graph.borrow();
+        let n = graph.params().len();
+        (0..n)
+            .map(|i| if graph.params().is_frozen(ParamId(i)) { 1u8 } else { 0u8 })
+            .collect()
     }
 
     pub fn get_decision_boundary(&self, resolution: usize, feature_map: js_sys::Function) -> Result<Vec<f32>, JsValue> {
