@@ -1,11 +1,19 @@
 use crate::{Tensor, Layer, NodeId};
 use crate::graph::dsl::GraphBuilder;
+use crate::layers::make_param_name;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Linear {
     pub weights: Tensor,
     pub biases: Tensor,
+    /// Optional prefix used when registering parameters. Set by
+    /// `NetworkDef::compile` to e.g. `"layers[3]"` so that the parameters
+    /// land in `ParamStore` as `"layers[3].weight"` and `"layers[3].bias"`.
+    /// Default empty preserves legacy behavior for direct `Linear::new`
+    /// users that don't go through `NetworkDef`.
+    #[serde(default)]
+    pub name_prefix: String,
 }
 
 impl Linear {
@@ -21,15 +29,19 @@ impl Linear {
         weights.scale_inplace(scale).unwrap();
         let biases = Tensor::new_zeros(&[1, output_dim]);
 
-        Self { weights, biases }
+        Self { weights, biases, name_prefix: String::new() }
     }
 }
 
 #[typetag::serde]
 impl Layer for Linear {
     fn forward(&mut self, input: NodeId, graph: &mut GraphBuilder) -> NodeId {
-        let w = graph.param(self.weights.clone());
-        let b = graph.param(self.biases.clone());
+        let w = graph.named_param(self.weights.clone(), &make_param_name(&self.name_prefix, "weight"));
+        let b = graph.named_param(self.biases.clone(), &make_param_name(&self.name_prefix, "bias"));
         graph.linear(input, w, b)
+    }
+
+    fn set_name_prefix(&mut self, prefix: String) {
+        self.name_prefix = prefix;
     }
 }

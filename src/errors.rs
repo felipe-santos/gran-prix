@@ -28,6 +28,8 @@ pub enum GPError {
     ReentrancyError,
     #[error("Weights array length mismatch: expected {expected}, found {found}")]
     WeightLengthMismatch { expected: usize, found: usize },
+    #[error("Invalid weight at index {index}: {reason}")]
+    InvalidWeight { index: usize, reason: String },
     #[error("Invalid population size: {0}")]
     PopulationSizeError(usize),
     #[error("Array length mismatch: expected {expected}, found {found}")]

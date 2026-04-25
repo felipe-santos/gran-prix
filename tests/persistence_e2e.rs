@@ -26,7 +26,7 @@
 //!    bits. Any tolerance would hide a bug.
 
 use gran_prix::backend::cpu::CPUBackend;
-use gran_prix::network_def::{ActivationType, NetworkDef};
+use gran_prix::network_def::{ActivationType, LayerDef, NetworkDef};
 use gran_prix::Tensor;
 
 /// Forwards `inputs[i, :]` through the graph one row at a time and
@@ -60,32 +60,28 @@ fn forward_each(
     out
 }
 
-#[test]
-fn networkdef_json_plus_flat_weights_preserves_forward() {
-    let net = NetworkDef::mlp(2, &[4], 1, ActivationType::Tanh, None);
+/// Generic round-trip check: a `NetworkDef` is serialized to JSON, its
+/// weights to a flat `Vec<f32>`. A fresh process reconstructs the trainer
+/// from those two artifacts and must produce bit-identical predictions.
+///
+/// Inputs are the same fixed batch of 4 two-element vectors used across
+/// the test cases below — the test isn't about the data itself but about
+/// the round-trip preserving forward behavior.
+fn assert_roundtrip_preserves_forward(net: NetworkDef, inputs: &Tensor, input_dim: usize) {
     let net_json = net.to_json().expect("NetworkDef serializes");
-
     let compiled = net
         .compile(Box::new(CPUBackend))
         .expect("NetworkDef compiles");
     let mut graph = compiled.graph;
-
-    // Random init of weights happens inside compile(). Snapshot them
-    // along with the predictions they produce.
     let weights = graph.params().export_flat().expect("weights export");
-    let inputs = Tensor::from_shape_vec(
-        &[4, 2],
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0],
-    )
-    .unwrap();
+
     let predictions_before = forward_each(
         &mut graph,
         compiled.input_node,
         compiled.output_node,
-        &inputs,
-        2,
+        inputs,
+        input_dim,
     );
-
     drop(graph);
 
     let net2 = NetworkDef::from_json(&net_json).expect("NetworkDef deserializes");
@@ -102,13 +98,94 @@ fn networkdef_json_plus_flat_weights_preserves_forward() {
         &mut graph2,
         compiled2.input_node,
         compiled2.output_node,
-        &inputs,
-        2,
+        inputs,
+        input_dim,
     );
 
-    // After the round-trip the architecture is identical, the weights are
-    // identical, and the inputs are identical. The forward pass is a
-    // deterministic function of those — it must produce exactly the same
-    // floats. No tolerance.
+    // Bit-identical: same architecture, same weights, same inputs,
+    // deterministic forward → must produce the same f32 values.
     assert_eq!(predictions_before, predictions_after);
+}
+
+fn xor_inputs() -> Tensor {
+    Tensor::from_shape_vec(
+        &[4, 2],
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0],
+    )
+    .unwrap()
+}
+
+#[test]
+fn networkdef_json_plus_flat_weights_preserves_forward_mlp() {
+    let net = NetworkDef::mlp(2, &[4], 1, ActivationType::Tanh, None);
+    assert_roundtrip_preserves_forward(net, &xor_inputs(), 2);
+}
+
+/// BatchNorm carries trainable `gamma` and `beta` parameters but, by the
+/// design comment in `src/layers/batchnorm.rs`, does NOT maintain running
+/// statistics across batches — every forward computes fresh batch stats.
+/// That makes BatchNorm round-trip-safe: nothing layer-internal needs to
+/// be preserved beyond what `ParamStore` already serializes.
+#[test]
+fn networkdef_json_plus_flat_weights_preserves_forward_batchnorm() {
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Linear { in_features: 2, out_features: 4 },
+        LayerDef::BatchNorm { num_features: 4 },
+        LayerDef::Activation { function: ActivationType::Tanh },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    assert_roundtrip_preserves_forward(net, &xor_inputs(), 2);
+}
+
+/// A GRU with a fresh hidden state (`hidden_state == None`) round-trips
+/// safely because `compile()` creates a new `GRUCell` whose state is also
+/// `None`. This pins down the contract that *fresh-state* GRUs serialize
+/// correctly. The complementary scenario — a GRU with non-None
+/// `hidden_state` at save time — is documented as a known gap below.
+#[test]
+fn networkdef_json_plus_flat_weights_preserves_forward_gru_fresh_state() {
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Gru { input_size: 2, hidden_size: 4 },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    assert_roundtrip_preserves_forward(net, &xor_inputs(), 2);
+}
+
+/// Documents a known gap: `RNNCell::hidden_state` and
+/// `GRUCell::hidden_state` are `#[serde(skip)]` in `src/layers/rnn.rs`
+/// and `src/layers/gru.rs`. They are *not* part of the
+/// `(NetworkDef.json, flat weights)` contract. The contract only
+/// preserves *fresh-state* recurrent layers; consumers that need to
+/// resume mid-episode must persist the hidden state themselves out of
+/// band.
+///
+/// This test asserts the gap exists rather than pretending it's solved —
+/// `NetworkDef` does not even carry layer-internal state, so the
+/// round-trip path through `(NetworkDef.json, flat weights)` cannot
+/// preserve hidden state by construction. The intent here is purely
+/// documentary: any future change that pretends to round-trip hidden
+/// state must update this test (and the contract).
+#[test]
+fn known_gap_recurrent_hidden_state_is_not_part_of_contract() {
+    // Construct a GRU and use its hidden_state mutator directly to
+    // simulate a mid-episode save. After round-tripping just
+    // `(NetworkDef.json, flat weights)`, the new GRU has no way to
+    // recover that state.
+    use gran_prix::layers::GRUCell;
+    let mut gru = GRUCell::new(2, 4);
+    gru.hidden_state = Some(Tensor::from_elem(&[1, 4], 0.7));
+    assert!(gru.hidden_state.is_some());
+
+    // What the contract *does* preserve (the trainable weights) and what
+    // it *does not* (hidden_state) are clear by inspection of the
+    // `#[serde(skip)]` annotations on the layer struct. We sanity-check
+    // here that the field is in fact skipped from the layer's own
+    // serialization round-trip.
+    let json = serde_json::to_string(&gru).expect("GRUCell serializes");
+    let restored: GRUCell = serde_json::from_str(&json).expect("GRUCell deserializes");
+    assert!(
+        restored.hidden_state.is_none(),
+        "hidden_state survived the round-trip — the contract has changed and \
+         this test (and the documentation in src/layers/gru.rs) needs an update"
+    );
 }

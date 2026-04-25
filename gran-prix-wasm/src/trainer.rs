@@ -278,6 +278,15 @@ struct LegacyParams {
     output_size: Option<usize>,
     hidden_size: Option<usize>,
     activation_type: Option<String>,
+    /// Dropout rate in [0, 1]. Optional in the legacy format; if omitted
+    /// we default to 0.0 (no-op) rather than the common ML default of 0.5,
+    /// because silently dropping half of a model's activations when the
+    /// caller said nothing would change inference behavior in a way the
+    /// caller cannot have intended.
+    dropout_rate: Option<f32>,
+    /// BatchNorm feature count. Optional; defaults to the current flow
+    /// dimension at the layer's position in the BFS.
+    num_features: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -288,7 +297,10 @@ struct LegacyConnection {
 
 /// Converts the old `WasmArchitecture` JSON to a `NetworkDef`.
 ///
-/// Follows connections in topological order, skipping Input/Output/Dropout/Batchnorm.
+/// Walks connections from the input layer in BFS order. `input` and
+/// `output` layers are markers in the legacy graph format and produce no
+/// computation node. `dropout` and `batchnorm` *do* produce computation
+/// nodes and are mapped to the corresponding [`LayerDef`].
 fn convert_legacy_architecture(json: &str) -> Result<NetworkDef, JsValue> {
     let arch: LegacyArchitecture = serde_json::from_str(json)
         .map_err(|e| JsValue::from_str(&format!("Failed to parse architecture: {}", e)))?;
@@ -349,8 +361,29 @@ fn convert_legacy_architecture(json: &str) -> Result<NetworkDef, JsValue> {
                 layer_defs.push(LayerDef::Gru { input_size: in_s, hidden_size: h_s });
                 current_dim = h_s;
             }
-            "output" | "dropout" | "batchnorm" | "input" => {
-                // Skip — these don't produce computation nodes
+            "dropout" => {
+                let rate = layer.params.dropout_rate.unwrap_or(0.0);
+                if !(0.0..=1.0).contains(&rate) {
+                    return Err(JsValue::from_str(&format!(
+                        "Dropout rate {} out of range [0, 1]", rate
+                    )));
+                }
+                layer_defs.push(LayerDef::Dropout { rate });
+                // Dropout is identity in shape; current_dim unchanged.
+            }
+            "batchnorm" => {
+                let nf = layer.params.num_features.unwrap_or(current_dim);
+                if nf != current_dim {
+                    return Err(JsValue::from_str(&format!(
+                        "BatchNorm numFeatures={} mismatches current flow dim {}",
+                        nf, current_dim
+                    )));
+                }
+                layer_defs.push(LayerDef::BatchNorm { num_features: nf });
+                // BatchNorm is identity in shape; current_dim unchanged.
+            }
+            "input" | "output" => {
+                // Markers in the legacy graph format, not computation nodes.
             }
             other => {
                 return Err(JsValue::from_str(&format!("Unknown layer type: {}", other)));

@@ -208,31 +208,43 @@ impl NetworkDef {
         let mut last_node = input_id;
         let mut stateful_layers: Vec<Box<dyn Layer>> = Vec::new();
 
-        for layer_def in &self.layers {
+        for (idx, layer_def) in self.layers.iter().enumerate() {
+            // Each layer's parameters land in the ParamStore with a prefix
+            // like `"layers[3]"` so they're identifiable downstream
+            // (debugging, freeze-by-name APIs, importance reports).
+            let prefix = format!("layers[{idx}]");
+
             match layer_def {
                 LayerDef::Linear { in_features, out_features } => {
                     let mut linear = Linear::new(*in_features, *out_features);
+                    linear.set_name_prefix(prefix);
                     last_node = linear.forward(last_node, &mut gb);
                 }
                 LayerDef::Activation { function } => {
+                    // Activation has no parameters; prefix is irrelevant.
                     let mut act = Activation::new(function.clone());
                     last_node = act.forward(last_node, &mut gb);
                 }
                 LayerDef::Rnn { input_size, hidden_size } => {
                     let mut rnn = RNNCell::new(*input_size, *hidden_size);
+                    rnn.set_name_prefix(prefix);
                     last_node = rnn.forward(last_node, &mut gb);
                     stateful_layers.push(Box::new(rnn));
                 }
                 LayerDef::Gru { input_size, hidden_size } => {
                     let mut gru = GRUCell::new(*input_size, *hidden_size);
+                    gru.set_name_prefix(prefix);
                     last_node = gru.forward(last_node, &mut gb);
                     stateful_layers.push(Box::new(gru));
                 }
                 LayerDef::Dropout { rate } => {
+                    // Dropout has no parameters; runs through the GraphBuilder
+                    // helper directly.
                     last_node = gb.dropout(last_node, *rate);
                 }
                 LayerDef::BatchNorm { num_features } => {
                     let mut bn = BatchNorm::new(*num_features);
+                    bn.set_name_prefix(prefix);
                     last_node = bn.forward(last_node, &mut gb);
                 }
             }
@@ -433,6 +445,65 @@ mod tests {
         assert_eq!(restored.input_dim, 2);
         assert_eq!(restored.layer_count(), 4);
         assert_eq!(restored.layers, net.layers);
+    }
+
+    #[test]
+    fn test_compile_assigns_layer_indexed_names() {
+        // After compile(), each Linear layer's weight and bias should be
+        // registered in the ParamStore as `"layers[i].weight"` /
+        // `"layers[i].bias"` — so freeze-by-name and debugging tooling
+        // can target specific layers without reverse-engineering the
+        // registration order.
+        let net = NetworkDef::mlp(
+            2, &[4, 3], 1,
+            ActivationType::Tanh,
+            None,
+        );
+        let compiled = net.compile(Box::new(CPUBackend)).unwrap();
+
+        let names: Vec<String> = compiled
+            .graph
+            .params()
+            .iter()
+            .map(|(_, _)| ())
+            .enumerate()
+            .map(|(i, _)| compiled.graph.params().name(crate::ParamId(i)).to_string())
+            .collect();
+
+        // 3 Linear layers × 2 params each = 6 params total.
+        assert_eq!(names.len(), 6);
+        assert_eq!(names[0], "layers[0].weight");
+        assert_eq!(names[1], "layers[0].bias");
+        assert_eq!(names[2], "layers[2].weight");
+        assert_eq!(names[3], "layers[2].bias");
+        assert_eq!(names[4], "layers[4].weight");
+        assert_eq!(names[5], "layers[4].bias");
+        // Index gaps (1, 3) correspond to Activation layers, which
+        // register no parameters.
+    }
+
+    #[test]
+    fn test_compile_batchnorm_param_names() {
+        let net = NetworkDef::new(4, vec![
+            LayerDef::Linear { in_features: 4, out_features: 4 },
+            LayerDef::BatchNorm { num_features: 4 },
+            LayerDef::Linear { in_features: 4, out_features: 1 },
+        ]);
+        let compiled = net.compile(Box::new(CPUBackend)).unwrap();
+        // Linear[0]: weight, bias → "layers[0].weight", "layers[0].bias"
+        // BatchNorm[1]: gamma, beta → "layers[1].gamma", "layers[1].beta"
+        // Linear[2]: weight, bias → "layers[2].weight", "layers[2].bias"
+        let names: Vec<String> = (0..compiled.graph.params().len())
+            .map(|i| compiled.graph.params().name(crate::ParamId(i)).to_string())
+            .collect();
+        assert_eq!(names, vec![
+            "layers[0].weight",
+            "layers[0].bias",
+            "layers[1].gamma",
+            "layers[1].beta",
+            "layers[2].weight",
+            "layers[2].bias",
+        ]);
     }
 
     #[test]

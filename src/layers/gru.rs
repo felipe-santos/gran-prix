@@ -1,5 +1,6 @@
 use crate::{Tensor, Layer, NodeId};
 use crate::graph::dsl::GraphBuilder;
+use crate::layers::make_param_name;
 use serde::{Serialize, Deserialize};
 use crate::graph::OpType;
 
@@ -25,10 +26,14 @@ pub struct GRUCell {
     // Persistent state
     #[serde(skip)]
     pub hidden_state: Option<Tensor>,
-    
+
     // Internal tracker for the state node during forward pass
     #[serde(skip)]
     pub(crate) state_node_id: Option<NodeId>,
+
+    /// Optional prefix for parameter naming. See `Linear::name_prefix`.
+    #[serde(default)]
+    pub name_prefix: String,
 }
 
 impl GRUCell {
@@ -51,6 +56,7 @@ impl GRUCell {
             
             hidden_state: None,
             state_node_id: None,
+            name_prefix: String::new(),
         }
     }
 
@@ -68,26 +74,34 @@ impl Layer for GRUCell {
         };
         let h_prev = graph.val(h_prev_tensor);
 
+        let np = |role: &str| make_param_name(&self.name_prefix, role);
+
         // --- Update Gate (z_t) ---
-        let wz_ih = graph.param(self.wz_ih.clone()); let bz_ih = graph.param(self.bz_ih.clone());
+        let wz_ih = graph.named_param(self.wz_ih.clone(), &np("wz_ih"));
+        let bz_ih = graph.named_param(self.bz_ih.clone(), &np("bz_ih"));
         let z_ih_proj = graph.linear(input, wz_ih, bz_ih);
-        let wz_hh = graph.param(self.wz_hh.clone()); let bz_hh = graph.param(self.bz_hh.clone());
+        let wz_hh = graph.named_param(self.wz_hh.clone(), &np("wz_hh"));
+        let bz_hh = graph.named_param(self.bz_hh.clone(), &np("bz_hh"));
         let z_hh_proj = graph.linear(h_prev, wz_hh, bz_hh);
         let z_sum = graph.node(OpType::Add, vec![z_ih_proj, z_hh_proj]);
         let z_t = graph.node(OpType::Sigmoid, vec![z_sum]);
 
         // --- Reset Gate (r_t) ---
-        let wr_ih = graph.param(self.wr_ih.clone()); let br_ih = graph.param(self.br_ih.clone());
+        let wr_ih = graph.named_param(self.wr_ih.clone(), &np("wr_ih"));
+        let br_ih = graph.named_param(self.br_ih.clone(), &np("br_ih"));
         let r_ih_proj = graph.linear(input, wr_ih, br_ih);
-        let wr_hh = graph.param(self.wr_hh.clone()); let br_hh = graph.param(self.br_hh.clone());
+        let wr_hh = graph.named_param(self.wr_hh.clone(), &np("wr_hh"));
+        let br_hh = graph.named_param(self.br_hh.clone(), &np("br_hh"));
         let r_hh_proj = graph.linear(h_prev, wr_hh, br_hh);
         let r_sum = graph.node(OpType::Add, vec![r_ih_proj, r_hh_proj]);
         let r_t = graph.node(OpType::Sigmoid, vec![r_sum]);
 
         // --- New Memory (n_t / h_tilde) ---
-        let wn_ih = graph.param(self.wn_ih.clone()); let bn_ih = graph.param(self.bn_ih.clone());
+        let wn_ih = graph.named_param(self.wn_ih.clone(), &np("wn_ih"));
+        let bn_ih = graph.named_param(self.bn_ih.clone(), &np("bn_ih"));
         let n_ih_proj = graph.linear(input, wn_ih, bn_ih);
-        let wn_hh = graph.param(self.wn_hh.clone()); let bn_hh = graph.param(self.bn_hh.clone());
+        let wn_hh = graph.named_param(self.wn_hh.clone(), &np("wn_hh"));
+        let bn_hh = graph.named_param(self.bn_hh.clone(), &np("bn_hh"));
         
         let r_times_h = graph.node(OpType::Mul, vec![r_t, h_prev]);
         let n_hh_proj = graph.linear(r_times_h, wn_hh, bn_hh);
@@ -122,5 +136,9 @@ impl Layer for GRUCell {
     
     fn reset_state(&mut self) {
         self.reset_memory();
+    }
+
+    fn set_name_prefix(&mut self, prefix: String) {
+        self.name_prefix = prefix;
     }
 }

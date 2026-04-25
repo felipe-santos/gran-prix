@@ -17,6 +17,7 @@
 use crate::{Tensor, Layer, NodeId};
 use crate::graph::dsl::GraphBuilder;
 use crate::graph::OpType;
+use crate::layers::make_param_name;
 use serde::{Serialize, Deserialize};
 
 /// Batch Normalization: `y = gamma * (x - mean) / sqrt(var + eps) + beta`.
@@ -33,6 +34,9 @@ pub struct BatchNorm {
     pub epsilon: f32,
     pub gamma: Tensor,
     pub beta: Tensor,
+    /// Optional prefix for parameter naming. See `Linear::name_prefix`.
+    #[serde(default)]
+    pub name_prefix: String,
 }
 
 impl BatchNorm {
@@ -42,6 +46,7 @@ impl BatchNorm {
             epsilon: 1e-5,
             gamma: Tensor::new_ones(&[1, num_features]),
             beta: Tensor::new_zeros(&[1, num_features]),
+            name_prefix: String::new(),
         }
     }
 }
@@ -49,11 +54,21 @@ impl BatchNorm {
 #[typetag::serde]
 impl Layer for BatchNorm {
     fn forward(&mut self, input: NodeId, graph: &mut GraphBuilder) -> NodeId {
-        let gamma_node = graph.param(self.gamma.clone());
-        let beta_node = graph.param(self.beta.clone());
+        let gamma_node = graph.named_param(
+            self.gamma.clone(),
+            &make_param_name(&self.name_prefix, "gamma"),
+        );
+        let beta_node = graph.named_param(
+            self.beta.clone(),
+            &make_param_name(&self.name_prefix, "beta"),
+        );
         graph.node(
             OpType::BatchNorm { epsilon: self.epsilon },
             vec![input, gamma_node, beta_node],
         )
+    }
+
+    fn set_name_prefix(&mut self, prefix: String) {
+        self.name_prefix = prefix;
     }
 }

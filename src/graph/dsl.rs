@@ -18,6 +18,18 @@ impl<'a> GraphBuilder<'a> {
         self.graph.param(tensor)
     }
 
+    /// Registers a parameter with a human-readable name. Equivalent to
+    /// [`param`] when `name` is empty. Used by layers that participate
+    /// in `NetworkDef::compile` so each parameter is identifiable
+    /// (e.g., `"layers[3].weight"`) instead of anonymous.
+    pub fn named_param(&mut self, tensor: Tensor, name: &str) -> NodeId {
+        if name.is_empty() {
+            self.graph.param(tensor)
+        } else {
+            self.graph.named_param(tensor, name)
+        }
+    }
+
     pub fn matmul(&mut self, a: NodeId, b: NodeId) -> NodeId {
         self.graph.op(OpType::MatMul, vec![a, b])
     }

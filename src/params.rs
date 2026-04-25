@@ -258,6 +258,25 @@ impl ParamStore {
     ///
     /// The flat vector must contain exactly the right number of values
     /// for all parameters in registration order.
+    ///
+    /// Every value is validated *before* any parameter tensor is mutated:
+    ///
+    ///  - **Finite check** (mandatory): NaN or ±∞ in the input would
+    ///    propagate silently through the next forward pass and corrupt
+    ///    downstream gradients. Any non-finite value causes the import
+    ///    to abort with [`GPError::InvalidWeight`] and leaves the store
+    ///    untouched.
+    ///  - **Magnitude check** (mandatory, soft cap): values whose
+    ///    absolute magnitude exceeds [`Self::MAX_WEIGHT_MAGNITUDE`] are
+    ///    rejected. Trained-network weights typically live in `[-10, 10]`;
+    ///    well-conditioned init or LR schedules don't drift past `1e3`.
+    ///    The cap is set generously (`1e6`) to admit pathological-but-
+    ///    legitimate cases while flagging obviously corrupted payloads.
+    ///
+    /// The pre-mutation validation is the senior choice over "validate
+    /// per tensor as you go" — partial imports leave the store in a
+    /// shape-consistent but value-inconsistent state, which is exactly
+    /// the kind of corruption that's hard to debug later.
     pub fn import_flat(&mut self, weights: &[f32]) -> GPResult<()> {
         let total: usize = self.tensors.iter().map(|t| t.len()).sum();
         if weights.len() != total {
@@ -265,6 +284,28 @@ impl ParamStore {
                 expected: total,
                 found: weights.len(),
             });
+        }
+
+        for (i, &w) in weights.iter().enumerate() {
+            if !w.is_finite() {
+                return Err(GPError::InvalidWeight {
+                    index: i,
+                    reason: if w.is_nan() {
+                        "NaN".to_string()
+                    } else {
+                        format!("non-finite ({})", w)
+                    },
+                });
+            }
+            if w.abs() > Self::MAX_WEIGHT_MAGNITUDE {
+                return Err(GPError::InvalidWeight {
+                    index: i,
+                    reason: format!(
+                        "magnitude {} exceeds soft cap {}",
+                        w, Self::MAX_WEIGHT_MAGNITUDE
+                    ),
+                });
+            }
         }
 
         let mut offset = 0;
@@ -278,6 +319,15 @@ impl ParamStore {
         }
         Ok(())
     }
+
+    /// Soft upper bound on the absolute magnitude of any single weight.
+    ///
+    /// Set generously: 1e6 is well past anything a well-behaved training
+    /// run produces, but well below the magnitudes that adversarial or
+    /// corrupted payloads typically carry (1e30+). Tuning this lower
+    /// would risk false positives on legitimate (if poorly conditioned)
+    /// trained models; tuning it higher gives up the protection.
+    pub const MAX_WEIGHT_MAGNITUDE: f32 = 1.0e6;
 
     /// Returns the total number of scalar parameters across all tensors.
     pub fn total_params(&self) -> usize {
@@ -458,6 +508,70 @@ mod tests {
         let mut store = make_store();
         let result = store.import_flat(&[1.0, 2.0, 3.0]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_import_flat_rejects_nan() {
+        let mut store = make_store();
+        let mut weights = vec![0.5_f32; store.total_params()];
+        weights[10] = f32::NAN;
+
+        let err = store.import_flat(&weights).unwrap_err();
+        match err {
+            GPError::InvalidWeight { index, reason } => {
+                assert_eq!(index, 10);
+                assert!(reason.contains("NaN"), "expected NaN diagnostic, got {reason}");
+            }
+            other => panic!("expected InvalidWeight, got {other:?}"),
+        }
+
+        // Store must remain untouched on a failed import (atomic semantics).
+        for tensor in store.tensors.iter() {
+            for &v in tensor.as_slice().unwrap() {
+                assert_eq!(v, 0.0, "store mutated despite failed import");
+            }
+        }
+    }
+
+    #[test]
+    fn test_import_flat_rejects_infinity() {
+        let mut store = make_store();
+        let mut weights = vec![0.0_f32; store.total_params()];
+        weights[3] = f32::INFINITY;
+        let err = store.import_flat(&weights).unwrap_err();
+        assert!(matches!(err, GPError::InvalidWeight { index: 3, .. }));
+
+        weights[3] = f32::NEG_INFINITY;
+        let err = store.import_flat(&weights).unwrap_err();
+        assert!(matches!(err, GPError::InvalidWeight { index: 3, .. }));
+    }
+
+    #[test]
+    fn test_import_flat_rejects_excessive_magnitude() {
+        let mut store = make_store();
+        let mut weights = vec![0.0_f32; store.total_params()];
+        // Just above the soft cap.
+        weights[7] = ParamStore::MAX_WEIGHT_MAGNITUDE * 2.0;
+        let err = store.import_flat(&weights).unwrap_err();
+        match err {
+            GPError::InvalidWeight { index, reason } => {
+                assert_eq!(index, 7);
+                assert!(reason.contains("magnitude"), "got {reason}");
+            }
+            other => panic!("expected InvalidWeight, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_import_flat_accepts_legitimate_extreme_magnitudes() {
+        // A poorly conditioned (but not adversarial) trained network can
+        // produce weights in the thousands. The cap should admit those.
+        let mut store = make_store();
+        let mut weights = vec![0.0_f32; store.total_params()];
+        weights[0] = 5_000.0;
+        weights[1] = -5_000.0;
+        store.import_flat(&weights).expect("legitimate extreme magnitudes accepted");
+        assert_eq!(store.tensor(ParamId(0)).as_slice().unwrap()[0], 5_000.0);
     }
 
     #[test]

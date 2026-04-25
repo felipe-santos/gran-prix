@@ -1,5 +1,6 @@
 use crate::{Tensor, Layer, NodeId};
 use crate::graph::dsl::GraphBuilder;
+use crate::layers::make_param_name;
 use serde::{Serialize, Deserialize};
 
 /// A standard Recurrent Neural Network (RNN) Cell.
@@ -14,24 +15,28 @@ pub struct RNNCell {
     // Weights and biases for hidden to hidden
     pub weight_hh: Tensor,
     pub bias_hh: Tensor,
-    
+
     // Persistent state
     #[serde(skip)]
     pub hidden_state: Option<Tensor>,
-    
+
     // Internal tracker for the state node during forward pass
     #[serde(skip)]
     pub(crate) state_node_id: Option<NodeId>,
+
+    /// Optional prefix for parameter naming. See `Linear::name_prefix`.
+    #[serde(default)]
+    pub name_prefix: String,
 }
 
 impl RNNCell {
     pub fn new(input_size: usize, hidden_size: usize) -> Self {
         let weight_ih = Tensor::new_random(&[input_size, hidden_size]);
         let bias_ih = Tensor::new_zeros(&[1, hidden_size]);
-        
+
         let weight_hh = Tensor::new_random(&[hidden_size, hidden_size]);
         let bias_hh = Tensor::new_zeros(&[1, hidden_size]);
-        
+
         Self {
             hidden_size,
             input_size,
@@ -41,6 +46,7 @@ impl RNNCell {
             bias_hh,
             hidden_state: None,
             state_node_id: None,
+            name_prefix: String::new(),
         }
     }
 
@@ -53,15 +59,27 @@ impl RNNCell {
 #[typetag::serde]
 impl Layer for RNNCell {
     fn forward(&mut self, input: NodeId, graph: &mut GraphBuilder) -> NodeId {
-        let w_ih = graph.param(self.weight_ih.clone());
-        let b_ih = graph.param(self.bias_ih.clone());
-        
+        let w_ih = graph.named_param(
+            self.weight_ih.clone(),
+            &make_param_name(&self.name_prefix, "weight_ih"),
+        );
+        let b_ih = graph.named_param(
+            self.bias_ih.clone(),
+            &make_param_name(&self.name_prefix, "bias_ih"),
+        );
+
         // 1. Input transformation: x_t * W_ih + b_ih
         let ih_proj = graph.linear(input, w_ih, b_ih);
-        
+
         // 2. Hidden transformation: W_hh * h_{t-1} + b_hh
-        let w_hh = graph.param(self.weight_hh.clone());
-        let b_hh = graph.param(self.bias_hh.clone());
+        let w_hh = graph.named_param(
+            self.weight_hh.clone(),
+            &make_param_name(&self.name_prefix, "weight_hh"),
+        );
+        let b_hh = graph.named_param(
+            self.bias_hh.clone(),
+            &make_param_name(&self.name_prefix, "bias_hh"),
+        );
         
         let h_prev_tensor = match &self.hidden_state {
             Some(t) => t.clone(),
@@ -98,5 +116,9 @@ impl Layer for RNNCell {
     
     fn reset_state(&mut self) {
         self.reset_memory();
+    }
+
+    fn set_name_prefix(&mut self, prefix: String) {
+        self.name_prefix = prefix;
     }
 }
