@@ -31,19 +31,36 @@ pub trait Layer: Send + Sync + std::fmt::Debug {
     /// Resets the internal state (e.g. at the start of a new episode).
     fn reset_state(&mut self) {}
 
-    /// Sets a name prefix used when this layer registers parameters in the
-    /// underlying `ParamStore`. Implementors with trainable parameters
-    /// should override this to record the prefix and use it inside
-    /// [`forward`] via `graph.named_param(...)` so each parameter ends up
-    /// registered as `"<prefix>.<role>"` (e.g., `"layers[3].weight"`).
+    /// Sets a name prefix used when this layer registers parameters in
+    /// the underlying `ParamStore`. Implementors with trainable
+    /// parameters store the prefix and pass it through `graph.named_param`
+    /// in [`forward`] so each parameter ends up registered as
+    /// `"<prefix>.<role>"` (e.g., `"layers[3].weight"`).
     ///
-    /// Default implementation is a no-op — appropriate for stateless
-    /// layers (Activation, Dropout) that don't register parameters.
+    /// Stateless layers (Activation, etc.) implement this as an explicit
+    /// no-op rather than relying on a default — making the implementor
+    /// affirm that the layer has no parameters to name. This catches the
+    /// case where a future layer adds parameters and forgets the naming.
     ///
-    /// Empty prefix (the default if [`forward`] is called without setting
-    /// one) preserves the legacy behavior of registering parameters with
-    /// empty names.
-    fn set_name_prefix(&mut self, _prefix: String) {}
+    /// Empty prefix preserves the legacy behavior of registering
+    /// parameters with empty names — used when a layer is built outside
+    /// of `NetworkDef::compile`.
+    fn set_name_prefix(&mut self, prefix: String);
+
+    /// Returns the [`NodeId`] of the graph input node that holds this
+    /// layer's *previous* recurrent state, if any.
+    ///
+    /// Recurrent layers (RNN, GRU) inject the previous hidden state
+    /// into the graph as an `Input` node during [`forward`]. The
+    /// computation produces a new hidden state at the [`state_node`]
+    /// position, and a recurrence-aware caller is expected to copy
+    /// that new value into the previous-state input node between
+    /// forwards. Returning the previous-state node id is what makes
+    /// that copy possible.
+    ///
+    /// Default `None` is correct for stateless layers and for any
+    /// stateful layer that uses a different recurrence scheme.
+    fn prev_state_input(&self) -> Option<NodeId> { None }
 }
 
 #[cfg(test)]

@@ -2,6 +2,30 @@
 /* eslint-disable */
 
 /**
+ * Loss function used by a [`Trainer`]. Auto-detected from the
+ * underlying [`NetworkDef`]'s output dimension at construction time:
+ * `output_dim == 1` → `BinaryCrossEntropy`, otherwise
+ * `CategoricalCrossEntropy`. Determines:
+ *
+ *  - Which loss is used in [`train_batch`] / [`train_batch_multi_class`]
+ *  - How [`predict_probs`] interprets logits (sigmoid vs row-softmax)
+ *  - Which methods are valid (binary methods error on multi-class
+ *    trainers and vice versa)
+ */
+export enum LossKind {
+    /**
+     * Binary classification head — single-logit output, sigmoid for
+     * inference, BCE-with-logits for training.
+     */
+    BinaryCrossEntropy = 0,
+    /**
+     * Multi-class classification head — `K`-logit output, row-wise
+     * softmax for inference, CrossEntropy-with-logits for training.
+     */
+    CategoricalCrossEntropy = 1,
+}
+
+/**
  * Mutation strategy for neural network weight evolution
  *
  * # Examples
@@ -312,6 +336,23 @@ export class Trainer {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Freezes every trainable parameter whose registered name starts
+     * with `prefix`, returning the count affected.
+     *
+     * `NetworkDef::compile` registers parameters with names like
+     * `"layers[3].weight"`, so a prefix of `"layers[3]"` freezes the
+     * fourth layer atomically. Layers indexed by activation-only
+     * `LayerDef`s contribute no parameters; their indices appear as
+     * gaps in the namespace.
+     *
+     * A return of `0` means no parameter matched — common if the
+     * caller passed a typo. The method does not error in that case
+     * because the absence of a match isn't necessarily a bug
+     * (e.g., a `paranoidFreeze` caller might attempt several
+     * candidate prefixes).
+     */
+    freezeByPrefix(prefix: string): number;
+    /**
      * Backward-compatible: parses the old `WasmArchitecture` JSON format
      * by converting it to a [`NetworkDef`] internally.
      *
@@ -342,14 +383,165 @@ export class Trainer {
     get_weights(): Float32Array;
     import_weights(weights: Float32Array): void;
     /**
+     * Returns the input feature dimensionality.
+     */
+    inputDim(): number;
+    /**
+     * Returns the loss/output mode for this trainer. See [`LossKind`]
+     * for the auto-detection rule.
+     */
+    lossKind(): LossKind;
+    /**
+     * Returns the canonical [`NetworkDef`] JSON used to construct this
+     * trainer.
+     *
+     * The pair `(networkDefJson(), getWeights())` is the canonical
+     * serialization contract for distributing a trained model:
+     * reconstruct via [`from_network_def`] + [`import_weights`] and
+     * the predictions are bit-identical (pinned by
+     * `tests/persistence_e2e.rs`). The full `Graph` serde path also
+     * works for trained MLPs (pinned by
+     * `serde_json_to_string_round_trips_a_trained_graph`), but uses a
+     * less explicit contract — prefer the JSON+weights pair for
+     * anything crossing a trust boundary (disk, network, browser
+     * storage).
+     */
+    networkDefJson(): string;
+    /**
      * Creates a trainer with a simple MLP: Input → (Linear+Tanh)×N → Linear(1).
      *
      * This is the constructor used by the Playground for binary classification.
      */
     constructor(input_dim: number, hidden_layers: Uint32Array);
+    /**
+     * Returns the output dimensionality (number of classes for
+     * multi-class, 1 for binary).
+     */
+    outputDim(): number;
+    /**
+     * Returns the registered names of all parameters in registration
+     * order. Useful for callers that need to enumerate available
+     * freeze targets — for example, a "freeze backbone, leave head
+     * trainable" UI that lists every layer prefix.
+     *
+     * JS sees a `string[]` because `wasm-bindgen` auto-converts
+     * `Vec<String>`.
+     */
+    paramNames(): string[];
+    /**
+     * Runs a single forward pass and returns a sigmoid-mapped probability.
+     *
+     * **Output assumption.** This trainer is wired for binary
+     * classification: training uses [`BCEWithLogits`], `predict` reads
+     * `slice[0]` of the network's output and applies sigmoid. If the
+     * underlying [`NetworkDef`] declares `output_dim > 1`, this method
+     * silently ignores all but the first output element. Multi-class
+     * classification needs a different inference path (softmax), which
+     * is documented as a deferred capability in `KNOWN-GAPS.md`.
+     */
     predict(features: Float32Array): number;
+    /**
+     * Batched inference over a flat input buffer.
+     *
+     * `inputs` must be `batch_size * input_dim` floats laid out
+     * row-major (i.e., sample `i`'s features start at index
+     * `i * input_dim`). The output is `batch_size` probabilities,
+     * each sigmoid-mapped from the network's logit output for the
+     * corresponding sample — one per row of the input.
+     *
+     * # Performance
+     *
+     * This is a **single forward pass** with batch dimension `B`,
+     * not `B` independent forwards. The cost of `predict_batch(B)`
+     * is approximately the cost of one matmul over `[B, in] x [in, out]`
+     * instead of `B` matmuls over `[1, in] x [in, out]`. For DOM
+     * classification with thousands of nodes, this is the difference
+     * between an `O(B)` JS↔WASM boundary cost and a single boundary
+     * crossing.
+     *
+     * # Equivalence with `predict`
+     *
+     * For an MLP without `BatchNorm`, `predict_batch` is bit-equivalent
+     * to calling `predict` once per row. Networks containing
+     * `BatchNorm` are *not* bit-equivalent because BN computes batch
+     * statistics from the input batch — single-sample BN falls back
+     * to affine, batched BN uses the row-wise statistics. This
+     * matches the documented design of `BatchNorm` in
+     * `src/layers/batchnorm.rs`.
+     *
+     * # Side effects
+     *
+     * At entry, the input node's tensor shape is widened from
+     * `[1, input_dim]` to `[batch_size, input_dim]`. At exit, it's
+     * reset back to `[1, input_dim]` (zero-filled) so subsequent
+     * `predict` / `train_batch` calls — which `copy_from` a
+     * `[1, input_dim]` buffer and would error on a shape mismatch
+     * — work without surprise.
+     *
+     * # Output assumption
+     *
+     * Binary-classification path (sigmoid). For multi-class trainers
+     * this method returns an error — use [`predict_probs_batch`]
+     * instead.
+     */
+    predictBatch(inputs: Float32Array, batch_size: number): Float32Array;
+    /**
+     * Returns the predicted class index (argmax of [`predict_probs`]).
+     *
+     * For a binary trainer the result is `1` if `P(class=1) >= 0.5`
+     * and `0` otherwise — matches the convention `predict() >= 0.5`.
+     * For a multi-class trainer it's `argmax_i softmax(logits)[i]`,
+     * breaking ties in favor of the lower index (the natural behavior
+     * of a left-to-right scan).
+     */
+    predictClass(features: Float32Array): number;
+    /**
+     * Returns the full output distribution for a single sample.
+     *
+     * Output shape:
+     *  - Binary trainer (`output_dim == 1`): a 1-element vector
+     *    containing the sigmoid of the logit, i.e. `P(class=1)`.
+     *  - Multi-class trainer: an `output_dim`-element vector of
+     *    softmax probabilities summing to 1.
+     *
+     * Works for both modes — callers that don't care about the
+     * distinction can use this uniformly. Use [`predict_class`] if
+     * only the argmax is needed.
+     */
+    predictProbs(features: Float32Array): Float32Array;
+    /**
+     * Batched version of [`predict_probs`].
+     *
+     * Output is row-major flat: `output[i * output_dim + c]` is the
+     * probability of class `c` for sample `i`. Length is
+     * `batch_size * output_dim`.
+     *
+     * Same single-forward batched semantics as [`predict_batch`].
+     * Side effect: input node is widened then reset to
+     * `[1, input_dim]` zeros at exit.
+     */
+    predictProbsBatch(inputs: Float32Array, batch_size: number): Float32Array;
+    /**
+     * Trains one batch using `CrossEntropyWithLogits`.
+     *
+     * `inputs` is `batch_size * input_dim` floats row-major.
+     * `class_indices` is `batch_size` class labels in `0..output_dim`.
+     * Each label is one-hot encoded internally to a `[1, output_dim]`
+     * target tensor — this is what the underlying loss function
+     * expects.
+     *
+     * Returns the mean loss across the batch.
+     *
+     * Errors if any class index is out of range, or if this trainer
+     * is binary-mode (use [`train_batch`] instead).
+     */
+    trainBatchMultiClass(inputs: Float32Array, class_indices: Uint32Array, lr: number): number;
     train_batch(inputs: Float32Array, targets: Float32Array, lr: number): number;
     train_step(features: Float32Array, target_val: number, lr: number): number;
+    /**
+     * Inverse of [`freezeByPrefix`].
+     */
+    unfreezeByPrefix(prefix: string): number;
 }
 
 export function init_panic_hook(): void;
@@ -359,16 +551,28 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_trainer_free: (a: number, b: number) => void;
+    readonly trainer_freezeByPrefix: (a: number, b: number, c: number) => number;
     readonly trainer_fromArchitecture: (a: number, b: number) => [number, number, number];
     readonly trainer_fromNetworkDef: (a: number, b: number) => [number, number, number];
     readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
     readonly trainer_get_gradient_norms: (a: number) => [number, number, number, number];
     readonly trainer_get_weights: (a: number) => [number, number, number, number];
     readonly trainer_import_weights: (a: number, b: number, c: number) => [number, number];
+    readonly trainer_inputDim: (a: number) => number;
+    readonly trainer_lossKind: (a: number) => number;
+    readonly trainer_networkDefJson: (a: number) => [number, number];
     readonly trainer_new: (a: number, b: number, c: number) => [number, number, number];
+    readonly trainer_outputDim: (a: number) => number;
+    readonly trainer_paramNames: (a: number) => [number, number];
     readonly trainer_predict: (a: number, b: number, c: number) => [number, number, number];
+    readonly trainer_predictBatch: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly trainer_predictClass: (a: number, b: number, c: number) => [number, number, number];
+    readonly trainer_predictProbs: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly trainer_predictProbsBatch: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly trainer_trainBatchMultiClass: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly trainer_unfreezeByPrefix: (a: number, b: number, c: number) => number;
     readonly __wbg_neuralbrain_free: (a: number, b: number) => void;
     readonly neuralbrain_compute: (a: number, b: number, c: number) => [number, number, number, number];
     readonly neuralbrain_export_weights: (a: number) => [number, number, number, number];
@@ -378,6 +582,7 @@ export interface InitOutput {
     readonly neuralbrain_reset: (a: number) => void;
     readonly neuralbrain_reset_memory: (a: number) => void;
     readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbg_population_free: (a: number, b: number) => void;
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
     readonly population_count: (a: number) => number;
@@ -386,7 +591,6 @@ export interface InitOutput {
     readonly population_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly population_reset_memories: (a: number) => void;
     readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store_command_export: (a: number) => void;
@@ -394,6 +598,7 @@ export interface InitOutput {
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free_command_export: (a: number, b: number, c: number) => void;
     readonly __externref_table_dealloc_command_export: (a: number) => void;
+    readonly __externref_drop_slice_command_export: (a: number, b: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

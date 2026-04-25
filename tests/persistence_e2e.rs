@@ -1,5 +1,17 @@
-//! Round-trip test for the `(NetworkDef JSON, flat weights)` serialization
-//! pair.
+//! Round-trip tests for the `(NetworkDef JSON, flat weights)` serialization
+//! pair across the layer types this repo supports.
+//!
+//! # Determinism assumption
+//!
+//! Forward passes are asserted bit-identical via `assert_eq!` on `Vec<f32>`.
+//! This requires that the forward pass be a deterministic function of
+//! (architecture, weights, inputs) — same operation order, no parallel
+//! reduction with non-associative FP. The current CPU backend satisfies
+//! this. Adding a parallel matmul or non-deterministic kernel would
+//! break these tests *correctly* — the failure would mean the serialization
+//! pair no longer captures the full state needed for reproducible
+//! inference, and the test should be loosened or the determinism
+//! contract documented and enforced elsewhere.
 //!
 //! The repo serializes `Graph` directly via `serde` for some legacy paths,
 //! but `Graph` skips its `engine` field (`#[serde(skip)]`) and there is no
@@ -139,8 +151,7 @@ fn networkdef_json_plus_flat_weights_preserves_forward_batchnorm() {
 
 /// A GRU with a fresh hidden state (`hidden_state == None`) round-trips
 /// safely because `compile()` creates a new `GRUCell` whose state is also
-/// `None`. This pins down the contract that *fresh-state* GRUs serialize
-/// correctly. The complementary scenario — a GRU with non-None
+/// `None`. The complementary scenario — a GRU with non-None
 /// `hidden_state` at save time — is documented as a known gap below.
 #[test]
 fn networkdef_json_plus_flat_weights_preserves_forward_gru_fresh_state() {
@@ -151,41 +162,196 @@ fn networkdef_json_plus_flat_weights_preserves_forward_gru_fresh_state() {
     assert_roundtrip_preserves_forward(net, &xor_inputs(), 2);
 }
 
-/// Documents a known gap: `RNNCell::hidden_state` and
-/// `GRUCell::hidden_state` are `#[serde(skip)]` in `src/layers/rnn.rs`
-/// and `src/layers/gru.rs`. They are *not* part of the
-/// `(NetworkDef.json, flat weights)` contract. The contract only
-/// preserves *fresh-state* recurrent layers; consumers that need to
-/// resume mid-episode must persist the hidden state themselves out of
-/// band.
-///
-/// This test asserts the gap exists rather than pretending it's solved —
-/// `NetworkDef` does not even carry layer-internal state, so the
-/// round-trip path through `(NetworkDef.json, flat weights)` cannot
-/// preserve hidden state by construction. The intent here is purely
-/// documentary: any future change that pretends to round-trip hidden
-/// state must update this test (and the contract).
+/// Same coverage for the simpler RNN cell — its `hidden_state` is also
+/// `#[serde(skip)]`, so the same constraints apply.
 #[test]
-fn known_gap_recurrent_hidden_state_is_not_part_of_contract() {
-    // Construct a GRU and use its hidden_state mutator directly to
-    // simulate a mid-episode save. After round-tripping just
-    // `(NetworkDef.json, flat weights)`, the new GRU has no way to
-    // recover that state.
-    use gran_prix::layers::GRUCell;
-    let mut gru = GRUCell::new(2, 4);
-    gru.hidden_state = Some(Tensor::from_elem(&[1, 4], 0.7));
-    assert!(gru.hidden_state.is_some());
+fn networkdef_json_plus_flat_weights_preserves_forward_rnn_fresh_state() {
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Rnn { input_size: 2, hidden_size: 4 },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    assert_roundtrip_preserves_forward(net, &xor_inputs(), 2);
+}
 
-    // What the contract *does* preserve (the trainable weights) and what
-    // it *does not* (hidden_state) are clear by inspection of the
-    // `#[serde(skip)]` annotations on the layer struct. We sanity-check
-    // here that the field is in fact skipped from the layer's own
-    // serialization round-trip.
-    let json = serde_json::to_string(&gru).expect("GRUCell serializes");
-    let restored: GRUCell = serde_json::from_str(&json).expect("GRUCell deserializes");
-    assert!(
-        restored.hidden_state.is_none(),
-        "hidden_state survived the round-trip — the contract has changed and \
-         this test (and the documentation in src/layers/gru.rs) needs an update"
+/// Dropout in eval mode is identity. The roundtrip must preserve that
+/// — adding a Dropout layer to a network must not change forward
+/// behavior across the (NetworkDef.json, flat weights) pair.
+#[test]
+fn networkdef_json_plus_flat_weights_preserves_forward_dropout() {
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Linear { in_features: 2, out_features: 4 },
+        LayerDef::Dropout { rate: 0.5 },
+        LayerDef::Activation { function: ActivationType::Tanh },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    assert_roundtrip_preserves_forward(net, &xor_inputs(), 2);
+}
+
+/// Structural assertion that the `(NetworkDef.json, flat weights)`
+/// contract carries no hidden-state information.
+///
+/// `NetworkDef` has no `hidden_state` field — only `input_dim` and an
+/// ordered list of `LayerDef` variants whose payloads describe shape,
+/// not state. The serialized JSON therefore cannot encode any value
+/// that would seed a `GRUCell` or `RNNCell` mid-episode after a
+/// round-trip via this contract. Consumers that need to resume mid-
+/// episode must persist the hidden state out of band (a sibling file
+/// or extra payload). Documented in `KNOWN-GAPS.md`.
+///
+/// A purely behavioral test of this gap would also have to depend on
+/// the temporal-state plumbing in `CompiledNetwork::update_states` and
+/// the layer's graph-recompilation semantics, which add noise unrelated
+/// to the contract. The structural check below is the right granularity
+/// for this gap: it pins the JSON shape directly.
+#[test]
+fn known_gap_contract_json_carries_no_hidden_state() {
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Gru { input_size: 2, hidden_size: 4 },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    let json = net.to_json().expect("NetworkDef serializes");
+    let lower = json.to_lowercase();
+
+    // None of the recurrent state field names should appear in the
+    // serialized contract. If they ever do, the contract has been
+    // extended and KNOWN-GAPS.md needs revisiting.
+    for forbidden in ["hidden_state", "hiddenstate", "state_node"] {
+        assert!(
+            !lower.contains(forbidden),
+            "NetworkDef JSON unexpectedly contains '{forbidden}': {json}\n\
+             If this is intentional, update KNOWN-GAPS.md and remove this test."
+        );
+    }
+}
+
+/// `serde_json::to_string(&Graph)` round-trips a *trained* MLP without
+/// drift.
+///
+/// Background: `Graph` derives `Serialize`/`Deserialize` but its
+/// `engine` field is `#[serde(skip)]` (`src/graph/mod.rs`); a deserialized
+/// `Graph` requires `set_backend(...)` to rebuild the engine. The
+/// audit (`AUDITORIA-PRIMITIVAS.md` Q3) flagged this path as
+/// **untested for trained models**: only topology round-trip was
+/// covered (`tests/persistence_flow_tests.rs`).
+///
+/// This test fills that gap. We train an MLP on XOR for 30 epochs,
+/// snapshot its predictions, serialize the entire `Graph` to JSON,
+/// deserialize, attach a fresh backend, and assert the predictions
+/// match bit-for-bit.
+///
+/// If this test ever fails, the right move is **not** to add a
+/// tolerance — it's to find the field that didn't round-trip, fix
+/// the serde annotation, and reinstate strict equality.
+#[test]
+fn serde_json_to_string_round_trips_a_trained_graph() {
+    use gran_prix::graph::{Graph, dsl::GraphBuilder};
+    use gran_prix::loss::{Loss, BCEWithLogits};
+    use gran_prix::optim::{Adam, Optimizer};
+
+    // Build a small MLP directly (so we exercise the full Graph serde
+    // path, not just the NetworkDef/flat-weights contract that
+    // `assert_roundtrip_preserves_forward` covers).
+    let mut graph = Graph::new(Box::new(CPUBackend));
+    let input_node = graph.input(Tensor::new_zeros(&[1, 2]));
+    let mut gb = GraphBuilder::new(&mut graph);
+    let w1 = gb.named_param(Tensor::new_random(&[2, 4]), "w1");
+    let b1 = gb.named_param(Tensor::new_zeros(&[1, 4]), "b1");
+    let l1 = gb.linear(input_node, w1, b1);
+    let h = gb.tanh(l1);
+    let w2 = gb.named_param(Tensor::new_random(&[4, 1]), "w2");
+    let b2 = gb.named_param(Tensor::new_zeros(&[1, 1]), "b2");
+    let l2 = gb.linear(h, w2, b2);
+    let output_node = l2;
+
+    // Train a few epochs to move weights away from random init.
+    let inputs = xor_inputs();
+    let targets =
+        Tensor::from_shape_vec(&[4, 1], vec![0.0, 1.0, 1.0, 0.0]).unwrap();
+    let mut optimizer = Adam::new(0.05);
+    let loss_fn = BCEWithLogits;
+
+    for _ in 0..30 {
+        graph.clear_gradients();
+        let in_slice = inputs.as_slice().unwrap();
+        let tgt_slice = targets.as_slice().unwrap();
+        for i in 0..4 {
+            let row = in_slice[i * 2..(i + 1) * 2].to_vec();
+            if let Some(gran_prix::graph::Node::Input(t)) =
+                graph.nodes_mut().get_mut(input_node.0)
+            {
+                *t = Tensor::from_shape_vec(&[1, 2], row).unwrap();
+            }
+            let pred = graph.execute(output_node).unwrap();
+            let target_t =
+                Tensor::from_shape_vec(&[1, 1], vec![tgt_slice[i]]).unwrap();
+            let mut grad = loss_fn.gradient(&pred, &target_t).unwrap();
+            grad.map_inplace(|v| *v /= 4.0).unwrap();
+            graph.backward(output_node, grad).unwrap();
+            graph.clear_values();
+        }
+        optimizer.step_graph(&mut graph).unwrap();
+    }
+
+    // Snapshot trained predictions.
+    let predictions_before: Vec<Vec<f32>> = (0..4)
+        .map(|i| {
+            let row = inputs.as_slice().unwrap()[i * 2..(i + 1) * 2].to_vec();
+            if let Some(gran_prix::graph::Node::Input(t)) =
+                graph.nodes_mut().get_mut(input_node.0)
+            {
+                *t = Tensor::from_shape_vec(&[1, 2], row).unwrap();
+            }
+            let p = graph.execute(output_node).unwrap();
+            graph.clear_values();
+            p.as_slice().unwrap().to_vec()
+        })
+        .collect();
+
+    // ── Serialize the entire Graph ─────────────────────────────────────
+    let json = serde_json::to_string(&graph).expect("Graph serializes");
+    drop(graph);
+
+    let mut graph2: Graph =
+        serde_json::from_str(&json).expect("Graph deserializes");
+    // Engine is `#[serde(skip)]`; reattach a fresh CPU backend before
+    // any execute call.
+    graph2.set_backend(Box::new(CPUBackend));
+
+    // ── Predict on the same set with the deserialized graph ────────────
+    let predictions_after: Vec<Vec<f32>> = (0..4)
+        .map(|i| {
+            let row = inputs.as_slice().unwrap()[i * 2..(i + 1) * 2].to_vec();
+            if let Some(gran_prix::graph::Node::Input(t)) =
+                graph2.nodes_mut().get_mut(input_node.0)
+            {
+                *t = Tensor::from_shape_vec(&[1, 2], row).unwrap();
+            }
+            let p = graph2.execute(output_node).unwrap();
+            graph2.clear_values();
+            p.as_slice().unwrap().to_vec()
+        })
+        .collect();
+
+    assert_eq!(
+        predictions_before, predictions_after,
+        "trained Graph drifted across serde round-trip"
     );
+}
+
+/// Same structural check for `RNNCell` — its `hidden_state` is also
+/// `#[serde(skip)]`.
+#[test]
+fn known_gap_contract_json_carries_no_rnn_hidden_state() {
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Rnn { input_size: 2, hidden_size: 4 },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    let json = net.to_json().expect("NetworkDef serializes");
+    let lower = json.to_lowercase();
+    for forbidden in ["hidden_state", "hiddenstate"] {
+        assert!(
+            !lower.contains(forbidden),
+            "NetworkDef JSON unexpectedly contains '{forbidden}': {json}"
+        );
+    }
 }

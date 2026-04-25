@@ -23,13 +23,22 @@ pub struct GRUCell {
     pub wn_ih: Tensor, pub bn_ih: Tensor,
     pub wn_hh: Tensor, pub bn_hh: Tensor,
     
-    // Persistent state
+    // Persistent state — value of h_{t-1} between forwards.
     #[serde(skip)]
     pub hidden_state: Option<Tensor>,
 
-    // Internal tracker for the state node during forward pass
+    // Internal tracker for the state output node (h_t) — set during
+    // `forward`. After execute, the graph value cache holds the new
+    // hidden state at this node id.
     #[serde(skip)]
     pub(crate) state_node_id: Option<NodeId>,
+
+    // Internal tracker for the previous-state input node (h_{t-1}) —
+    // set during `forward`. A recurrence-aware caller writes the new
+    // hidden state into this input node between forwards so the next
+    // forward sees the updated state. See `Layer::prev_state_input`.
+    #[serde(skip)]
+    pub(crate) prev_state_input_id: Option<NodeId>,
 
     /// Optional prefix for parameter naming. See `Linear::name_prefix`.
     #[serde(default)]
@@ -56,6 +65,7 @@ impl GRUCell {
             
             hidden_state: None,
             state_node_id: None,
+            prev_state_input_id: None,
             name_prefix: String::new(),
         }
     }
@@ -72,7 +82,11 @@ impl Layer for GRUCell {
             Some(t) => t.clone(),
             None => Tensor::new_zeros(&[1, self.hidden_size]),
         };
+        // h_prev is an `Input` node (mutable tensor). The recurrence-aware
+        // caller (`CompiledNetwork::update_states`) writes h_t back into
+        // this input between forwards. Track its id for that write.
         let h_prev = graph.val(h_prev_tensor);
+        self.prev_state_input_id = Some(h_prev);
 
         let np = |role: &str| make_param_name(&self.name_prefix, role);
 
@@ -140,5 +154,9 @@ impl Layer for GRUCell {
 
     fn set_name_prefix(&mut self, prefix: String) {
         self.name_prefix = prefix;
+    }
+
+    fn prev_state_input(&self) -> Option<NodeId> {
+        self.prev_state_input_id
     }
 }

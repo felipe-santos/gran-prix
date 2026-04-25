@@ -193,6 +193,49 @@ impl ParamStore {
         self.meta.get(id.0).map_or(false, |m| m.frozen)
     }
 
+    /// Freezes every parameter whose registered name starts with `prefix`.
+    ///
+    /// `NetworkDef::compile` registers each layer's parameters under
+    /// names like `"layers[3].weight"`, so a prefix `"layers[3]"`
+    /// freezes the entire third layer atomically. Returns the count of
+    /// parameters affected — `0` is a valid return (no match) and not
+    /// an error, so callers that require at least one match should
+    /// check the return value.
+    ///
+    /// Use [`unfreeze_by_name_prefix`] symmetrically to undo. For the
+    /// backbone+head fine-tuning pattern, freeze the backbone prefix and
+    /// leave the head untouched.
+    pub fn freeze_by_name_prefix(&mut self, prefix: &str) -> usize {
+        let mut count = 0;
+        for meta in self.meta.iter_mut() {
+            if meta.name.starts_with(prefix) {
+                meta.frozen = true;
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Unfreezes every parameter whose registered name starts with `prefix`.
+    /// See [`freeze_by_name_prefix`].
+    pub fn unfreeze_by_name_prefix(&mut self, prefix: &str) -> usize {
+        let mut count = 0;
+        for meta in self.meta.iter_mut() {
+            if meta.name.starts_with(prefix) {
+                meta.frozen = false;
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// Returns the names of all registered parameters in registration
+    /// order. The vector index of each name equals the corresponding
+    /// `ParamId`, so callers can correlate names with indices.
+    pub fn names(&self) -> Vec<&str> {
+        self.meta.iter().map(|m| m.name.as_str()).collect()
+    }
+
     // ── Name Access ────────────────────────────────────────────────────────
 
     /// Returns the human-readable name of a parameter.
@@ -259,13 +302,26 @@ impl ParamStore {
     /// The flat vector must contain exactly the right number of values
     /// for all parameters in registration order.
     ///
-    /// Every value is validated *before* any parameter tensor is mutated:
+    /// # Threat model
     ///
-    ///  - **Finite check** (mandatory): NaN or ±∞ in the input would
-    ///    propagate silently through the next forward pass and corrupt
-    ///    downstream gradients. Any non-finite value causes the import
-    ///    to abort with [`GPError::InvalidWeight`] and leaves the store
-    ///    untouched.
+    /// This is the **trust boundary** for parameter imports. Anything
+    /// that crosses this boundary is treated as untrusted — typical
+    /// sources include disk files, network responses, browser storage,
+    /// and clipboard pastes. The validation guards against:
+    ///
+    ///  - **Bit-corrupted payloads** (truncated download, partial write,
+    ///    flipped bits in storage). These typically appear as NaN/Inf
+    ///    or absurd magnitudes in IEEE 754.
+    ///  - **Adversarial weights** crafted to overflow downstream matmuls
+    ///    or to silently destroy a model loaded from an untrusted source.
+    ///  - **Honest-but-stale payloads** from a different model version
+    ///    whose weights happen to match in length but in nothing else.
+    ///
+    /// Validation guarantees:
+    ///
+    ///  - **Finite check** (mandatory): NaN or ±∞ would propagate
+    ///    silently through the next forward pass and corrupt every
+    ///    downstream gradient. Rejected with [`GPError::InvalidWeight`].
     ///  - **Magnitude check** (mandatory, soft cap): values whose
     ///    absolute magnitude exceeds [`Self::MAX_WEIGHT_MAGNITUDE`] are
     ///    rejected. Trained-network weights typically live in `[-10, 10]`;
@@ -273,10 +329,28 @@ impl ParamStore {
     ///    The cap is set generously (`1e6`) to admit pathological-but-
     ///    legitimate cases while flagging obviously corrupted payloads.
     ///
-    /// The pre-mutation validation is the senior choice over "validate
-    /// per tensor as you go" — partial imports leave the store in a
-    /// shape-consistent but value-inconsistent state, which is exactly
-    /// the kind of corruption that's hard to debug later.
+    /// # What is NOT validated
+    ///
+    /// Gradient accumulation ([`accumulate_gradient`], [`set_gradient`])
+    /// is **not** validated — gradients are produced internally by the
+    /// engine's backward pass, which is in the trust zone. If an
+    /// internal computation produces NaN it indicates a bug elsewhere
+    /// (loss too high, learning rate too aggressive, vanishing/exploding
+    /// gradient) and validation here would only mask that.
+    ///
+    /// Shape consistency is validated by `import_flat`'s length check,
+    /// not by per-tensor shape comparison — the flat vector is
+    /// implicitly typed by the registered tensors.
+    ///
+    /// # Atomicity
+    ///
+    /// All values are validated **before** any parameter tensor is
+    /// mutated. On a validation error the store is left untouched.
+    /// Past validation, mutation proceeds tensor-by-tensor; if a
+    /// per-tensor `Tensor::from_shape_vec` fails (e.g., allocator
+    /// failure under memory pressure) the store may be left partially
+    /// updated. Callers concerned with this edge case should clone the
+    /// store before calling and roll back on error.
     pub fn import_flat(&mut self, weights: &[f32]) -> GPResult<()> {
         let total: usize = self.tensors.iter().map(|t| t.len()).sum();
         if weights.len() != total {
@@ -547,15 +621,36 @@ mod tests {
     }
 
     #[test]
-    fn test_import_flat_rejects_excessive_magnitude() {
+    fn test_import_flat_boundary_max_magnitude_exact_is_accepted() {
+        // Exactly the documented cap is admitted. Anything strictly
+        // greater is rejected. This pins the boundary.
         let mut store = make_store();
         let mut weights = vec![0.0_f32; store.total_params()];
-        // Just above the soft cap.
-        weights[7] = ParamStore::MAX_WEIGHT_MAGNITUDE * 2.0;
+        weights[0] = ParamStore::MAX_WEIGHT_MAGNITUDE;
+        weights[1] = -ParamStore::MAX_WEIGHT_MAGNITUDE;
+        store
+            .import_flat(&weights)
+            .expect("MAX_WEIGHT_MAGNITUDE itself must be accepted");
+        assert_eq!(
+            store.tensor(ParamId(0)).as_slice().unwrap()[0],
+            ParamStore::MAX_WEIGHT_MAGNITUDE
+        );
+    }
+
+    #[test]
+    fn test_import_flat_boundary_one_above_cap_is_rejected() {
+        // The smallest f32 strictly above the cap that we can construct
+        // without losing precision: cap + (cap.next_up() - cap).
+        let mut store = make_store();
+        let mut weights = vec![0.0_f32; store.total_params()];
+        let just_above = f32::from_bits(ParamStore::MAX_WEIGHT_MAGNITUDE.to_bits() + 1);
+        assert!(just_above > ParamStore::MAX_WEIGHT_MAGNITUDE);
+        weights[2] = just_above;
+
         let err = store.import_flat(&weights).unwrap_err();
         match err {
             GPError::InvalidWeight { index, reason } => {
-                assert_eq!(index, 7);
+                assert_eq!(index, 2);
                 assert!(reason.contains("magnitude"), "got {reason}");
             }
             other => panic!("expected InvalidWeight, got {other:?}"),
@@ -563,15 +658,127 @@ mod tests {
     }
 
     #[test]
-    fn test_import_flat_accepts_legitimate_extreme_magnitudes() {
-        // A poorly conditioned (but not adversarial) trained network can
-        // produce weights in the thousands. The cap should admit those.
+    fn test_import_flat_accepts_realistic_trained_weight_range() {
+        // Trained-network weights typically live in [-10, 10]. This
+        // sanity-checks that ordinary training output isn't misclassified
+        // as "adversarial" by a future tightening of the cap.
         let mut store = make_store();
         let mut weights = vec![0.0_f32; store.total_params()];
-        weights[0] = 5_000.0;
-        weights[1] = -5_000.0;
-        store.import_flat(&weights).expect("legitimate extreme magnitudes accepted");
-        assert_eq!(store.tensor(ParamId(0)).as_slice().unwrap()[0], 5_000.0);
+        weights[0] = 7.5;
+        weights[1] = -3.2;
+        weights[10] = 0.001;
+        store.import_flat(&weights).expect("ordinary weights admitted");
+        assert_eq!(store.tensor(ParamId(0)).as_slice().unwrap()[0], 7.5);
+    }
+
+    #[test]
+    fn test_import_flat_does_not_mutate_on_first_invalid_value() {
+        // A value early in the buffer is invalid — store must stay clean
+        // and no later valid value should leak into the store either.
+        let mut store = make_store();
+        // Initial state: all zeros. Capture for comparison.
+        let before: Vec<f32> = store.export_flat().unwrap();
+
+        let mut weights = vec![1.0_f32; store.total_params()];
+        weights[0] = f32::NAN;
+        let _ = store.import_flat(&weights).unwrap_err();
+
+        let after: Vec<f32> = store.export_flat().unwrap();
+        assert_eq!(before, after, "store mutated despite failed import");
+    }
+
+    #[test]
+    fn test_freeze_by_name_prefix_affects_only_matching_params() {
+        let mut store = ParamStore::new();
+        store.register(Tensor::new_zeros(&[1]), "layers[0].weight");
+        store.register(Tensor::new_zeros(&[1]), "layers[0].bias");
+        store.register(Tensor::new_zeros(&[1]), "layers[2].weight");
+        store.register(Tensor::new_zeros(&[1]), "layers[2].bias");
+        store.register(Tensor::new_zeros(&[1]), "layers[4].weight");
+        store.register(Tensor::new_zeros(&[1]), "layers[4].bias");
+
+        let count = store.freeze_by_name_prefix("layers[2]");
+        assert_eq!(count, 2, "exactly weight + bias of layer 2");
+
+        assert!(!store.is_frozen(ParamId(0)));
+        assert!(!store.is_frozen(ParamId(1)));
+        assert!(store.is_frozen(ParamId(2)));
+        assert!(store.is_frozen(ParamId(3)));
+        assert!(!store.is_frozen(ParamId(4)));
+        assert!(!store.is_frozen(ParamId(5)));
+    }
+
+    #[test]
+    fn test_freeze_by_name_prefix_no_match_returns_zero() {
+        let mut store = make_store();
+        let count = store.freeze_by_name_prefix("does_not_exist");
+        assert_eq!(count, 0);
+        for i in 0..store.len() {
+            assert!(!store.is_frozen(ParamId(i)));
+        }
+    }
+
+    #[test]
+    fn test_freeze_then_unfreeze_by_name_prefix_round_trips() {
+        let mut store = ParamStore::new();
+        store.register(Tensor::new_zeros(&[1]), "layers[0].weight");
+        store.register(Tensor::new_zeros(&[1]), "layers[1].weight");
+
+        store.freeze_by_name_prefix("layers[");
+        assert!(store.is_frozen(ParamId(0)));
+        assert!(store.is_frozen(ParamId(1)));
+
+        let count = store.unfreeze_by_name_prefix("layers[");
+        assert_eq!(count, 2);
+        assert!(!store.is_frozen(ParamId(0)));
+        assert!(!store.is_frozen(ParamId(1)));
+    }
+
+    #[test]
+    fn test_names_returns_all_in_registration_order() {
+        let store = make_store();
+        let names = store.names();
+        assert_eq!(
+            names,
+            vec!["layer1.weight", "layer1.bias", "layer2.weight", "layer2.bias"]
+        );
+    }
+
+    #[test]
+    fn test_serialization_round_trips_param_names() {
+        // The `name` field of `ParamMeta` is part of the serialized
+        // payload — losing it on round-trip would silently break the
+        // freeze-by-name API after a save/load cycle.
+        let mut store = ParamStore::new();
+        store.register(Tensor::new_zeros(&[1]), "layers[3].weight");
+        store.register(Tensor::new_zeros(&[1]), "layers[3].bias");
+
+        let json = serde_json::to_string(&store).unwrap();
+        let restored: ParamStore = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            restored.names(),
+            vec!["layers[3].weight", "layers[3].bias"]
+        );
+    }
+
+    #[test]
+    fn test_accumulate_gradient_does_not_validate_input() {
+        // Documents the asymmetric trust model: gradient accumulation
+        // is in the trust zone. If a NaN gradient ever appears here it
+        // means an upstream component (loss, backward pass, optimizer)
+        // produced it — validating in this method would mask that bug
+        // rather than fix it.
+        //
+        // Locking this behavior down by test means a future change that
+        // adds validation here must also revisit the threat model in
+        // `import_flat`'s docstring.
+        let mut store = make_store();
+        let nan_grad = Tensor::from_shape_vec(&[2, 3], vec![f32::NAN; 6]).unwrap();
+        store
+            .accumulate_gradient(ParamId(0), nan_grad)
+            .expect("accumulate_gradient deliberately accepts any tensor");
+        let g = store.gradient(ParamId(0)).unwrap();
+        assert!(g.as_slice().unwrap()[0].is_nan());
     }
 
     #[test]

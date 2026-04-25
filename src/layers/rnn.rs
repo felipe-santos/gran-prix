@@ -16,13 +16,23 @@ pub struct RNNCell {
     pub weight_hh: Tensor,
     pub bias_hh: Tensor,
 
-    // Persistent state
+    // Persistent state — the value of h_{t-1} between forwards.
     #[serde(skip)]
     pub hidden_state: Option<Tensor>,
 
-    // Internal tracker for the state node during forward pass
+    // Internal tracker for the state output node (h_t) — set during
+    // `forward` so callers can read the new hidden state from the
+    // graph value cache after each execute.
     #[serde(skip)]
     pub(crate) state_node_id: Option<NodeId>,
+
+    // Internal tracker for the previous-state input node (h_{t-1}) —
+    // set during `forward` so callers can write the new hidden state
+    // back into the graph's input slot between forwards. Without this
+    // back-write, the graph's previous-state input keeps its initial
+    // (zero) value forever and recurrence is broken.
+    #[serde(skip)]
+    pub(crate) prev_state_input_id: Option<NodeId>,
 
     /// Optional prefix for parameter naming. See `Linear::name_prefix`.
     #[serde(default)]
@@ -46,6 +56,7 @@ impl RNNCell {
             bias_hh,
             hidden_state: None,
             state_node_id: None,
+            prev_state_input_id: None,
             name_prefix: String::new(),
         }
     }
@@ -85,9 +96,14 @@ impl Layer for RNNCell {
             Some(t) => t.clone(),
             None => Tensor::new_zeros(&[1, self.hidden_size]),
         };
-        
-        // We inject the previous hidden state as a "Val" (constant for this step)
+
+        // Inject the previous hidden state as an `Input` node (mutable
+        // tensor) so a recurrence-aware caller can write the new
+        // hidden state back into it between forwards. Track the node id
+        // in `prev_state_input_id` so `CompiledNetwork::update_states`
+        // knows where to write.
         let h_prev_node = graph.val(h_prev_tensor);
+        self.prev_state_input_id = Some(h_prev_node);
         let hh_proj = graph.linear(h_prev_node, w_hh, b_hh);
         
         // 3. Combine: ih_proj + hh_proj
@@ -120,5 +136,9 @@ impl Layer for RNNCell {
 
     fn set_name_prefix(&mut self, prefix: String) {
         self.name_prefix = prefix;
+    }
+
+    fn prev_state_input(&self) -> Option<NodeId> {
+        self.prev_state_input_id
     }
 }

@@ -1,6 +1,31 @@
 /* @ts-self-types="./gran_prix_wasm.d.ts" */
 
 /**
+ * Loss function used by a [`Trainer`]. Auto-detected from the
+ * underlying [`NetworkDef`]'s output dimension at construction time:
+ * `output_dim == 1` → `BinaryCrossEntropy`, otherwise
+ * `CategoricalCrossEntropy`. Determines:
+ *
+ *  - Which loss is used in [`train_batch`] / [`train_batch_multi_class`]
+ *  - How [`predict_probs`] interprets logits (sigmoid vs row-softmax)
+ *  - Which methods are valid (binary methods error on multi-class
+ *    trainers and vice versa)
+ * @enum {0 | 1}
+ */
+export const LossKind = Object.freeze({
+    /**
+     * Binary classification head — single-logit output, sigmoid for
+     * inference, BCE-with-logits for training.
+     */
+    BinaryCrossEntropy: 0, "0": "BinaryCrossEntropy",
+    /**
+     * Multi-class classification head — `K`-logit output, row-wise
+     * softmax for inference, CrossEntropy-with-logits for training.
+     */
+    CategoricalCrossEntropy: 1, "1": "CategoricalCrossEntropy",
+});
+
+/**
  * Mutation strategy for neural network weight evolution
  *
  * # Examples
@@ -456,6 +481,30 @@ export class Trainer {
         wasm.__wbg_trainer_free(ptr, 0);
     }
     /**
+     * Freezes every trainable parameter whose registered name starts
+     * with `prefix`, returning the count affected.
+     *
+     * `NetworkDef::compile` registers parameters with names like
+     * `"layers[3].weight"`, so a prefix of `"layers[3]"` freezes the
+     * fourth layer atomically. Layers indexed by activation-only
+     * `LayerDef`s contribute no parameters; their indices appear as
+     * gaps in the namespace.
+     *
+     * A return of `0` means no parameter matched — common if the
+     * caller passed a typo. The method does not error in that case
+     * because the absence of a match isn't necessarily a bug
+     * (e.g., a `paranoidFreeze` caller might attempt several
+     * candidate prefixes).
+     * @param {string} prefix
+     * @returns {number}
+     */
+    freezeByPrefix(prefix) {
+        const ptr0 = passStringToWasm0(prefix, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_freezeByPrefix(this.__wbg_ptr, ptr0, len0);
+        return ret >>> 0;
+    }
+    /**
      * Backward-compatible: parses the old `WasmArchitecture` JSON format
      * by converting it to a [`NetworkDef`] internally.
      *
@@ -551,6 +600,51 @@ export class Trainer {
         }
     }
     /**
+     * Returns the input feature dimensionality.
+     * @returns {number}
+     */
+    inputDim() {
+        const ret = wasm.trainer_inputDim(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Returns the loss/output mode for this trainer. See [`LossKind`]
+     * for the auto-detection rule.
+     * @returns {LossKind}
+     */
+    lossKind() {
+        const ret = wasm.trainer_lossKind(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Returns the canonical [`NetworkDef`] JSON used to construct this
+     * trainer.
+     *
+     * The pair `(networkDefJson(), getWeights())` is the canonical
+     * serialization contract for distributing a trained model:
+     * reconstruct via [`from_network_def`] + [`import_weights`] and
+     * the predictions are bit-identical (pinned by
+     * `tests/persistence_e2e.rs`). The full `Graph` serde path also
+     * works for trained MLPs (pinned by
+     * `serde_json_to_string_round_trips_a_trained_graph`), but uses a
+     * less explicit contract — prefer the JSON+weights pair for
+     * anything crossing a trust boundary (disk, network, browser
+     * storage).
+     * @returns {string}
+     */
+    networkDefJson() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.trainer_networkDefJson(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free_command_export(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
      * Creates a trainer with a simple MLP: Input → (Linear+Tanh)×N → Linear(1).
      *
      * This is the constructor used by the Playground for binary classification.
@@ -569,6 +663,40 @@ export class Trainer {
         return this;
     }
     /**
+     * Returns the output dimensionality (number of classes for
+     * multi-class, 1 for binary).
+     * @returns {number}
+     */
+    outputDim() {
+        const ret = wasm.trainer_outputDim(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Returns the registered names of all parameters in registration
+     * order. Useful for callers that need to enumerate available
+     * freeze targets — for example, a "freeze backbone, leave head
+     * trainable" UI that lists every layer prefix.
+     *
+     * JS sees a `string[]` because `wasm-bindgen` auto-converts
+     * `Vec<String>`.
+     * @returns {string[]}
+     */
+    paramNames() {
+        const ret = wasm.trainer_paramNames(this.__wbg_ptr);
+        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Runs a single forward pass and returns a sigmoid-mapped probability.
+     *
+     * **Output assumption.** This trainer is wired for binary
+     * classification: training uses [`BCEWithLogits`], `predict` reads
+     * `slice[0]` of the network's output and applies sigmoid. If the
+     * underlying [`NetworkDef`] declares `output_dim > 1`, this method
+     * silently ignores all but the first output element. Multi-class
+     * classification needs a different inference path (softmax), which
+     * is documented as a deferred capability in `KNOWN-GAPS.md`.
      * @param {Float32Array} features
      * @returns {number}
      */
@@ -576,6 +704,164 @@ export class Trainer {
         const ptr0 = passArrayF32ToWasm0(features, wasm.__wbindgen_malloc_command_export);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.trainer_predict(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0];
+    }
+    /**
+     * Batched inference over a flat input buffer.
+     *
+     * `inputs` must be `batch_size * input_dim` floats laid out
+     * row-major (i.e., sample `i`'s features start at index
+     * `i * input_dim`). The output is `batch_size` probabilities,
+     * each sigmoid-mapped from the network's logit output for the
+     * corresponding sample — one per row of the input.
+     *
+     * # Performance
+     *
+     * This is a **single forward pass** with batch dimension `B`,
+     * not `B` independent forwards. The cost of `predict_batch(B)`
+     * is approximately the cost of one matmul over `[B, in] x [in, out]`
+     * instead of `B` matmuls over `[1, in] x [in, out]`. For DOM
+     * classification with thousands of nodes, this is the difference
+     * between an `O(B)` JS↔WASM boundary cost and a single boundary
+     * crossing.
+     *
+     * # Equivalence with `predict`
+     *
+     * For an MLP without `BatchNorm`, `predict_batch` is bit-equivalent
+     * to calling `predict` once per row. Networks containing
+     * `BatchNorm` are *not* bit-equivalent because BN computes batch
+     * statistics from the input batch — single-sample BN falls back
+     * to affine, batched BN uses the row-wise statistics. This
+     * matches the documented design of `BatchNorm` in
+     * `src/layers/batchnorm.rs`.
+     *
+     * # Side effects
+     *
+     * At entry, the input node's tensor shape is widened from
+     * `[1, input_dim]` to `[batch_size, input_dim]`. At exit, it's
+     * reset back to `[1, input_dim]` (zero-filled) so subsequent
+     * `predict` / `train_batch` calls — which `copy_from` a
+     * `[1, input_dim]` buffer and would error on a shape mismatch
+     * — work without surprise.
+     *
+     * # Output assumption
+     *
+     * Binary-classification path (sigmoid). For multi-class trainers
+     * this method returns an error — use [`predict_probs_batch`]
+     * instead.
+     * @param {Float32Array} inputs
+     * @param {number} batch_size
+     * @returns {Float32Array}
+     */
+    predictBatch(inputs, batch_size) {
+        const ptr0 = passArrayF32ToWasm0(inputs, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_predictBatch(this.__wbg_ptr, ptr0, len0, batch_size);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v2;
+    }
+    /**
+     * Returns the predicted class index (argmax of [`predict_probs`]).
+     *
+     * For a binary trainer the result is `1` if `P(class=1) >= 0.5`
+     * and `0` otherwise — matches the convention `predict() >= 0.5`.
+     * For a multi-class trainer it's `argmax_i softmax(logits)[i]`,
+     * breaking ties in favor of the lower index (the natural behavior
+     * of a left-to-right scan).
+     * @param {Float32Array} features
+     * @returns {number}
+     */
+    predictClass(features) {
+        const ptr0 = passArrayF32ToWasm0(features, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_predictClass(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * Returns the full output distribution for a single sample.
+     *
+     * Output shape:
+     *  - Binary trainer (`output_dim == 1`): a 1-element vector
+     *    containing the sigmoid of the logit, i.e. `P(class=1)`.
+     *  - Multi-class trainer: an `output_dim`-element vector of
+     *    softmax probabilities summing to 1.
+     *
+     * Works for both modes — callers that don't care about the
+     * distinction can use this uniformly. Use [`predict_class`] if
+     * only the argmax is needed.
+     * @param {Float32Array} features
+     * @returns {Float32Array}
+     */
+    predictProbs(features) {
+        const ptr0 = passArrayF32ToWasm0(features, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_predictProbs(this.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v2;
+    }
+    /**
+     * Batched version of [`predict_probs`].
+     *
+     * Output is row-major flat: `output[i * output_dim + c]` is the
+     * probability of class `c` for sample `i`. Length is
+     * `batch_size * output_dim`.
+     *
+     * Same single-forward batched semantics as [`predict_batch`].
+     * Side effect: input node is widened then reset to
+     * `[1, input_dim]` zeros at exit.
+     * @param {Float32Array} inputs
+     * @param {number} batch_size
+     * @returns {Float32Array}
+     */
+    predictProbsBatch(inputs, batch_size) {
+        const ptr0 = passArrayF32ToWasm0(inputs, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_predictProbsBatch(this.__wbg_ptr, ptr0, len0, batch_size);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v2;
+    }
+    /**
+     * Trains one batch using `CrossEntropyWithLogits`.
+     *
+     * `inputs` is `batch_size * input_dim` floats row-major.
+     * `class_indices` is `batch_size` class labels in `0..output_dim`.
+     * Each label is one-hot encoded internally to a `[1, output_dim]`
+     * target tensor — this is what the underlying loss function
+     * expects.
+     *
+     * Returns the mean loss across the batch.
+     *
+     * Errors if any class index is out of range, or if this trainer
+     * is binary-mode (use [`train_batch`] instead).
+     * @param {Float32Array} inputs
+     * @param {Uint32Array} class_indices
+     * @param {number} lr
+     * @returns {number}
+     */
+    trainBatchMultiClass(inputs, class_indices, lr) {
+        const ptr0 = passArrayF32ToWasm0(inputs, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray32ToWasm0(class_indices, wasm.__wbindgen_malloc_command_export);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_trainBatchMultiClass(this.__wbg_ptr, ptr0, len0, ptr1, len1, lr);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -612,6 +898,17 @@ export class Trainer {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0];
+    }
+    /**
+     * Inverse of [`freezeByPrefix`].
+     * @param {string} prefix
+     * @returns {number}
+     */
+    unfreezeByPrefix(prefix) {
+        const ptr0 = passStringToWasm0(prefix, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_unfreezeByPrefix(this.__wbg_ptr, ptr0, len0);
+        return ret >>> 0;
     }
 }
 if (Symbol.dispose) Trainer.prototype[Symbol.dispose] = Trainer.prototype.free;
@@ -904,6 +1201,17 @@ function debugString(val) {
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
+function getArrayJsValueFromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    const mem = getDataViewMemory0();
+    const result = [];
+    for (let i = ptr; i < ptr + 4 * len; i += 4) {
+        result.push(wasm.__wbindgen_externrefs.get(mem.getUint32(i, true)));
+    }
+    wasm.__externref_drop_slice_command_export(ptr, len);
+    return result;
 }
 
 function getArrayU8FromWasm0(ptr, len) {

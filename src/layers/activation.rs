@@ -32,4 +32,10 @@ impl Layer for Activation {
             ActivationType::Softmax => graph.softmax(input),
         }
     }
+
+    fn set_name_prefix(&mut self, _prefix: String) {
+        // Activation has no trainable parameters — no names to assign.
+        // The explicit empty body affirms this rather than silently
+        // inheriting a default no-op.
+    }
 }

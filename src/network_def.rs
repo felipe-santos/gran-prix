@@ -287,21 +287,65 @@ pub struct CompiledNetwork {
 }
 
 impl CompiledNetwork {
-    /// Updates stateful layers (RNN/GRU) after a forward pass.
+    /// Propagates each stateful layer's new hidden state from the graph
+    /// value cache (where the most recent forward left it) into both
+    /// the layer's `hidden_state` field *and* the previous-state input
+    /// node in the graph. The latter is what makes recurrence actually
+    /// work across multiple forwards through the same compiled graph:
+    /// without writing the new state back into the input node, the
+    /// graph would re-use the original (zero) initial state on every
+    /// forward.
     ///
-    /// Reads the state node's computed value from the graph and
-    /// writes it back into the layer's hidden state.
+    /// Call this after each [`Graph::execute`] when running a recurrent
+    /// network step-by-step, then call [`Graph::clear_values`] before
+    /// the next execute. The clear is required because the engine
+    /// caches per-node values from the previous forward — those caches
+    /// must be invalidated, otherwise the engine returns stale outputs
+    /// even though the input slots have changed.
+    ///
+    /// Stateless layers (Linear, Activation, BatchNorm, Dropout)
+    /// implement `state_node` as `None` and contribute nothing to the
+    /// loop; the cost is one method call per layer per forward.
     pub fn update_states(&mut self) {
+        // Two-phase update so the borrow against `self.graph.values()`
+        // is dropped before we mutate `self.graph.nodes_mut()`. We
+        // collect the (prev_input_id, new_state) pairs first, then
+        // apply them.
+        let mut writes: Vec<(crate::NodeId, Tensor)> = Vec::new();
         for layer in &mut self.stateful_layers {
-            if let Some(state_node_id) = layer.state_node() {
-                if let Some(Some(tensor)) = self.graph.values().get(state_node_id.0) {
-                    layer.update_state(tensor.clone());
-                }
+            let Some(state_node_id) = layer.state_node() else { continue };
+            let Some(Some(tensor)) = self.graph.values().get(state_node_id.0) else {
+                continue;
+            };
+            let new_state = tensor.clone();
+            layer.update_state(new_state.clone());
+            if let Some(prev_id) = layer.prev_state_input() {
+                writes.push((prev_id, new_state));
             }
         }
+
+        for (prev_id, new_state) in writes {
+            if let Some(crate::graph::Node::Input(t)) =
+                self.graph.nodes_mut().get_mut(prev_id.0)
+            {
+                *t = new_state;
+            }
+        }
+
+        // Invalidate the engine's per-node value cache. Without this,
+        // the next `execute` would short-circuit recomputation of any
+        // node whose inputs it thinks haven't changed — which would
+        // include the freshly-mutated previous-state input.
+        self.graph.clear_values();
     }
 
     /// Resets all stateful layers (e.g., at the start of a new episode).
+    ///
+    /// Clears each layer's `hidden_state` field. The previous-state
+    /// *input nodes* in the graph still hold whatever value was last
+    /// written into them — call [`Graph::execute`] once after reset to
+    /// rebuild caches with the layer's reset state, or set the input
+    /// tensors to zeros explicitly before the next forward.
     pub fn reset_states(&mut self) {
         for layer in &mut self.stateful_layers {
             layer.reset_state();
@@ -480,6 +524,40 @@ mod tests {
         assert_eq!(names[5], "layers[4].bias");
         // Index gaps (1, 3) correspond to Activation layers, which
         // register no parameters.
+    }
+
+    #[test]
+    fn test_compile_freeze_layer_by_name_only_affects_target_layer() {
+        // End-to-end check that named params connect to the
+        // freeze-by-name API: build a 3-layer MLP, freeze the middle
+        // layer by name, verify only its 2 params are frozen.
+        let net = NetworkDef::mlp(
+            2, &[8, 4], 1,
+            ActivationType::Tanh,
+            None,
+        );
+        let mut compiled = net.compile(Box::new(CPUBackend)).unwrap();
+
+        // Layers in compile order:
+        //   layers[0] Linear   (params 0, 1)
+        //   layers[1] Activation (no params)
+        //   layers[2] Linear   (params 2, 3)
+        //   layers[3] Activation (no params)
+        //   layers[4] Linear   (params 4, 5)
+        let frozen = compiled.graph.params_mut().freeze_by_name_prefix("layers[2]");
+        assert_eq!(frozen, 2, "expected exactly layer 2's weight + bias");
+
+        for i in 0..compiled.graph.params().len() {
+            let id = crate::ParamId(i);
+            let expected_frozen = matches!(i, 2 | 3);
+            assert_eq!(
+                compiled.graph.params().is_frozen(id),
+                expected_frozen,
+                "param {} ({}) frozen state",
+                i,
+                compiled.graph.params().name(id),
+            );
+        }
     }
 
     #[test]
