@@ -6,22 +6,6 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-# wasm-pack invokes wasm-opt for the release build. Modern rustc emits bulk
-# memory operations (memory.copy / memory.fill) by default, which the
-# bundled wasm-opt's validator rejects unless the corresponding feature
-# flags are enabled. We also pass `-Oz` to bias toward the smallest
-# possible binary — this matches the `opt-level = "z"` in [profile.release]
-# and is the right trade-off for a Chrome-extension bundle.
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = [
-    "-Oz",
-    "--enable-bulk-memory",
-    "--enable-mutable-globals",
-    "--enable-nontrapping-float-to-int",
-    "--enable-sign-ext",
-    "--enable-reference-types",
-]
-
 [dependencies]
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
@@ -32,9 +16,6 @@ ndarray = { version = "0.15", features = ["serde"] }
 getrandom = { version = "0.2", features = ["js"] }
 js-sys = "0.3"
 
-[dev-dependencies]
-wasm-bindgen-test = "0.3"
-
 [dependencies.gran-prix]
 path = "../"
 default-features = false
@@ -44,14 +25,7 @@ debug = true
 lto = false
 opt-level = 0
 
-# Release profile tuned for the smallest possible .wasm shipped inside a
-# Chrome extension bundle (Web Store install friction grows quickly past
-# ~5 MB). `opt-level = "z"` plus LTO and stripped symbols shaves ~30-40 %
-# off the binary versus `opt-level = "s"` with debug info; the bridge is
-# already CPU-bound on small batches so the speed regression is negligible.
 [profile.release]
-debug = false
-strip = "symbols"
-lto = true
-opt-level = "z"
-codegen-units = 1
+debug = true
+lto = false
+opt-level = "s"
