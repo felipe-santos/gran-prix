@@ -337,7 +337,8 @@ export class Trainer {
     [Symbol.dispose](): void;
     /**
      * Freezes every trainable parameter whose registered name starts
-     * with `prefix`, returning the count affected.
+     * with `prefix`, returning the indices of the parameters that
+     * were affected (in registration order).
      *
      * `NetworkDef::compile` registers parameters with names like
      * `"layers[3].weight"`, so a prefix of `"layers[3]"` freezes the
@@ -345,13 +346,14 @@ export class Trainer {
      * `LayerDef`s contribute no parameters; their indices appear as
      * gaps in the namespace.
      *
-     * A return of `0` means no parameter matched — common if the
-     * caller passed a typo. The method does not error in that case
-     * because the absence of a match isn't necessarily a bug
-     * (e.g., a `paranoidFreeze` caller might attempt several
-     * candidate prefixes).
+     * An empty return vector means no parameter matched — common if
+     * the caller passed a typo. The method does not error in that
+     * case because the absence of a match isn't necessarily a bug.
+     * Returning the affected indices lets callers audit "did I
+     * freeze the right parameters?" — for instance by passing the
+     * vector to [`param_name`] for a logging readback.
      */
-    freezeByPrefix(prefix: string): number;
+    freezeByPrefix(prefix: string): Uint32Array;
     /**
      * Backward-compatible: parses the old `WasmArchitecture` JSON format
      * by converting it to a [`NetworkDef`] internally.
@@ -378,6 +380,18 @@ export class Trainer {
      * ```
      */
     static fromNetworkDef(json: string): Trainer;
+    /**
+     * Like [`from_network_def`], but with an explicit `loss_kind`
+     * instead of auto-detection from `output_dim`. Use this when the
+     * auto-detection rule isn't right — e.g., a network with
+     * `output_dim == 2` that the caller wants to treat as two
+     * independent binary heads (`BinaryCrossEntropy`) rather than a
+     * 2-class softmax (`CategoricalCrossEntropy`).
+     *
+     * Errors if the terminal activation in the architecture is
+     * incompatible with the chosen loss (see `validate_loss_compat`).
+     */
+    static fromNetworkDefWithLoss(json: string, loss_kind: LossKind): Trainer;
     get_decision_boundary(resolution: number, feature_map: Function): Float32Array;
     get_gradient_norms(): Float32Array;
     get_weights(): Float32Array;
@@ -386,6 +400,12 @@ export class Trainer {
      * Returns the input feature dimensionality.
      */
     inputDim(): number;
+    /**
+     * Returns whether the parameter at `index` is currently frozen.
+     * Out-of-range indices return `false` (consistent with
+     * [`param_name`]'s out-of-range behavior).
+     */
+    isFrozenByIndex(index: number): boolean;
     /**
      * Returns the loss/output mode for this trainer. See [`LossKind`]
      * for the auto-detection rule.
@@ -419,13 +439,26 @@ export class Trainer {
      */
     outputDim(): number;
     /**
-     * Returns the registered names of all parameters in registration
-     * order. Useful for callers that need to enumerate available
-     * freeze targets — for example, a "freeze backbone, leave head
-     * trainable" UI that lists every layer prefix.
+     * Returns the total number of registered parameters. Use with
+     * [`param_name`] / [`is_frozen_by_index`] to enumerate without
+     * pulling the full name list across the JS↔WASM boundary.
+     */
+    paramCount(): number;
+    /**
+     * Returns the registered name of the parameter at `index`.
      *
-     * JS sees a `string[]` because `wasm-bindgen` auto-converts
-     * `Vec<String>`.
+     * Returns the empty string for out-of-range indices rather than
+     * erroring — this matches the convention `wasm-bindgen` uses
+     * for getters, where a `null`/empty value is more ergonomic than
+     * a thrown exception. Callers that need bound-checked access can
+     * gate on [`param_count`].
+     */
+    paramName(index: number): string;
+    /**
+     * Returns the registered names of all parameters as a
+     * `string[]`. **Allocates and clones each name on every call.**
+     * For hot paths, prefer [`param_count`] + [`param_name`] or
+     * cache the result on the JS side.
      */
     paramNames(): string[];
     /**
@@ -469,14 +502,15 @@ export class Trainer {
      * matches the documented design of `BatchNorm` in
      * `src/layers/batchnorm.rs`.
      *
-     * # Side effects
+     * # Externally observable state
      *
-     * At entry, the input node's tensor shape is widened from
-     * `[1, input_dim]` to `[batch_size, input_dim]`. At exit, it's
-     * reset back to `[1, input_dim]` (zero-filled) so subsequent
-     * `predict` / `train_batch` calls — which `copy_from` a
-     * `[1, input_dim]` buffer and would error on a shape mismatch
-     * — work without surprise.
+     * None. The input node's tensor is snapshotted at entry,
+     * transiently widened to `[batch_size, input_dim]` for the
+     * forward pass, then restored to its exact original value at
+     * exit (success or error). Concurrent observers of the input
+     * node would see the temporary state — but `Trainer` is not
+     * `Send` / `Sync` and is meant for single-threaded use, so
+     * there's no real observer.
      *
      * # Output assumption
      *
@@ -488,13 +522,27 @@ export class Trainer {
     /**
      * Returns the predicted class index (argmax of [`predict_probs`]).
      *
-     * For a binary trainer the result is `1` if `P(class=1) >= 0.5`
-     * and `0` otherwise — matches the convention `predict() >= 0.5`.
-     * For a multi-class trainer it's `argmax_i softmax(logits)[i]`,
-     * breaking ties in favor of the lower index (the natural behavior
-     * of a left-to-right scan).
+     * For a binary trainer this is `1` if `P(class=1) >= 0.5`,
+     * otherwise `0` — the natural default. For a multi-class trainer
+     * it's `argmax_i softmax(logits)[i]`, breaking ties in favor of
+     * the lowest index (`>` rather than `>=` in the scan).
+     *
+     * Use [`predict_class_with_threshold`] to override the binary
+     * decision threshold; production deployments often tune it via
+     * precision/recall trade-off rather than fixing it at 0.5.
      */
     predictClass(features: Float32Array): number;
+    /**
+     * Like [`predict_class`] but with a caller-supplied decision
+     * threshold for the binary case.
+     *
+     * `threshold` must be in `[0, 1]`. For multi-class trainers the
+     * threshold is ignored — the choice is always argmax — and a
+     * threshold outside `[0, 1]` is rejected for both modes (catches
+     * caller errors like passing `0.5` as a logit instead of a
+     * probability).
+     */
+    predictClassWithThreshold(features: Float32Array, threshold: number): number;
     /**
      * Returns the full output distribution for a single sample.
      *
@@ -541,7 +589,7 @@ export class Trainer {
     /**
      * Inverse of [`freezeByPrefix`].
      */
-    unfreezeByPrefix(prefix: string): number;
+    unfreezeByPrefix(prefix: string): Uint32Array;
 }
 
 export function init_panic_hook(): void;
@@ -551,28 +599,33 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_trainer_free: (a: number, b: number) => void;
-    readonly trainer_freezeByPrefix: (a: number, b: number, c: number) => number;
+    readonly trainer_freezeByPrefix: (a: number, b: number, c: number) => [number, number];
     readonly trainer_fromArchitecture: (a: number, b: number) => [number, number, number];
     readonly trainer_fromNetworkDef: (a: number, b: number) => [number, number, number];
+    readonly trainer_fromNetworkDefWithLoss: (a: number, b: number, c: number) => [number, number, number];
     readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
     readonly trainer_get_gradient_norms: (a: number) => [number, number, number, number];
     readonly trainer_get_weights: (a: number) => [number, number, number, number];
     readonly trainer_import_weights: (a: number, b: number, c: number) => [number, number];
     readonly trainer_inputDim: (a: number) => number;
+    readonly trainer_isFrozenByIndex: (a: number, b: number) => number;
     readonly trainer_lossKind: (a: number) => number;
     readonly trainer_networkDefJson: (a: number) => [number, number];
     readonly trainer_new: (a: number, b: number, c: number) => [number, number, number];
     readonly trainer_outputDim: (a: number) => number;
+    readonly trainer_paramCount: (a: number) => number;
+    readonly trainer_paramName: (a: number, b: number) => [number, number];
     readonly trainer_paramNames: (a: number) => [number, number];
     readonly trainer_predict: (a: number, b: number, c: number) => [number, number, number];
     readonly trainer_predictBatch: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly trainer_predictClass: (a: number, b: number, c: number) => [number, number, number];
+    readonly trainer_predictClassWithThreshold: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly trainer_predictProbs: (a: number, b: number, c: number) => [number, number, number, number];
     readonly trainer_predictProbsBatch: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly trainer_trainBatchMultiClass: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly trainer_unfreezeByPrefix: (a: number, b: number, c: number) => number;
+    readonly trainer_unfreezeByPrefix: (a: number, b: number, c: number) => [number, number];
     readonly __wbg_neuralbrain_free: (a: number, b: number) => void;
     readonly neuralbrain_compute: (a: number, b: number, c: number) => [number, number, number, number];
     readonly neuralbrain_export_weights: (a: number) => [number, number, number, number];
@@ -582,7 +635,6 @@ export interface InitOutput {
     readonly neuralbrain_reset: (a: number) => void;
     readonly neuralbrain_reset_memory: (a: number) => void;
     readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly __wbg_population_free: (a: number, b: number) => void;
     readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
     readonly population_count: (a: number) => number;
@@ -591,6 +643,7 @@ export interface InitOutput {
     readonly population_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly population_reset_memories: (a: number) => void;
     readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
+    readonly init_panic_hook: () => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store_command_export: (a: number) => void;

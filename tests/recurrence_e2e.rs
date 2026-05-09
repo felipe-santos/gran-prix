@@ -63,9 +63,15 @@ fn rnn_recurrence_changes_output_across_consecutive_forwards() {
 
     assert_eq!(out1.len(), out2.len(), "shape consistency");
     assert_eq!(out1.len(), 4, "RNN output is the hidden vector");
-    // The two outputs must differ in at least one element. Use a
-    // generous threshold (1e-5) to discount FP noise but still catch
-    // the bug, which would produce element-wise identity.
+    // Threshold rationale: the bug we're guarding against produces
+    // element-wise identity (deltas of exactly 0.0). The fixed code
+    // produces deltas dominated by `tanh(W_hh * h_prev + b_hh)` —
+    // for non-zero h_prev (which we ensure by feeding a non-zero
+    // input) and a Xavier-initialized W_hh, that's typically O(1e-1).
+    // We use 1e-5 as a generous floor that is far above any FP noise
+    // accumulated through 4 floats of matmul + tanh, but far below
+    // any plausible legitimate signal — the bug fails this check by
+    // 5 orders of magnitude.
     let any_different = out1.iter().zip(out2.iter()).any(|(a, b)| (a - b).abs() > 1e-5);
     assert!(
         any_different,
@@ -127,22 +133,13 @@ fn reset_states_returns_rnn_to_zero_initial_state() {
 
     compiled.reset_states();
 
-    // After reset, the layer's hidden_state is None, but the
-    // previous-state input node in the graph still holds the value
-    // we wrote during update_states. We have to clear it explicitly
-    // — see the doc-comment on `reset_states`. Without this, the
-    // next forward sees the lingering h_t from before the reset.
-    if let Some(prev_id) = compiled.stateful_layers.first().unwrap().prev_state_input() {
-        if let Some(gran_prix::graph::Node::Input(t)) =
-            compiled.graph.nodes_mut().get_mut(prev_id.0)
-        {
-            *t = Tensor::new_zeros(t.shape());
-        }
-    }
-    compiled.graph.clear_values();
-
+    // `reset_states` is a complete reset — it clears the layer's
+    // hidden_state field, zeros the graph's previous-state input
+    // node, and invalidates the value cache. The next forward
+    // therefore sees the same conditions as the very first forward
+    // and must produce a bit-identical output.
     let out_c = forward_once(&mut compiled, &row, 2);
-    assert_eq!(out_a, out_c, "after reset + zeroed input, output matches initial forward");
+    assert_eq!(out_a, out_c, "after reset_states, output matches initial forward");
 }
 
 /// Multi-step recurrence: feed three different inputs in sequence.
@@ -168,18 +165,7 @@ fn rnn_recurrence_is_deterministic_and_replayable() {
     };
 
     let outs1 = run(&mut compiled);
-
-    // Reset cleanly: clear hidden_state and zero the prev_state input.
     compiled.reset_states();
-    if let Some(prev_id) = compiled.stateful_layers.first().unwrap().prev_state_input() {
-        if let Some(gran_prix::graph::Node::Input(t)) =
-            compiled.graph.nodes_mut().get_mut(prev_id.0)
-        {
-            *t = Tensor::new_zeros(t.shape());
-        }
-    }
-    compiled.graph.clear_values();
-
     let outs2 = run(&mut compiled);
 
     assert_eq!(outs1, outs2, "sequence replay must be deterministic");

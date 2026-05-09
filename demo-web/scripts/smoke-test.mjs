@@ -277,7 +277,7 @@ async function main() {
     emptyOut instanceof Float32Array && emptyOut.length === 0
   );
 
-  // ── paramNames + freezeByPrefix ──────────────────────────────────────────
+  // ── paramNames + freezeByPrefix + paramCount + paramName + isFrozenByIndex
   // batchTrainer is a 2→4→1 MLP (two Linear layers). Each Linear
   // contributes weight + bias, so paramCount = 4.
   const pnames = batchTrainer.paramNames();
@@ -295,9 +295,48 @@ async function main() {
     pnames.includes('layers[2].weight')
   );
 
-  const frozenCount = batchTrainer.freezeByPrefix('layers[0]');
+  // Lazy accessors that don't clone every name across the boundary.
   check(
-    'freezeByPrefix("layers[0]") freezes exactly that layer (weight + bias)',
+    'paramCount matches paramNames.length',
+    batchTrainer.paramCount() === pnames.length,
+    `paramCount=${batchTrainer.paramCount()}`
+  );
+  check(
+    'paramName(0) matches paramNames[0]',
+    batchTrainer.paramName(0) === pnames[0],
+    `${batchTrainer.paramName(0)} vs ${pnames[0]}`
+  );
+  check(
+    'paramName(out_of_range) returns empty string',
+    batchTrainer.paramName(999) === ''
+  );
+  check(
+    'isFrozenByIndex returns false initially',
+    !batchTrainer.isFrozenByIndex(0)
+  );
+
+  const frozenIndices = batchTrainer.freezeByPrefix('layers[0]');
+  // wasm-bindgen converts `Vec<usize>` to `Uint32Array` (not `Array`).
+  // Validate by indexing rather than `Array.isArray`.
+  check(
+    'freezeByPrefix("layers[0]") returns affected indices [0, 1]',
+    frozenIndices.length === 2
+      && frozenIndices[0] === 0
+      && frozenIndices[1] === 1,
+    `indices=[${frozenIndices[0]}, ${frozenIndices[1]}]`
+  );
+  check(
+    'isFrozenByIndex(0) reflects the freeze',
+    batchTrainer.isFrozenByIndex(0)
+  );
+  check(
+    'isFrozenByIndex(2) untouched',
+    !batchTrainer.isFrozenByIndex(2)
+  );
+  // Backward-compat name for the count-based assertion below.
+  const frozenCount = frozenIndices.length;
+  check(
+    'freezeByPrefix freezes weight + bias (count = 2)',
     frozenCount === 2,
     `count=${frozenCount}`
   );
@@ -334,8 +373,12 @@ async function main() {
   check('unfrozen head moved during training (sanity)', headMoved);
 
   // Unfreeze and verify subsequent training moves layer[0] again.
-  const unfrozenCount = batchTrainer.unfreezeByPrefix('layers[0]');
-  check('unfreezeByPrefix matches frozen count', unfrozenCount === 2);
+  const unfrozenIndices = batchTrainer.unfreezeByPrefix('layers[0]');
+  check(
+    'unfreezeByPrefix returns affected indices',
+    unfrozenIndices.length === 2
+  );
+  check('isFrozenByIndex(0) reset after unfreeze', !batchTrainer.isFrozenByIndex(0));
 
   // ── Multi-class trainer ─────────────────────────────────────────────────
   // 3-class network. fromNetworkDef should auto-detect output_dim > 1
@@ -480,6 +523,80 @@ async function main() {
   check(
     'multi-class trainer learns a 3-class separable dataset',
     allCorrect
+  );
+
+  // ── Threshold-configurable binary classification ────────────────────────
+  const thresholdedTrainer = new Trainer(2, new Uint32Array([4]));
+  // 0.0 threshold → always predicts class 1
+  const alwaysOne = thresholdedTrainer.predictClassWithThreshold(features, 0.0);
+  check(
+    'predictClassWithThreshold(0.0) always predicts class 1 (since prob >= 0)',
+    alwaysOne === 1
+  );
+  // 1.0 threshold → always predicts class 0 (probability never reaches 1.0
+  // due to sigmoid's asymptote)
+  const alwaysZero = thresholdedTrainer.predictClassWithThreshold(features, 1.0);
+  check(
+    'predictClassWithThreshold(1.0) always predicts class 0 (sigmoid never reaches exactly 1)',
+    alwaysZero === 0
+  );
+  // Out-of-range threshold rejected
+  let badThreshold = false;
+  try {
+    thresholdedTrainer.predictClassWithThreshold(features, 1.5);
+  } catch (e) {
+    badThreshold = true;
+  }
+  check('predictClassWithThreshold rejects out-of-range threshold', badThreshold);
+
+  // ── Explicit LossKind constructor ────────────────────────────────────────
+  // A 2-output network treated as two binary heads (rather than 2-class softmax).
+  const twoBinaryHeadsNet = JSON.stringify({
+    input_dim: 2,
+    layers: [{ type: 'linear', in_features: 2, out_features: 2 }],
+  });
+  const explicitBinaryTrainer =
+    Trainer.fromNetworkDefWithLoss(twoBinaryHeadsNet, mod.LossKind.BinaryCrossEntropy);
+  check(
+    'fromNetworkDefWithLoss respects explicit BinaryCrossEntropy on output_dim=2',
+    explicitBinaryTrainer.lossKind() === mod.LossKind.BinaryCrossEntropy
+  );
+
+  // ── Loss-compat validation rejects terminal Sigmoid + BCE ────────────────
+  const sigmoidTerminalNet = JSON.stringify({
+    input_dim: 2,
+    layers: [
+      { type: 'linear', in_features: 2, out_features: 1 },
+      { type: 'activation', function: 'sigmoid' },
+    ],
+  });
+  let sigmoidRejected = false;
+  try {
+    Trainer.fromNetworkDefWithLoss(sigmoidTerminalNet, mod.LossKind.BinaryCrossEntropy);
+  } catch (e) {
+    sigmoidRejected = true;
+  }
+  check(
+    'fromNetworkDefWithLoss rejects terminal Sigmoid + BinaryCrossEntropy',
+    sigmoidRejected
+  );
+
+  const softmaxTerminalNet = JSON.stringify({
+    input_dim: 2,
+    layers: [
+      { type: 'linear', in_features: 2, out_features: 3 },
+      { type: 'activation', function: 'softmax' },
+    ],
+  });
+  let softmaxRejected = false;
+  try {
+    Trainer.fromNetworkDef(softmaxTerminalNet);
+  } catch (e) {
+    softmaxRejected = true;
+  }
+  check(
+    'fromNetworkDef rejects terminal Softmax + auto-detected CCE',
+    softmaxRejected
   );
 
   // ── Long-running training stability ──────────────────────────────────────

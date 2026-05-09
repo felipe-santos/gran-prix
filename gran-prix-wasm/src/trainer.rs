@@ -33,9 +33,17 @@ pub enum LossKind {
 }
 
 impl LossKind {
-    /// Auto-detection rule used by every [`Trainer`] constructor.
-    /// Centralized here so the rule has one definition and one test
-    /// surface.
+    /// Auto-detection rule used by `Trainer` constructors that don't
+    /// take an explicit `LossKind`. Centralized here so the rule has
+    /// one definition and one test surface.
+    ///
+    /// **Caveats.** Callers who want a 2-class problem expressed as
+    /// two independent binary heads (`output_dim == 2`,
+    /// `BinaryCrossEntropy`) must use the explicit constructor
+    /// [`Trainer::from_network_def_with_loss`]; the auto-detection
+    /// rule chooses `CategoricalCrossEntropy` for any
+    /// `output_dim > 1`, which is the right default for the common
+    /// case (multi-class softmax) but not the only valid choice.
     fn from_output_dim(output_dim: usize) -> Self {
         if output_dim == 1 {
             LossKind::BinaryCrossEntropy
@@ -43,6 +51,101 @@ impl LossKind {
             LossKind::CategoricalCrossEntropy
         }
     }
+}
+
+/// Validates that the network's output layer is compatible with the
+/// chosen `LossKind`. Returns an error if the terminal activation
+/// would compose incorrectly with the loss's gradient computation:
+///
+///  - `BinaryCrossEntropy` uses `BCEWithLogits` (applies sigmoid
+///    internally during the gradient calculation). A network ending
+///    in `Sigmoid` would apply sigmoid twice — output of the
+///    network would no longer be a logit.
+///  - `CategoricalCrossEntropy` uses `CrossEntropyWithLogits`
+///    (applies softmax internally). A network ending in `Softmax`
+///    would apply softmax twice — gradient computation breaks.
+///
+/// The check is conservative: it only rejects the unambiguous-bug
+/// case of a terminal saturating activation that the corresponding
+/// loss function already applies. A user who intentionally builds a
+/// network with a non-terminal sigmoid (e.g., as a hidden activation)
+/// is not affected.
+fn validate_loss_compat(net: &NetworkDef, kind: LossKind) -> Result<(), String> {
+    let last = match net.layers.last() {
+        Some(l) => l,
+        None => return Ok(()), // empty network — let `compile` reject this
+    };
+    if let LayerDef::Activation { function } = last {
+        match (function, kind) {
+            (ActivationType::Sigmoid, LossKind::BinaryCrossEntropy) => {
+                return Err(
+                    "Trainer with LossKind::BinaryCrossEntropy expects raw logits as the \
+                     network's output, but the architecture ends in Sigmoid. BCEWithLogits \
+                     applies sigmoid internally; remove the trailing Sigmoid activation."
+                        .to_string(),
+                );
+            }
+            (ActivationType::Softmax, LossKind::CategoricalCrossEntropy) => {
+                return Err(
+                    "Trainer with LossKind::CategoricalCrossEntropy expects raw logits as \
+                     the network's output, but the architecture ends in Softmax. \
+                     CrossEntropyWithLogits applies softmax internally; remove the trailing \
+                     Softmax activation."
+                        .to_string(),
+                );
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Runs a single batched forward pass on `graph` and returns the
+/// raw logit values from the output node as a flat `Vec<f32>`.
+///
+/// This is the shared core of `predict_batch` and `predict_probs_batch`.
+/// Centralizing the snapshot/restore lets both methods present the
+/// same externally-observable contract: at exit, the input node holds
+/// **exactly** the tensor it held at entry — same shape, same values.
+/// Restoration runs on both the success and the error path; an error
+/// during `execute` does not leave the graph's input in a half-modified
+/// state.
+fn batched_forward_logits(
+    graph: &mut Graph,
+    input_node: usize,
+    output_node: NodeId,
+    input_dim: usize,
+    batch_size: usize,
+    inputs: Vec<f32>,
+) -> Result<Vec<f32>, JsValue> {
+    // Snapshot the original input tensor so we can restore it
+    // bit-for-bit at exit. Tiny clone — the input is `[1, input_dim]`
+    // for a fresh `Trainer`, and even after `train_batch`'s copy-in
+    // it's bounded by a single sample.
+    let original_input = match graph.nodes().get(input_node) {
+        Some(gran_prix::graph::Node::Input(t)) => t.clone(),
+        _ => return Err(JsValue::from_str("batched forward: input node not Input")),
+    };
+
+    // Widen the input node for the batched forward.
+    let batch_tensor =
+        Tensor::from_shape_vec(&[batch_size, input_dim], inputs).map_err(js_err)?;
+    if let Some(gran_prix::graph::Node::Input(t)) = graph.nodes_mut().get_mut(input_node) {
+        *t = batch_tensor;
+    }
+    graph.clear_values();
+
+    let exec_result = graph.execute(output_node);
+
+    // Restore — runs on success and error paths.
+    if let Some(gran_prix::graph::Node::Input(t)) = graph.nodes_mut().get_mut(input_node) {
+        *t = original_input;
+    }
+    graph.clear_values();
+
+    let result = exec_result.map_err(js_err)?;
+    let logits = result.as_slice().map_err(js_err)?.to_vec();
+    Ok(logits)
 }
 
 /// Applies the output activation that corresponds to a [`LossKind`].
@@ -120,25 +223,7 @@ impl Trainer {
             ActivationType::Tanh,
             None, // no output activation (logits — BCE with logits applies sigmoid)
         );
-        // Snapshot the canonical JSON before compile consumes the def.
-        let net_json = net.to_json().map_err(js_err)?;
-        let output_dim = net.output_dim();
-        let loss_kind = LossKind::from_output_dim(output_dim);
-        let compiled = net.compile(Box::new(CPUBackend)).map_err(js_err)?;
-        let input_node = compiled.input_node.0;
-        let output_node = compiled.output_node.0;
-
-        Ok(Trainer {
-            graph: RefCell::new(compiled.graph),
-            input_node,
-            output_node,
-            input_dim,
-            output_dim,
-            input_tensor: RefCell::new(Tensor::new_zeros(&[1, input_dim])),
-            optimizer: RefCell::new(gran_prix::optim::Adam::new(0.01)),
-            net_json,
-            loss_kind,
-        })
+        Self::build(net, LossKind::BinaryCrossEntropy)
     }
 
     /// Creates a trainer from a [`NetworkDef`] JSON string.
@@ -159,27 +244,26 @@ impl Trainer {
     #[wasm_bindgen(js_name = fromNetworkDef)]
     pub fn from_network_def(json: &str) -> Result<Trainer, JsValue> {
         let net = NetworkDef::from_json(json).map_err(js_err)?;
-        let input_dim = net.input_dim;
-        let output_dim = net.output_dim();
-        let loss_kind = LossKind::from_output_dim(output_dim);
-        // Re-serialize from the parsed `NetworkDef` so the stored JSON
-        // is canonical (whitespace-normalized) and provably round-trip
-        // identical, regardless of how the caller-supplied input was
-        // formatted.
-        let net_json = net.to_json().map_err(js_err)?;
-        let compiled = net.compile(Box::new(CPUBackend)).map_err(js_err)?;
+        let loss_kind = LossKind::from_output_dim(net.output_dim());
+        Self::build(net, loss_kind)
+    }
 
-        Ok(Trainer {
-            graph: RefCell::new(compiled.graph),
-            input_node: compiled.input_node.0,
-            output_node: compiled.output_node.0,
-            input_dim,
-            output_dim,
-            input_tensor: RefCell::new(Tensor::new_zeros(&[1, input_dim])),
-            optimizer: RefCell::new(gran_prix::optim::Adam::new(0.01)),
-            net_json,
-            loss_kind,
-        })
+    /// Like [`from_network_def`], but with an explicit `loss_kind`
+    /// instead of auto-detection from `output_dim`. Use this when the
+    /// auto-detection rule isn't right — e.g., a network with
+    /// `output_dim == 2` that the caller wants to treat as two
+    /// independent binary heads (`BinaryCrossEntropy`) rather than a
+    /// 2-class softmax (`CategoricalCrossEntropy`).
+    ///
+    /// Errors if the terminal activation in the architecture is
+    /// incompatible with the chosen loss (see `validate_loss_compat`).
+    #[wasm_bindgen(js_name = fromNetworkDefWithLoss)]
+    pub fn from_network_def_with_loss(
+        json: &str,
+        loss_kind: LossKind,
+    ) -> Result<Trainer, JsValue> {
+        let net = NetworkDef::from_json(json).map_err(js_err)?;
+        Self::build(net, loss_kind)
     }
 
     /// Backward-compatible: parses the old `WasmArchitecture` JSON format
@@ -190,14 +274,22 @@ impl Trainer {
     #[wasm_bindgen(js_name = fromArchitecture)]
     pub fn from_architecture(json: &str) -> Result<Trainer, JsValue> {
         let net_def = convert_legacy_architecture(json).map_err(|e| JsValue::from_str(&e))?;
-        let input_dim = net_def.input_dim;
-        let output_dim = net_def.output_dim();
-        let loss_kind = LossKind::from_output_dim(output_dim);
-        // The legacy WasmArchitecture format isn't round-trip-safe;
-        // store the canonical NetworkDef JSON instead so any later
-        // `network_def_json()` reader gets a reliable artifact.
-        let net_json = net_def.to_json().map_err(js_err)?;
-        let compiled = net_def.compile(Box::new(CPUBackend)).map_err(js_err)?;
+        let loss_kind = LossKind::from_output_dim(net_def.output_dim());
+        Self::build(net_def, loss_kind)
+    }
+
+    /// Internal builder shared by all public constructors. Centralizes
+    /// the validation, JSON snapshot, and graph compilation so the
+    /// invariants (loss/architecture compatibility, canonical JSON,
+    /// pre-allocated input buffer) hold uniformly across construction
+    /// paths.
+    fn build(net: NetworkDef, loss_kind: LossKind) -> Result<Trainer, JsValue> {
+        validate_loss_compat(&net, loss_kind).map_err(|e| JsValue::from_str(&e))?;
+
+        let input_dim = net.input_dim;
+        let output_dim = net.output_dim();
+        let net_json = net.to_json().map_err(js_err)?;
+        let compiled = net.compile(Box::new(CPUBackend)).map_err(js_err)?;
 
         Ok(Trainer {
             graph: RefCell::new(compiled.graph),
@@ -424,7 +516,8 @@ impl Trainer {
     // ── Parameter freezing (transfer-learning support) ─────────────────────
 
     /// Freezes every trainable parameter whose registered name starts
-    /// with `prefix`, returning the count affected.
+    /// with `prefix`, returning the indices of the parameters that
+    /// were affected (in registration order).
     ///
     /// `NetworkDef::compile` registers parameters with names like
     /// `"layers[3].weight"`, so a prefix of `"layers[3]"` freezes the
@@ -432,29 +525,61 @@ impl Trainer {
     /// `LayerDef`s contribute no parameters; their indices appear as
     /// gaps in the namespace.
     ///
-    /// A return of `0` means no parameter matched — common if the
-    /// caller passed a typo. The method does not error in that case
-    /// because the absence of a match isn't necessarily a bug
-    /// (e.g., a `paranoidFreeze` caller might attempt several
-    /// candidate prefixes).
+    /// An empty return vector means no parameter matched — common if
+    /// the caller passed a typo. The method does not error in that
+    /// case because the absence of a match isn't necessarily a bug.
+    /// Returning the affected indices lets callers audit "did I
+    /// freeze the right parameters?" — for instance by passing the
+    /// vector to [`param_name`] for a logging readback.
     #[wasm_bindgen(js_name = freezeByPrefix)]
-    pub fn freeze_by_prefix(&self, prefix: &str) -> usize {
-        self.graph.borrow_mut().params_mut().freeze_by_name_prefix(prefix)
+    pub fn freeze_by_prefix(&self, prefix: &str) -> Vec<usize> {
+        self.graph
+            .borrow_mut()
+            .params_mut()
+            .freeze_by_name_prefix(prefix)
+            .into_iter()
+            .map(|p| p.0)
+            .collect()
     }
 
     /// Inverse of [`freezeByPrefix`].
     #[wasm_bindgen(js_name = unfreezeByPrefix)]
-    pub fn unfreeze_by_prefix(&self, prefix: &str) -> usize {
-        self.graph.borrow_mut().params_mut().unfreeze_by_name_prefix(prefix)
+    pub fn unfreeze_by_prefix(&self, prefix: &str) -> Vec<usize> {
+        self.graph
+            .borrow_mut()
+            .params_mut()
+            .unfreeze_by_name_prefix(prefix)
+            .into_iter()
+            .map(|p| p.0)
+            .collect()
     }
 
-    /// Returns the registered names of all parameters in registration
-    /// order. Useful for callers that need to enumerate available
-    /// freeze targets — for example, a "freeze backbone, leave head
-    /// trainable" UI that lists every layer prefix.
+    /// Returns the total number of registered parameters. Use with
+    /// [`param_name`] / [`is_frozen_by_index`] to enumerate without
+    /// pulling the full name list across the JS↔WASM boundary.
+    #[wasm_bindgen(js_name = paramCount)]
+    pub fn param_count(&self) -> usize {
+        self.graph.borrow().params().len()
+    }
+
+    /// Returns the registered name of the parameter at `index`.
     ///
-    /// JS sees a `string[]` because `wasm-bindgen` auto-converts
-    /// `Vec<String>`.
+    /// Returns the empty string for out-of-range indices rather than
+    /// erroring — this matches the convention `wasm-bindgen` uses
+    /// for getters, where a `null`/empty value is more ergonomic than
+    /// a thrown exception. Callers that need bound-checked access can
+    /// gate on [`param_count`].
+    #[wasm_bindgen(js_name = paramName)]
+    pub fn param_name(&self, index: usize) -> String {
+        let g = self.graph.borrow();
+        let names = g.params().names();
+        names.get(index).map(|s| s.to_string()).unwrap_or_default()
+    }
+
+    /// Returns the registered names of all parameters as a
+    /// `string[]`. **Allocates and clones each name on every call.**
+    /// For hot paths, prefer [`param_count`] + [`param_name`] or
+    /// cache the result on the JS side.
     #[wasm_bindgen(js_name = paramNames)]
     pub fn param_names(&self) -> Vec<String> {
         self.graph
@@ -464,6 +589,18 @@ impl Trainer {
             .into_iter()
             .map(String::from)
             .collect()
+    }
+
+    /// Returns whether the parameter at `index` is currently frozen.
+    /// Out-of-range indices return `false` (consistent with
+    /// [`param_name`]'s out-of-range behavior).
+    #[wasm_bindgen(js_name = isFrozenByIndex)]
+    pub fn is_frozen_by_index(&self, index: usize) -> bool {
+        let g = self.graph.borrow();
+        if index >= g.params().len() {
+            return false;
+        }
+        g.params().is_frozen(gran_prix::ParamId(index))
     }
 
     // ── Inference ──────────────────────────────────────────────────────────
@@ -496,14 +633,15 @@ impl Trainer {
     /// matches the documented design of `BatchNorm` in
     /// `src/layers/batchnorm.rs`.
     ///
-    /// # Side effects
+    /// # Externally observable state
     ///
-    /// At entry, the input node's tensor shape is widened from
-    /// `[1, input_dim]` to `[batch_size, input_dim]`. At exit, it's
-    /// reset back to `[1, input_dim]` (zero-filled) so subsequent
-    /// `predict` / `train_batch` calls — which `copy_from` a
-    /// `[1, input_dim]` buffer and would error on a shape mismatch
-    /// — work without surprise.
+    /// None. The input node's tensor is snapshotted at entry,
+    /// transiently widened to `[batch_size, input_dim]` for the
+    /// forward pass, then restored to its exact original value at
+    /// exit (success or error). Concurrent observers of the input
+    /// node would see the temporary state — but `Trainer` is not
+    /// `Send` / `Sync` and is meant for single-threaded use, so
+    /// there's no real observer.
     ///
     /// # Output assumption
     ///
@@ -548,43 +686,24 @@ impl Trainer {
         }
 
         let mut graph = self.graph.borrow_mut();
+        let logits = batched_forward_logits(
+            &mut graph,
+            self.input_node,
+            NodeId(self.output_node),
+            self.input_dim,
+            batch_size,
+            inputs,
+        )?;
 
-        // Widen the input node to `[batch_size, input_dim]` for one
-        // batched forward.
-        let batch_tensor =
-            Tensor::from_shape_vec(&[batch_size, self.input_dim], inputs).map_err(js_err)?;
-        match graph.nodes_mut().get_mut(self.input_node) {
-            Some(gran_prix::graph::Node::Input(t)) => *t = batch_tensor,
-            _ => return Err(JsValue::from_str("predict_batch: input node not Input")),
-        }
-        // Invalidate any cached intermediate values from prior forwards.
-        graph.clear_values();
-
-        let result = graph
-            .execute(NodeId(self.output_node))
-            .map_err(js_err)?;
-        let logits = result.as_slice().map_err(js_err)?;
-
-        // Sigmoid element-wise. The output is `[batch_size, output_dim]`
-        // (output_dim = 1 for binary), so `logits.len() == batch_size`
-        // for the binary classifier path. We don't assert that — a
-        // multi-output network would emit `batch_size * output_dim`
-        // floats and the consumer would interpret them themselves.
+        // Sigmoid element-wise. For the binary head, output_dim = 1,
+        // so logits.len() == batch_size. For multi-output networks
+        // we still apply sigmoid element-wise — that's the
+        // `LossKind::BinaryCrossEntropy` semantic of independent
+        // sigmoid heads.
         let mut probs = Vec::with_capacity(logits.len());
-        for &logit in logits {
+        for &logit in &logits {
             probs.push(1.0 / (1.0 + (-logit).exp()));
         }
-
-        // Reset the input node to `[1, input_dim]` zeros so subsequent
-        // `predict` / `train_batch` calls — which copy_from a
-        // `[1, input_dim]` buffer — don't see a shape mismatch.
-        if let Some(gran_prix::graph::Node::Input(t)) =
-            graph.nodes_mut().get_mut(self.input_node)
-        {
-            *t = Tensor::new_zeros(&[1, self.input_dim]);
-        }
-        graph.clear_values();
-
         Ok(probs)
     }
 
@@ -674,20 +793,49 @@ impl Trainer {
 
     /// Returns the predicted class index (argmax of [`predict_probs`]).
     ///
-    /// For a binary trainer the result is `1` if `P(class=1) >= 0.5`
-    /// and `0` otherwise — matches the convention `predict() >= 0.5`.
-    /// For a multi-class trainer it's `argmax_i softmax(logits)[i]`,
-    /// breaking ties in favor of the lower index (the natural behavior
-    /// of a left-to-right scan).
+    /// For a binary trainer this is `1` if `P(class=1) >= 0.5`,
+    /// otherwise `0` — the natural default. For a multi-class trainer
+    /// it's `argmax_i softmax(logits)[i]`, breaking ties in favor of
+    /// the lowest index (`>` rather than `>=` in the scan).
+    ///
+    /// Use [`predict_class_with_threshold`] to override the binary
+    /// decision threshold; production deployments often tune it via
+    /// precision/recall trade-off rather than fixing it at 0.5.
     #[wasm_bindgen(js_name = predictClass)]
     pub fn predict_class(&self, features: Vec<f32>) -> Result<usize, JsValue> {
+        self.predict_class_with_threshold(features, 0.5)
+    }
+
+    /// Like [`predict_class`] but with a caller-supplied decision
+    /// threshold for the binary case.
+    ///
+    /// `threshold` must be in `[0, 1]`. For multi-class trainers the
+    /// threshold is ignored — the choice is always argmax — and a
+    /// threshold outside `[0, 1]` is rejected for both modes (catches
+    /// caller errors like passing `0.5` as a logit instead of a
+    /// probability).
+    #[wasm_bindgen(js_name = predictClassWithThreshold)]
+    pub fn predict_class_with_threshold(
+        &self,
+        features: Vec<f32>,
+        threshold: f32,
+    ) -> Result<usize, JsValue> {
+        if !(0.0..=1.0).contains(&threshold) || !threshold.is_finite() {
+            return Err(JsValue::from_str(&format!(
+                "predict_class_with_threshold: threshold={} is not in [0, 1]",
+                threshold
+            )));
+        }
         let probs = self.predict_probs(features)?;
         match self.loss_kind {
             LossKind::BinaryCrossEntropy => {
                 let p = probs.first().copied().unwrap_or(0.0);
-                Ok(if p >= 0.5 { 1 } else { 0 })
+                Ok(if p >= threshold { 1 } else { 0 })
             }
             LossKind::CategoricalCrossEntropy => {
+                // `threshold` is unused for argmax; the validation
+                // above still runs as a defense against callers
+                // passing nonsense values.
                 let mut best = 0usize;
                 let mut best_p = f32::NEG_INFINITY;
                 for (i, &p) in probs.iter().enumerate() {
@@ -743,33 +891,15 @@ impl Trainer {
         }
 
         let mut graph = self.graph.borrow_mut();
-        let batch_tensor =
-            Tensor::from_shape_vec(&[batch_size, self.input_dim], inputs).map_err(js_err)?;
-        match graph.nodes_mut().get_mut(self.input_node) {
-            Some(gran_prix::graph::Node::Input(t)) => *t = batch_tensor,
-            _ => {
-                return Err(JsValue::from_str(
-                    "predict_probs_batch: input node not Input",
-                ));
-            }
-        }
-        graph.clear_values();
-
-        let result = graph
-            .execute(NodeId(self.output_node))
-            .map_err(js_err)?;
-        let logits = result.as_slice().map_err(js_err)?;
-        let probs = apply_output_activation(logits, self.output_dim, self.loss_kind);
-
-        // Reset input node — see `predict_batch` for the rationale.
-        if let Some(gran_prix::graph::Node::Input(t)) =
-            graph.nodes_mut().get_mut(self.input_node)
-        {
-            *t = Tensor::new_zeros(&[1, self.input_dim]);
-        }
-        graph.clear_values();
-
-        Ok(probs)
+        let logits = batched_forward_logits(
+            &mut graph,
+            self.input_node,
+            NodeId(self.output_node),
+            self.input_dim,
+            batch_size,
+            inputs,
+        )?;
+        Ok(apply_output_activation(&logits, self.output_dim, self.loss_kind))
     }
 
     pub fn get_decision_boundary(&self, resolution: usize, feature_map: js_sys::Function) -> Result<Vec<f32>, JsValue> {
@@ -1179,5 +1309,90 @@ mod legacy_converter_tests {
     fn malformed_json_errors() {
         let err = convert_legacy_architecture("{ not valid json").unwrap_err();
         assert!(err.contains("Failed to parse"), "got: {err}");
+    }
+
+    /// `from_architecture` builds a `NetworkDef` whose `output_dim`
+    /// drives `LossKind` auto-detection. A legacy architecture with
+    /// a multi-class output (here: 3) must produce a multi-class
+    /// trainer.
+    ///
+    /// We exercise this through `Trainer::build` rather than via
+    /// `Trainer::from_architecture` directly because the public
+    /// constructor returns `Result<Trainer, JsValue>` and `JsValue`
+    /// is awkward to inspect in a native test. The internal `build`
+    /// returns the same Trainer with the same loss-kind logic.
+    #[test]
+    fn from_architecture_with_multi_output_produces_multi_class_loss() {
+        let net = convert_legacy_architecture(
+            r#"{
+                "layers": [
+                    {"id": "in1",  "type": "input",  "params": {"inputSize": 4}},
+                    {"id": "lin1", "type": "linear", "params": {"inputSize": 4, "outputSize": 3}},
+                    {"id": "out",  "type": "output", "params": {"outputSize": 3}}
+                ],
+                "connections": [
+                    {"from": "in1",  "to": "lin1"},
+                    {"from": "lin1", "to": "out"}
+                ],
+                "inputDim": 4,
+                "outputDim": 3
+            }"#,
+        )
+        .expect("legacy arch parses");
+        assert_eq!(net.output_dim(), 3);
+        assert_eq!(LossKind::from_output_dim(net.output_dim()), LossKind::CategoricalCrossEntropy);
+    }
+
+    /// `validate_loss_compat` rejects a `BinaryCrossEntropy` trainer
+    /// whose architecture ends in `Sigmoid` (the loss already applies
+    /// sigmoid internally — applying it again would corrupt the
+    /// gradient).
+    #[test]
+    fn validate_loss_compat_rejects_terminal_sigmoid_with_bce() {
+        let net = NetworkDef::new(2, vec![
+            LayerDef::Linear { in_features: 2, out_features: 1 },
+            LayerDef::Activation { function: ActivationType::Sigmoid },
+        ]);
+        let err = validate_loss_compat(&net, LossKind::BinaryCrossEntropy).unwrap_err();
+        assert!(err.contains("Sigmoid"), "expected Sigmoid diagnostic, got: {err}");
+    }
+
+    /// Same check for the multi-class side — terminal `Softmax` with
+    /// `CategoricalCrossEntropy` is rejected.
+    #[test]
+    fn validate_loss_compat_rejects_terminal_softmax_with_cce() {
+        let net = NetworkDef::new(2, vec![
+            LayerDef::Linear { in_features: 2, out_features: 3 },
+            LayerDef::Activation { function: ActivationType::Softmax },
+        ]);
+        let err = validate_loss_compat(&net, LossKind::CategoricalCrossEntropy).unwrap_err();
+        assert!(err.contains("Softmax"), "expected Softmax diagnostic, got: {err}");
+    }
+
+    /// Compatible architectures are accepted: terminal Linear (logits)
+    /// with either loss; non-terminal Sigmoid/Softmax (used as a hidden
+    /// activation) is fine.
+    #[test]
+    fn validate_loss_compat_accepts_compatible_architectures() {
+        // Terminal Linear with BCE — canonical binary.
+        let net1 = NetworkDef::new(2, vec![
+            LayerDef::Linear { in_features: 2, out_features: 1 },
+        ]);
+        assert!(validate_loss_compat(&net1, LossKind::BinaryCrossEntropy).is_ok());
+
+        // Terminal Linear with CCE — canonical multi-class.
+        let net2 = NetworkDef::new(2, vec![
+            LayerDef::Linear { in_features: 2, out_features: 3 },
+        ]);
+        assert!(validate_loss_compat(&net2, LossKind::CategoricalCrossEntropy).is_ok());
+
+        // Sigmoid is OK as a hidden activation under either loss as
+        // long as it's not terminal.
+        let net3 = NetworkDef::new(2, vec![
+            LayerDef::Linear { in_features: 2, out_features: 4 },
+            LayerDef::Activation { function: ActivationType::Sigmoid },
+            LayerDef::Linear { in_features: 4, out_features: 1 },
+        ]);
+        assert!(validate_loss_compat(&net3, LossKind::BinaryCrossEntropy).is_ok());
     }
 }

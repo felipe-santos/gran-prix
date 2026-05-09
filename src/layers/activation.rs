@@ -38,4 +38,9 @@ impl Layer for Activation {
         // The explicit empty body affirms this rather than silently
         // inheriting a default no-op.
     }
+
+    fn prev_state_input(&self) -> Option<NodeId> {
+        // Activation has no recurrent state.
+        None
+    }
 }

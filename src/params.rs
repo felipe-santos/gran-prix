@@ -193,40 +193,40 @@ impl ParamStore {
         self.meta.get(id.0).map_or(false, |m| m.frozen)
     }
 
-    /// Freezes every parameter whose registered name starts with `prefix`.
+    /// Freezes every parameter whose registered name starts with `prefix`,
+    /// returning the [`ParamId`]s of the parameters that were affected.
     ///
     /// `NetworkDef::compile` registers each layer's parameters under
     /// names like `"layers[3].weight"`, so a prefix `"layers[3]"`
-    /// freezes the entire third layer atomically. Returns the count of
-    /// parameters affected — `0` is a valid return (no match) and not
-    /// an error, so callers that require at least one match should
-    /// check the return value.
+    /// freezes the entire third layer atomically. An empty return
+    /// vector is valid (no match) — callers that require at least one
+    /// match should check `is_empty()`.
     ///
-    /// Use [`unfreeze_by_name_prefix`] symmetrically to undo. For the
-    /// backbone+head fine-tuning pattern, freeze the backbone prefix and
-    /// leave the head untouched.
-    pub fn freeze_by_name_prefix(&mut self, prefix: &str) -> usize {
-        let mut count = 0;
-        for meta in self.meta.iter_mut() {
+    /// Returning the affected ids lets callers audit "did I freeze
+    /// the right parameters?" without re-scanning by name. Use
+    /// [`unfreeze_by_name_prefix`] symmetrically.
+    pub fn freeze_by_name_prefix(&mut self, prefix: &str) -> Vec<ParamId> {
+        let mut affected = Vec::new();
+        for (i, meta) in self.meta.iter_mut().enumerate() {
             if meta.name.starts_with(prefix) {
                 meta.frozen = true;
-                count += 1;
+                affected.push(ParamId(i));
             }
         }
-        count
+        affected
     }
 
-    /// Unfreezes every parameter whose registered name starts with `prefix`.
-    /// See [`freeze_by_name_prefix`].
-    pub fn unfreeze_by_name_prefix(&mut self, prefix: &str) -> usize {
-        let mut count = 0;
-        for meta in self.meta.iter_mut() {
+    /// Unfreezes every parameter whose registered name starts with
+    /// `prefix`. See [`freeze_by_name_prefix`].
+    pub fn unfreeze_by_name_prefix(&mut self, prefix: &str) -> Vec<ParamId> {
+        let mut affected = Vec::new();
+        for (i, meta) in self.meta.iter_mut().enumerate() {
             if meta.name.starts_with(prefix) {
                 meta.frozen = false;
-                count += 1;
+                affected.push(ParamId(i));
             }
         }
-        count
+        affected
     }
 
     /// Returns the names of all registered parameters in registration
@@ -697,8 +697,12 @@ mod tests {
         store.register(Tensor::new_zeros(&[1]), "layers[4].weight");
         store.register(Tensor::new_zeros(&[1]), "layers[4].bias");
 
-        let count = store.freeze_by_name_prefix("layers[2]");
-        assert_eq!(count, 2, "exactly weight + bias of layer 2");
+        let affected = store.freeze_by_name_prefix("layers[2]");
+        assert_eq!(
+            affected,
+            vec![ParamId(2), ParamId(3)],
+            "exactly weight + bias of layer 2, with their ids reported"
+        );
 
         assert!(!store.is_frozen(ParamId(0)));
         assert!(!store.is_frozen(ParamId(1)));
@@ -709,10 +713,10 @@ mod tests {
     }
 
     #[test]
-    fn test_freeze_by_name_prefix_no_match_returns_zero() {
+    fn test_freeze_by_name_prefix_no_match_returns_empty() {
         let mut store = make_store();
-        let count = store.freeze_by_name_prefix("does_not_exist");
-        assert_eq!(count, 0);
+        let affected = store.freeze_by_name_prefix("does_not_exist");
+        assert!(affected.is_empty());
         for i in 0..store.len() {
             assert!(!store.is_frozen(ParamId(i)));
         }
@@ -724,12 +728,13 @@ mod tests {
         store.register(Tensor::new_zeros(&[1]), "layers[0].weight");
         store.register(Tensor::new_zeros(&[1]), "layers[1].weight");
 
-        store.freeze_by_name_prefix("layers[");
+        let frozen = store.freeze_by_name_prefix("layers[");
+        assert_eq!(frozen, vec![ParamId(0), ParamId(1)]);
         assert!(store.is_frozen(ParamId(0)));
         assert!(store.is_frozen(ParamId(1)));
 
-        let count = store.unfreeze_by_name_prefix("layers[");
-        assert_eq!(count, 2);
+        let unfrozen = store.unfreeze_by_name_prefix("layers[");
+        assert_eq!(unfrozen, vec![ParamId(0), ParamId(1)]);
         assert!(!store.is_frozen(ParamId(0)));
         assert!(!store.is_frozen(ParamId(1)));
     }

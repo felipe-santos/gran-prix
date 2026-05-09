@@ -338,6 +338,170 @@ fn serde_json_to_string_round_trips_a_trained_graph() {
     );
 }
 
+// ── Graph serde round-trip across layer types ─────────────────────────────
+//
+// `serde_json_to_string_round_trips_a_trained_graph` (above) exercised
+// the full `Graph` serde path for an MLP. The audit flagged that
+// `BatchNorm`, `Dropout`, `RNN`, `GRU` weren't covered. The helper
+// below gives each layer type the same coverage, going through
+// `NetworkDef::compile` (the standard construction path) instead of
+// raw DSL.
+
+fn assert_graph_serde_preserves_forward(net: NetworkDef, inputs: &Tensor, input_dim: usize) {
+    use gran_prix::graph::Graph;
+
+    let compiled = net
+        .compile(Box::new(CPUBackend))
+        .expect("NetworkDef compiles");
+    let mut graph = compiled.graph;
+    let input_node = compiled.input_node;
+    let output_node = compiled.output_node;
+
+    let predictions_before = forward_each(&mut graph, input_node, output_node, inputs, input_dim);
+
+    // Round-trip via `serde_json::to_string(&Graph)` — the path that
+    // skips `engine` and reattaches via `set_backend`.
+    let json = serde_json::to_string(&graph).expect("Graph serializes");
+    drop(graph);
+
+    let mut graph2: Graph = serde_json::from_str(&json).expect("Graph deserializes");
+    graph2.set_backend(Box::new(CPUBackend));
+
+    let predictions_after = forward_each(&mut graph2, input_node, output_node, inputs, input_dim);
+
+    assert_eq!(
+        predictions_before, predictions_after,
+        "Graph serde drifted across round-trip"
+    );
+}
+
+#[test]
+fn graph_serde_preserves_forward_mlp_via_compile() {
+    let net = NetworkDef::mlp(2, &[8, 4], 1, ActivationType::ReLU, None);
+    assert_graph_serde_preserves_forward(net, &xor_inputs(), 2);
+}
+
+#[test]
+fn graph_serde_preserves_forward_batchnorm() {
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Linear { in_features: 2, out_features: 4 },
+        LayerDef::BatchNorm { num_features: 4 },
+        LayerDef::Activation { function: ActivationType::Tanh },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    assert_graph_serde_preserves_forward(net, &xor_inputs(), 2);
+}
+
+#[test]
+fn graph_serde_preserves_forward_dropout() {
+    // Dropout in eval mode (the default) is identity, so the Graph
+    // serde path should preserve forward exactly.
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Linear { in_features: 2, out_features: 4 },
+        LayerDef::Dropout { rate: 0.5 },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    assert_graph_serde_preserves_forward(net, &xor_inputs(), 2);
+}
+
+#[test]
+fn graph_serde_preserves_forward_rnn_fresh_state() {
+    // The recurrent layers have `#[serde(skip)]` on `hidden_state` —
+    // both before and after deserialize the field is `None`, so a
+    // fresh-state network round-trips cleanly. The mid-episode
+    // gap is already pinned by `known_gap_contract_json_carries_no_*`.
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Rnn { input_size: 2, hidden_size: 4 },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    assert_graph_serde_preserves_forward(net, &xor_inputs(), 2);
+}
+
+#[test]
+fn graph_serde_preserves_forward_gru_fresh_state() {
+    let net = NetworkDef::new(2, vec![
+        LayerDef::Gru { input_size: 2, hidden_size: 4 },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    assert_graph_serde_preserves_forward(net, &xor_inputs(), 2);
+}
+
+// ── BatchNorm batched-vs-single regression ────────────────────────────────
+//
+// `BatchNorm` computes batch statistics from the input batch. The
+// design comment in `src/layers/batchnorm.rs` notes this explicitly:
+// running statistics are NOT maintained, so a single-sample forward
+// (zero variance, falls back to ~affine via `eps`) produces a
+// different output than a batched forward (real variance) for the
+// same row.
+//
+// `predict_batch` and `predict_probs_batch` document this difference.
+// This test pins the documented behavior so that any future change
+// that adds running statistics has to update both the documentation
+// and this test deliberately.
+#[test]
+fn batchnorm_output_differs_between_single_and_batched_forwards() {
+    let net = NetworkDef::new(3, vec![
+        LayerDef::Linear { in_features: 3, out_features: 4 },
+        LayerDef::BatchNorm { num_features: 4 },
+        LayerDef::Linear { in_features: 4, out_features: 1 },
+    ]);
+    let mut compiled = net.compile(Box::new(CPUBackend)).unwrap();
+
+    // Single-sample forward of row 0.
+    let row0 = vec![0.5_f32, -0.3, 0.1];
+    let single_input = Tensor::from_shape_vec(&[1, 3], row0.clone()).unwrap();
+    if let Some(gran_prix::graph::Node::Input(t)) =
+        compiled.graph.nodes_mut().get_mut(compiled.input_node.0)
+    {
+        *t = single_input;
+    }
+    let single_out = compiled
+        .graph
+        .execute(compiled.output_node)
+        .unwrap()
+        .as_slice()
+        .unwrap()
+        .to_vec();
+    compiled.graph.clear_values();
+
+    // Batched forward over four DIFFERENT rows including row 0.
+    // Different rows give non-zero variance, which triggers BN's
+    // real branch rather than the eps-only fallback.
+    let batched_data: Vec<f32> = vec![
+        0.5, -0.3, 0.1,
+        0.7, 0.2, -0.4,
+        -0.1, 0.6, 0.3,
+        0.9, -0.5, 0.0,
+    ];
+    let batched_input = Tensor::from_shape_vec(&[4, 3], batched_data).unwrap();
+    if let Some(gran_prix::graph::Node::Input(t)) =
+        compiled.graph.nodes_mut().get_mut(compiled.input_node.0)
+    {
+        *t = batched_input;
+    }
+    let batched_out = compiled
+        .graph
+        .execute(compiled.output_node)
+        .unwrap()
+        .as_slice()
+        .unwrap()
+        .to_vec();
+
+    // Row 0's output in the batched run is the first scalar (output_dim=1).
+    let batched_row0 = batched_out[0];
+    let single_row0 = single_out[0];
+
+    assert_ne!(
+        single_row0, batched_row0,
+        "BatchNorm should produce different outputs for the same row in single-sample \
+         vs. multi-sample forward — single={}, batched_row0={}. If this test now passes, \
+         BatchNorm has been changed to track running statistics across batches; update \
+         `src/layers/batchnorm.rs` doc and the predict_batch/predict_probs_batch docs.",
+        single_row0, batched_row0
+    );
+}
+
 /// Same structural check for `RNNCell` — its `hidden_state` is also
 /// `#[serde(skip)]`.
 #[test]

@@ -44,4 +44,9 @@ impl Layer for Linear {
     fn set_name_prefix(&mut self, prefix: String) {
         self.name_prefix = prefix;
     }
+
+    fn prev_state_input(&self) -> Option<NodeId> {
+        // Linear has no recurrent state.
+        None
+    }
 }

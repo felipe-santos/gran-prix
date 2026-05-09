@@ -71,4 +71,10 @@ impl Layer for BatchNorm {
     fn set_name_prefix(&mut self, prefix: String) {
         self.name_prefix = prefix;
     }
+
+    fn prev_state_input(&self) -> Option<NodeId> {
+        // BatchNorm has gamma/beta as learnable params but no recurrent
+        // state — running statistics are recomputed each forward.
+        None
+    }
 }

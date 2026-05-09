@@ -339,17 +339,47 @@ impl CompiledNetwork {
         self.graph.clear_values();
     }
 
-    /// Resets all stateful layers (e.g., at the start of a new episode).
+    /// Resets all stateful layers and the corresponding graph state
+    /// to their initial conditions.
     ///
-    /// Clears each layer's `hidden_state` field. The previous-state
-    /// *input nodes* in the graph still hold whatever value was last
-    /// written into them — call [`Graph::execute`] once after reset to
-    /// rebuild caches with the layer's reset state, or set the input
-    /// tensors to zeros explicitly before the next forward.
+    /// This is a *complete* reset:
+    ///  1. Each layer's `hidden_state` field is cleared (`reset_state`)
+    ///  2. Each `prev_state_input` node in the graph is zeroed
+    ///  3. The engine's value cache is invalidated
+    ///
+    /// After this call, the next forward starts from zero hidden state
+    /// — which is what callers expect from "reset". The previous
+    /// implementation only did step 1, leaving the graph's input
+    /// nodes still holding whatever h_t had been written there by the
+    /// last `update_states`. That made `reset_states` an incomplete
+    /// API: callers had to manually reach into each stateful layer's
+    /// `prev_state_input()` to zero it before the next forward.
     pub fn reset_states(&mut self) {
+        // Phase 1: clear each layer's hidden_state field.
+        // Collect prev_state_input ids to zero in phase 2 — same
+        // borrow-checker workaround as `update_states`.
+        let mut prev_input_ids: Vec<crate::NodeId> = Vec::new();
         for layer in &mut self.stateful_layers {
             layer.reset_state();
+            if let Some(prev_id) = layer.prev_state_input() {
+                prev_input_ids.push(prev_id);
+            }
         }
+
+        // Phase 2: zero each previous-state input node in the graph.
+        for prev_id in prev_input_ids {
+            if let Some(crate::graph::Node::Input(t)) =
+                self.graph.nodes_mut().get_mut(prev_id.0)
+            {
+                let zeros = Tensor::new_zeros(t.shape());
+                *t = zeros;
+            }
+        }
+
+        // Invalidate the engine's value cache for the same reason
+        // `update_states` does — any cached intermediate downstream
+        // of a reset input would be stale.
+        self.graph.clear_values();
     }
 }
 
@@ -545,7 +575,8 @@ mod tests {
         //   layers[3] Activation (no params)
         //   layers[4] Linear   (params 4, 5)
         let frozen = compiled.graph.params_mut().freeze_by_name_prefix("layers[2]");
-        assert_eq!(frozen, 2, "expected exactly layer 2's weight + bias");
+        assert_eq!(frozen.len(), 2, "expected exactly layer 2's weight + bias");
+        assert_eq!(frozen, vec![crate::ParamId(2), crate::ParamId(3)]);
 
         for i in 0..compiled.graph.params().len() {
             let id = crate::ParamId(i);

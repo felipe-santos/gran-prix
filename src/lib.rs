@@ -58,9 +58,13 @@ pub trait Layer: Send + Sync + std::fmt::Debug {
     /// forwards. Returning the previous-state node id is what makes
     /// that copy possible.
     ///
-    /// Default `None` is correct for stateless layers and for any
-    /// stateful layer that uses a different recurrence scheme.
-    fn prev_state_input(&self) -> Option<NodeId> { None }
+    /// Stateless layers (Activation, Linear, BatchNorm, Dropout)
+    /// implement this as `None` explicitly rather than relying on a
+    /// default — same rationale as [`set_name_prefix`]. A future
+    /// stateful layer that forgets to override would silently
+    /// regress recurrent-state handling; making the method required
+    /// catches that at the trait-impl level.
+    fn prev_state_input(&self) -> Option<NodeId>;
 }
 
 #[cfg(test)]

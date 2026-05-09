@@ -482,7 +482,8 @@ export class Trainer {
     }
     /**
      * Freezes every trainable parameter whose registered name starts
-     * with `prefix`, returning the count affected.
+     * with `prefix`, returning the indices of the parameters that
+     * were affected (in registration order).
      *
      * `NetworkDef::compile` registers parameters with names like
      * `"layers[3].weight"`, so a prefix of `"layers[3]"` freezes the
@@ -490,19 +491,22 @@ export class Trainer {
      * `LayerDef`s contribute no parameters; their indices appear as
      * gaps in the namespace.
      *
-     * A return of `0` means no parameter matched — common if the
-     * caller passed a typo. The method does not error in that case
-     * because the absence of a match isn't necessarily a bug
-     * (e.g., a `paranoidFreeze` caller might attempt several
-     * candidate prefixes).
+     * An empty return vector means no parameter matched — common if
+     * the caller passed a typo. The method does not error in that
+     * case because the absence of a match isn't necessarily a bug.
+     * Returning the affected indices lets callers audit "did I
+     * freeze the right parameters?" — for instance by passing the
+     * vector to [`param_name`] for a logging readback.
      * @param {string} prefix
-     * @returns {number}
+     * @returns {Uint32Array}
      */
     freezeByPrefix(prefix) {
         const ptr0 = passStringToWasm0(prefix, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.trainer_freezeByPrefix(this.__wbg_ptr, ptr0, len0);
-        return ret >>> 0;
+        var v2 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v2;
     }
     /**
      * Backward-compatible: parses the old `WasmArchitecture` JSON format
@@ -545,6 +549,29 @@ export class Trainer {
         const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.trainer_fromNetworkDef(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return Trainer.__wrap(ret[0]);
+    }
+    /**
+     * Like [`from_network_def`], but with an explicit `loss_kind`
+     * instead of auto-detection from `output_dim`. Use this when the
+     * auto-detection rule isn't right — e.g., a network with
+     * `output_dim == 2` that the caller wants to treat as two
+     * independent binary heads (`BinaryCrossEntropy`) rather than a
+     * 2-class softmax (`CategoricalCrossEntropy`).
+     *
+     * Errors if the terminal activation in the architecture is
+     * incompatible with the chosen loss (see `validate_loss_compat`).
+     * @param {string} json
+     * @param {LossKind} loss_kind
+     * @returns {Trainer}
+     */
+    static fromNetworkDefWithLoss(json, loss_kind) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_fromNetworkDefWithLoss(ptr0, len0, loss_kind);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -606,6 +633,17 @@ export class Trainer {
     inputDim() {
         const ret = wasm.trainer_inputDim(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Returns whether the parameter at `index` is currently frozen.
+     * Out-of-range indices return `false` (consistent with
+     * [`param_name`]'s out-of-range behavior).
+     * @param {number} index
+     * @returns {boolean}
+     */
+    isFrozenByIndex(index) {
+        const ret = wasm.trainer_isFrozenByIndex(this.__wbg_ptr, index);
+        return ret !== 0;
     }
     /**
      * Returns the loss/output mode for this trainer. See [`LossKind`]
@@ -672,13 +710,43 @@ export class Trainer {
         return ret >>> 0;
     }
     /**
-     * Returns the registered names of all parameters in registration
-     * order. Useful for callers that need to enumerate available
-     * freeze targets — for example, a "freeze backbone, leave head
-     * trainable" UI that lists every layer prefix.
+     * Returns the total number of registered parameters. Use with
+     * [`param_name`] / [`is_frozen_by_index`] to enumerate without
+     * pulling the full name list across the JS↔WASM boundary.
+     * @returns {number}
+     */
+    paramCount() {
+        const ret = wasm.trainer_paramCount(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Returns the registered name of the parameter at `index`.
      *
-     * JS sees a `string[]` because `wasm-bindgen` auto-converts
-     * `Vec<String>`.
+     * Returns the empty string for out-of-range indices rather than
+     * erroring — this matches the convention `wasm-bindgen` uses
+     * for getters, where a `null`/empty value is more ergonomic than
+     * a thrown exception. Callers that need bound-checked access can
+     * gate on [`param_count`].
+     * @param {number} index
+     * @returns {string}
+     */
+    paramName(index) {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.trainer_paramName(this.__wbg_ptr, index);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free_command_export(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * Returns the registered names of all parameters as a
+     * `string[]`. **Allocates and clones each name on every call.**
+     * For hot paths, prefer [`param_count`] + [`param_name`] or
+     * cache the result on the JS side.
      * @returns {string[]}
      */
     paramNames() {
@@ -738,14 +806,15 @@ export class Trainer {
      * matches the documented design of `BatchNorm` in
      * `src/layers/batchnorm.rs`.
      *
-     * # Side effects
+     * # Externally observable state
      *
-     * At entry, the input node's tensor shape is widened from
-     * `[1, input_dim]` to `[batch_size, input_dim]`. At exit, it's
-     * reset back to `[1, input_dim]` (zero-filled) so subsequent
-     * `predict` / `train_batch` calls — which `copy_from` a
-     * `[1, input_dim]` buffer and would error on a shape mismatch
-     * — work without surprise.
+     * None. The input node's tensor is snapshotted at entry,
+     * transiently widened to `[batch_size, input_dim]` for the
+     * forward pass, then restored to its exact original value at
+     * exit (success or error). Concurrent observers of the input
+     * node would see the temporary state — but `Trainer` is not
+     * `Send` / `Sync` and is meant for single-threaded use, so
+     * there's no real observer.
      *
      * # Output assumption
      *
@@ -770,11 +839,14 @@ export class Trainer {
     /**
      * Returns the predicted class index (argmax of [`predict_probs`]).
      *
-     * For a binary trainer the result is `1` if `P(class=1) >= 0.5`
-     * and `0` otherwise — matches the convention `predict() >= 0.5`.
-     * For a multi-class trainer it's `argmax_i softmax(logits)[i]`,
-     * breaking ties in favor of the lower index (the natural behavior
-     * of a left-to-right scan).
+     * For a binary trainer this is `1` if `P(class=1) >= 0.5`,
+     * otherwise `0` — the natural default. For a multi-class trainer
+     * it's `argmax_i softmax(logits)[i]`, breaking ties in favor of
+     * the lowest index (`>` rather than `>=` in the scan).
+     *
+     * Use [`predict_class_with_threshold`] to override the binary
+     * decision threshold; production deployments often tune it via
+     * precision/recall trade-off rather than fixing it at 0.5.
      * @param {Float32Array} features
      * @returns {number}
      */
@@ -782,6 +854,28 @@ export class Trainer {
         const ptr0 = passArrayF32ToWasm0(features, wasm.__wbindgen_malloc_command_export);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.trainer_predictClass(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * Like [`predict_class`] but with a caller-supplied decision
+     * threshold for the binary case.
+     *
+     * `threshold` must be in `[0, 1]`. For multi-class trainers the
+     * threshold is ignored — the choice is always argmax — and a
+     * threshold outside `[0, 1]` is rejected for both modes (catches
+     * caller errors like passing `0.5` as a logit instead of a
+     * probability).
+     * @param {Float32Array} features
+     * @param {number} threshold
+     * @returns {number}
+     */
+    predictClassWithThreshold(features, threshold) {
+        const ptr0 = passArrayF32ToWasm0(features, wasm.__wbindgen_malloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_predictClassWithThreshold(this.__wbg_ptr, ptr0, len0, threshold);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
@@ -902,13 +996,15 @@ export class Trainer {
     /**
      * Inverse of [`freezeByPrefix`].
      * @param {string} prefix
-     * @returns {number}
+     * @returns {Uint32Array}
      */
     unfreezeByPrefix(prefix) {
         const ptr0 = passStringToWasm0(prefix, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.trainer_unfreezeByPrefix(this.__wbg_ptr, ptr0, len0);
-        return ret >>> 0;
+        var v2 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free_command_export(ret[0], ret[1] * 4, 4);
+        return v2;
     }
 }
 if (Symbol.dispose) Trainer.prototype[Symbol.dispose] = Trainer.prototype.free;
@@ -1212,6 +1308,11 @@ function getArrayJsValueFromWasm0(ptr, len) {
     }
     wasm.__externref_drop_slice_command_export(ptr, len);
     return result;
+}
+
+function getArrayU32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
 function getArrayU8FromWasm0(ptr, len) {

@@ -293,28 +293,62 @@ impl NeuralBrain {
                 .map_err(|e| GPError::BackendError(format!("Node {} execution error: {}", node_id.0, e)))?;
         }
         
-        // ── Extract Temporal States for RNN/GRU ────────────────────────────────
-        let mut layers = self.layers.borrow_mut();
-        for layer in layers.iter_mut() {
-            if let Some(state_node_id) = layer.state_node() {
-                if let Some(Some(ref tensor)) = graph.values().get(state_node_id.0) {
-                    let t: Tensor = tensor.clone();
-                    layer.update_state(t);
+        // ── Extract Temporal States for RNN/GRU + collect writebacks ───────────
+        //
+        // Phase 1: read each stateful layer's new hidden state (h_t)
+        // from the engine's value cache, write it into the layer's
+        // hidden_state field, and record where it must also be
+        // written back into the graph (the prev_state_input node).
+        // The writeback is mandatory for recurrence to actually work
+        // across consecutive `compute_internal` calls — without it
+        // the graph keeps reading the original (zero) initial state
+        // even though the layer struct's field is updated. (Same
+        // bug-and-fix as `CompiledNetwork::update_states` in the
+        // core crate.)
+        let state_writes: Vec<(usize, Tensor)> = {
+            let mut layers = self.layers.borrow_mut();
+            let values = graph.values();
+            let mut writes = Vec::new();
+            for layer in layers.iter_mut() {
+                let Some(state_node_id) = layer.state_node() else { continue };
+                let Some(Some(tensor)) = values.get(state_node_id.0) else { continue };
+                let t: Tensor = tensor.clone();
+                layer.update_state(t.clone());
+                if let Some(prev_id) = layer.prev_state_input() {
+                    writes.push((prev_id.0, t));
                 }
             }
+            writes
+        };
+
+        // ── Extract Output ─────────────────────────────────────────────────────
+        {
+            let values = graph.values();
+            let result_tensor = values
+                .get(self.output_node)
+                .and_then(|t: &Option<Tensor>| t.as_ref())
+                .ok_or_else(|| GPError::InferenceError("Output not found".to_string()))?;
+
+            let mut out_buffer = self.output_tensor.borrow_mut();
+            out_buffer
+                .copy_from(result_tensor)
+                .map_err(|e| GPError::TensorError(e.to_string()))?;
         }
 
-        // ── Extract Output Efficiently ─────────────────────────────────────────
-        let values = graph.values();
-        let result_tensor = values
-            .get(self.output_node)
-            .and_then(|t: &Option<Tensor>| t.as_ref())
-            .ok_or_else(|| GPError::InferenceError("Output not found".to_string()))?;
+        // ── Phase 2: propagate hidden state into graph input nodes ─────────────
+        // Done after output extraction so we don't lose the cached
+        // output value. The clear_values that follows is for the
+        // *next* call.
+        for (prev_id, new_state) in state_writes {
+            if let Some(gran_prix::graph::Node::Input(t)) =
+                graph.nodes_mut().get_mut(prev_id)
+            {
+                *t = new_state;
+            }
+        }
+        graph.clear_values();
 
-        let mut out_buffer = self.output_tensor.borrow_mut();
-        out_buffer.copy_from(result_tensor)
-            .map_err(|e| GPError::TensorError(e.to_string()))?;
-
+        let out_buffer = self.output_tensor.borrow();
         let slice = out_buffer
             .as_slice()
             .map_err(|e| GPError::TensorError(format!("Failed to get CPU view: {}", e)))?;
