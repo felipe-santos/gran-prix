@@ -229,10 +229,9 @@ fn known_gap_contract_json_carries_no_hidden_state() {
 ///
 /// Background: `Graph` derives `Serialize`/`Deserialize` but its
 /// `engine` field is `#[serde(skip)]` (`src/graph/mod.rs`); a deserialized
-/// `Graph` requires `set_backend(...)` to rebuild the engine. The
-/// audit (`AUDITORIA-PRIMITIVAS.md` Q3) flagged this path as
-/// **untested for trained models**: only topology round-trip was
-/// covered (`tests/persistence_flow_tests.rs`).
+/// `Graph` requires `set_backend(...)` to rebuild the engine. This
+/// path was previously **untested for trained models**: only topology
+/// round-trip was covered (`tests/persistence_flow_tests.rs`).
 ///
 /// This test fills that gap. We train an MLP on XOR for 30 epochs,
 /// snapshot its predictions, serialize the entire `Graph` to JSON,
