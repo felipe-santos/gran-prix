@@ -7,12 +7,11 @@
  * @module components/playground/v2/NetworkBuilder/LayerNode
  */
 
-import React, { useRef } from 'react';
+import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import {
     LayerConfig,
     LayerType,
-    ActivationType,
     LAYER_TYPE_NAMES,
     ACTIVATION_TYPE_NAMES,
     isInputLayer,
@@ -60,8 +59,6 @@ export const LayerNode: React.FC<LayerNodeProps> = ({
     onOutputClick,
     onInputClick,
 }) => {
-    const nodeRef = useRef<HTMLDivElement>(null);
-
     // Setup drag-and-drop (only if not locked)
     const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
         id: layer.id,

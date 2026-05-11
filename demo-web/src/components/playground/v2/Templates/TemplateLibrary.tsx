@@ -9,11 +9,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { NetworkTemplate } from '@/types/network-builder';
-import {
-    NETWORK_TEMPLATES,
-    getBeginnerTemplates,
-    getAdvancedTemplates,
-} from './templates';
+import { NETWORK_TEMPLATES } from './templates';
 import { Book, Zap, Star, TrendingUp, Filter, Search, X } from 'lucide-react';
 
 // ─── Component Props ────────────────────────────────────────────────────────

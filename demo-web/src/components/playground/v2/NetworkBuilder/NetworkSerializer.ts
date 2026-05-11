@@ -10,6 +10,7 @@
 import {
     NetworkGraph,
     LayerConfig,
+    LayerConnection,
     LayerType,
     WasmNetworkConfig,
     WasmLayerConfig,

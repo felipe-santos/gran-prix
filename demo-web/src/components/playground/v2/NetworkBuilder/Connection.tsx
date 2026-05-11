@@ -40,16 +40,16 @@ const NODE_HEIGHT = 80;
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export const Connection: React.FC<ConnectionProps> = ({
-    connection,
-    fromPosition,
-    toPosition,
-    isSelected = false,
-    hasError = false,
-    animated = false,
-    onClick,
-    onDelete,
-}) => {
+export const Connection: React.FC<ConnectionProps> = props => {
+    const {
+        fromPosition,
+        toPosition,
+        isSelected = false,
+        hasError = false,
+        animated = false,
+        onClick,
+        onDelete,
+    } = props;
     // Calculate start and end points (right side of from node, left side of to node)
     const startX = fromPosition.x + NODE_WIDTH;
     const startY = fromPosition.y + NODE_HEIGHT / 2;

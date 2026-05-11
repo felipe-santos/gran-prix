@@ -14,7 +14,6 @@ import {
     ValidationResult,
     ValidationMessage,
     LayerConfig,
-    LayerConnection,
     LayerType,
     isInputLayer,
     isLinearLayer,

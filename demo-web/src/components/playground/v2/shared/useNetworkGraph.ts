@@ -16,7 +16,6 @@ import {
     NetworkTemplate,
     ValidationResult,
     Position,
-    DEFAULT_LAYER_PARAMS,
 } from '@/types/network-builder';
 import { validateNetworkGraph } from '../NetworkBuilder/ArchitectureValidator';
 

@@ -1,41 +1,109 @@
-# Gran-Prix: Neural Racer Demo
+# Gran-Prix Web Laboratory
 
-This is a **React + Vite** application that visualizes the Gran-Prix AI engine running in the browser using WebAssembly.
+This is the browser-facing showcase for Gran-Prix. It is a **React + Vite + WebAssembly** app that demonstrates small neural systems running locally in the user's browser.
+
+The app is not just one game demo anymore. It is a visual lab for real-time inference, training, evolution, and model inspection.
+
+---
+
+## What lives here
+
+- A landing page with the mouse-behavior hero demo.
+- Multiple interactive simulations: oven control, vacuum navigation, trading, smart grid routing, drone stabilization, predator/prey, walking agents, Flappy Bird RL, and more.
+- Shared React components for stats, charts, canvases, controls, and network visualization.
+- WASM loader utilities that connect the JavaScript simulation loop to the Rust neural core.
+
+---
 
 ## Prerequisites
 
-- Node.js (v18+)
-- Rust (latest stable)
-- `wasm-pack` (`cargo install wasm-pack`)
+- Node.js 18+
+- Rust stable
+- `wasm-pack`
 
-## Setup Instructions
-
-### 1. Build the WASM Module
-First, compile the Rust code to WebAssembly.
+Install `wasm-pack` if needed:
 
 ```bash
-cd ../gran-prix-wasm
+cargo install wasm-pack
+```
+
+---
+
+## Run locally
+
+From the repository root, build the WASM bindings:
+
+```bash
+cd gran-prix-wasm
 wasm-pack build --target web
 ```
-This will create a `pkg` directory inside `gran-prix-wasm`.
 
-### 2. Install Frontend Dependencies
-Navigate back to this directory (`demo-web`) and install the Node packages.
+Then start the web app:
 
 ```bash
 cd ../demo-web
 npm install
-```
-
-### 3. Run the Development Server
-Start the local server to see the demo.
-
-```bash
 npm run dev
 ```
-Open your browser at `http://localhost:5173`.
 
-## Architecture
-- **Rust/WASM (`../gran-prix-wasm`)**: Contains the `NeuralBrain` struct and the `gran-prix` engine logic.
-- **React (`src/App.tsx`)**: Handles the game loop (Canvas), renders the UI, and calls `NeuralBrain` methods.
-- **Communication**: The app passes a `Float32Array` of sensor data to WASM and receives a steering value.
+Open the Vite URL, usually:
+
+```text
+http://localhost:5173
+```
+
+---
+
+## Build
+
+```bash
+npm run build
+```
+
+Preview the production build:
+
+```bash
+npm run preview
+```
+
+---
+
+## How the loop works
+
+```text
+Canvas / UI state
+    -> compact numeric features
+    -> WASM neural brain
+    -> prediction / action
+    -> simulation step
+    -> charts, stats, network visualization
+```
+
+The important constraint: raw high-frequency behavioral or simulation data does not need to leave the browser. The model can infer, train, mutate, and export compact state locally.
+
+---
+
+## Demo catalog
+
+The demo list is configured in:
+
+```text
+src/config/demos.ts
+```
+
+Each demo typically has:
+
+- `src/components/<demo>/` for React UI pieces.
+- `src/demos/<demo>/` for simulation logic.
+- `src/hooks/use<Demo>Wasm.ts` or `use<Demo>GameLoop.ts` for runtime integration.
+- `src/config/<demo>.config.ts` for tuning constants.
+
+---
+
+## Product direction
+
+The strongest public story for this app is:
+
+> A real neural model is running in your browser, learning from local signals, and adapting the experience without sending raw behavior to a server.
+
+The mouse-behavior hero and Neural Playground should be treated as the primary proof points. The other simulations support the same thesis across control systems, reinforcement learning, and multi-agent environments.

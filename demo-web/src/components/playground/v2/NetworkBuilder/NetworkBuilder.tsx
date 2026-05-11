@@ -20,6 +20,7 @@ import {
 import {
     NetworkTemplate,
     LayerType,
+    LayerParams,
     DEFAULT_LAYER_PARAMS,
     ValidationMessage,
 } from '@/types/network-builder';
@@ -28,13 +29,10 @@ import {
     Upload,
     Trash2,
     Library,
-    Code,
     Play,
     AlertCircle,
-    Info,
     Undo,
     Redo,
-    Settings,
 } from 'lucide-react';
 
 // ─── Component Props ────────────────────────────────────────────────────────
@@ -65,7 +63,6 @@ export const NetworkBuilder: React.FC<NetworkBuilderProps> = ({
 
     // UI state
     const [showTemplates, setShowTemplates] = useState(false);
-    const [showSettings, setShowSettings] = useState(false);
     const [compatibilityIssues, setCompatibilityIssues] = useState<string[]>([]);
 
     // Check WASM compatibility whenever graph changes
@@ -87,7 +84,7 @@ export const NetworkBuilder: React.FC<NetworkBuilderProps> = ({
     const handleLayerSelect = useCallback(
         (layerType: LayerType) => {
             // Add layer at center of canvas
-            const params = { ...DEFAULT_LAYER_PARAMS[layerType] };
+            const params = { ...DEFAULT_LAYER_PARAMS[layerType] } as LayerParams;
             networkGraph.addLayer({
                 type: layerType,
                 position: { x: 400, y: 300 },

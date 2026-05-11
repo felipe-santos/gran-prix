@@ -5,7 +5,8 @@
       "Bash(cargo check:*)",
       "Bash(cargo run:*)",
       "Bash(cp /home/ubuntu/.bashrc /home/ubuntu/.bashrc.bak.predo)",
-      "Bash(sed -i '/^# pnpm$/,/^# pnpm end$/d' /home/ubuntu/.bashrc)"
+      "Bash(sed -i '/^# pnpm$/,/^# pnpm end$/d' /home/ubuntu/.bashrc)",
+      "Bash(xargs -I{} basename {})"
     ]
   }
 }

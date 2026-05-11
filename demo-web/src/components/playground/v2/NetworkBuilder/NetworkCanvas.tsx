@@ -20,12 +20,10 @@ import {
     DragOverlay,
 } from '@dnd-kit/core';
 import {
-    LayerConfig,
-    LayerConnection,
     Position,
     LayerType,
+    LayerParams,
     DEFAULT_LAYER_PARAMS,
-    ValidationMessage,
 } from '@/types/network-builder';
 import { UseNetworkGraphReturn } from '../shared/useNetworkGraph';
 import { LayerNode } from './LayerNode';
@@ -69,6 +67,7 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
     // Connection drawing state
     const [drawingConnection, setDrawingConnection] = useState<{
         fromLayerId: string;
+        fromPosition: Position;
         currentPosition: Position;
     } | null>(null);
 
@@ -103,7 +102,7 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
         setActiveDragId(event.active.id as string);
     }, []);
 
-    const handleDragMove = useCallback((event: DragMoveEvent) => {
+    const handleDragMove = useCallback((_event: DragMoveEvent) => {
         // Update visual feedback
     }, []);
 
@@ -134,7 +133,7 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
                 const dropY = initialY + delta.y;
 
                 // Create new layer
-                const params = { ...DEFAULT_LAYER_PARAMS[layerType] };
+                const params = { ...DEFAULT_LAYER_PARAMS[layerType] } as LayerParams;
                 networkGraph.addLayer({
                     type: layerType,
                     position: { x: dropX, y: dropY },
@@ -168,6 +167,10 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
 
             setDrawingConnection({
                 fromLayerId: layerId,
+                fromPosition: {
+                    x: layer.position.x + 180, // NODE_WIDTH
+                    y: layer.position.y + 40, // NODE_HEIGHT / 2
+                },
                 currentPosition: {
                     x: layer.position.x + 180, // NODE_WIDTH
                     y: layer.position.y + 40, // NODE_HEIGHT / 2
@@ -397,10 +400,7 @@ export const NetworkCanvas: React.FC<NetworkCanvasProps> = ({
                         {/* Temporary connection while drawing */}
                         {drawingConnection && (
                             <TemporaryConnection
-                                from={{
-                                    x: drawingConnection.currentPosition.x,
-                                    y: drawingConnection.currentPosition.y,
-                                }}
+                                from={drawingConnection.fromPosition}
                                 to={drawingConnection.currentPosition}
                             />
                         )}
