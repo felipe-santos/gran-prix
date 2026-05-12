@@ -1,19 +1,23 @@
-//! CUDA backend — **EXPERIMENTAL / UNTESTED**.
+//! CUDA backend — experimental.
 //!
-//! This module provides GPU acceleration via cudarc (NVIDIA CUDA).
-//! It is feature-gated behind `cuda` and has **not been tested** against
-//! the current API. Use at your own risk.
-//!
-//! The CPU backend (`backend::cpu`) is the production-ready implementation.
+//! The feature currently provides CUDA tensor storage and a `Backend`
+//! implementation that falls back to the CPU backend after copying tensors to
+//! host memory. This keeps the `cuda` feature compileable and panic-free while
+//! native kernels/cuBLAS are rebuilt against the current backend trait.
 
 #[cfg(feature = "cuda")]
-use cudarc::driver::{CudaDevice, LaunchConfig, LaunchAsync};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
+
 #[cfg(feature = "cuda")]
-use crate::{Tensor, GPResult, GPError};
+use crate::backend::{cpu::CPUBackend, Backend};
 #[cfg(feature = "cuda")]
-use crate::backend::Backend;
+use crate::{GPError, GPResult, Tensor};
+#[cfg(feature = "cuda")]
+use cudarc::driver::{CudaFunction, CudaSlice, LaunchConfig, PushKernelArg};
+#[cfg(feature = "cuda")]
+use cudarc::nvrtc::compile_ptx;
 
 #[cfg(feature = "cuda")]
 mod kernels;
@@ -21,365 +25,557 @@ mod kernels;
 #[cfg(feature = "cuda")]
 #[derive(Debug)]
 pub struct CUDABackend {
-    device: Arc<CudaDevice>,
-    blas: Arc<cudarc::cublas::Cudablas>,
+    stream: Arc<cudarc::driver::CudaStream>,
+    kernels: CudaKernels,
+    cpu: CPUBackend,
+}
+
+#[cfg(feature = "cuda")]
+#[derive(Debug)]
+struct CudaKernels {
+    add: CudaFunction,
+    mul: CudaFunction,
+    relu: CudaFunction,
+    sigmoid: CudaFunction,
+    tanh: CudaFunction,
+    relu_backward: CudaFunction,
+    sigmoid_backward: CudaFunction,
+    tanh_backward: CudaFunction,
+    add_relu: CudaFunction,
+    sgd_update: CudaFunction,
+    reduce_sum: CudaFunction,
+    matmul: CudaFunction,
 }
 
 #[cfg(feature = "cuda")]
 impl CUDABackend {
     pub fn new(device_index: usize) -> GPResult<Self> {
-        let device = CudaDevice::new(device_index)
-            .map_err(|e| GPError::BackendError(format!("Failed to initialize CUDA device {}: {:?}", device_index, e)))?;
-        
-        let blas = Arc::new(cudarc::cublas::Cudablas::new(device.clone())
-            .map_err(|e| GPError::BackendError(format!("Failed to initialize cuBLAS: {:?}", e)))?);
-        
-        // Compile and load kernels
-        let ptx = cudarc::nvrtc::compile_ptx(kernels::ELEMENTWISE_KERNELS)
-            .map_err(|e| GPError::BackendError(format!("NVRTC compilation failed: {:?}", e)))?;
-        device.load_ptx(ptx, "elementwise", &[
-            "relu_kernel", "sigmoid_kernel", "add_kernel", 
-            "conv2d_kernel", "max_pool2d_kernel",
-            "relu_backward_kernel", "sigmoid_backward_kernel",
-            "sgd_update_kernel",
-            "conv2d_grad_input_kernel", "conv2d_grad_weight_kernel",
-            "max_pool2d_backward_kernel"
-        ])
-            .map_err(|e| GPError::BackendError(format!("Failed to load PTX: {:?}", e)))?;
+        let (stream, kernels) = catch_unwind(AssertUnwindSafe(|| -> GPResult<_> {
+            let context = cudarc::driver::CudaContext::new(device_index).map_err(|e| {
+                GPError::BackendError(format!(
+                    "Failed to initialize CUDA context {}: {:?}",
+                    device_index, e
+                ))
+            })?;
+            let ptx = compile_ptx(kernels::CUDA_KERNELS).map_err(|e| {
+                GPError::BackendError(format!("CUDA kernel compilation failed: {:?}", e))
+            })?;
+            let module = context
+                .load_module(ptx)
+                .map_err(|e| GPError::BackendError(format!("CUDA module load failed: {:?}", e)))?;
+            let kernels = CudaKernels {
+                add: module.load_function("gp_add").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_add load failed: {:?}", e))
+                })?,
+                mul: module.load_function("gp_mul").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_mul load failed: {:?}", e))
+                })?,
+                relu: module.load_function("gp_relu").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_relu load failed: {:?}", e))
+                })?,
+                sigmoid: module.load_function("gp_sigmoid").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_sigmoid load failed: {:?}", e))
+                })?,
+                tanh: module.load_function("gp_tanh").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_tanh load failed: {:?}", e))
+                })?,
+                relu_backward: module.load_function("gp_relu_backward").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_relu_backward load failed: {:?}", e))
+                })?,
+                sigmoid_backward: module.load_function("gp_sigmoid_backward").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_sigmoid_backward load failed: {:?}", e))
+                })?,
+                tanh_backward: module.load_function("gp_tanh_backward").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_tanh_backward load failed: {:?}", e))
+                })?,
+                add_relu: module.load_function("gp_add_relu").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_add_relu load failed: {:?}", e))
+                })?,
+                sgd_update: module.load_function("gp_sgd_update").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_sgd_update load failed: {:?}", e))
+                })?,
+                reduce_sum: module.load_function("gp_reduce_sum").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_reduce_sum load failed: {:?}", e))
+                })?,
+                matmul: module.load_function("gp_matmul").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_matmul load failed: {:?}", e))
+                })?,
+            };
+            Ok((context.default_stream(), kernels))
+        }))
+        .map_err(|_| {
+            GPError::BackendError(format!(
+                "Failed to load CUDA driver or compiler for context {}",
+                device_index
+            ))
+        })??;
 
-        Ok(Self { device, blas })
+        Ok(Self {
+            stream,
+            kernels,
+            cpu: CPUBackend,
+        })
     }
 
-    pub fn device(&self) -> &Arc<CudaDevice> {
-        &self.device
+    pub fn device(&self) -> &Arc<cudarc::driver::CudaStream> {
+        &self.stream
     }
 
-    fn get_cuda_slice<'a>(&self, t: &'a Tensor) -> GPResult<Arc<cudarc::driver::CudaSlice<f32>>> {
-        match t.storage() {
-            crate::tensor::Storage::Cuda(slice) => Ok(slice.clone()),
-            crate::tensor::Storage::Cpu(_) => {
-                // Auto-upload if on CPU
-                let t_cuda = t.to_cuda(&self.device)?;
-                if let crate::tensor::Storage::Cuda(slice) = t_cuda.storage() {
-                    Ok(slice.clone())
-                } else {
-                    Err(GPError::TensorError("Failed to auto-upload tensor to CUDA".to_string()))
-                }
-            }
+    fn host(tensor: &Tensor) -> GPResult<Tensor> {
+        tensor.to_host()
+    }
+
+    fn upload(&self, tensor: Tensor) -> GPResult<Tensor> {
+        tensor.to_cuda(&self.stream)
+    }
+
+    fn shape_error(expected: &[usize], found: &[usize]) -> GPError {
+        GPError::IncompatibleShapes {
+            expected: expected.to_vec(),
+            found: found.to_vec(),
+            exp_len: expected.iter().product(),
+            found_len: found.iter().product(),
         }
+    }
+
+    fn cuda_slice(tensor: &Tensor) -> GPResult<Arc<CudaSlice<f32>>> {
+        match tensor.storage() {
+            crate::tensor::Storage::Cuda(storage) => Ok(storage.slice.clone()),
+            crate::tensor::Storage::Cpu(_) => Err(GPError::DeviceMismatch(
+                "CUDA required, tensor is on CPU".to_string(),
+            )),
+        }
+    }
+
+    fn elementwise_kernel(
+        &self,
+        kernel: &CudaFunction,
+        a: &Tensor,
+        b: &Tensor,
+    ) -> GPResult<Tensor> {
+        if a.shape() != b.shape() {
+            return Err(Self::shape_error(a.shape(), b.shape()));
+        }
+
+        let a_cuda = self.upload(a.clone())?;
+        let b_cuda = self.upload(b.clone())?;
+        let a_slice = Self::cuda_slice(&a_cuda)?;
+        let b_slice = Self::cuda_slice(&b_cuda)?;
+        let mut out_slice = self
+            .stream
+            .alloc_zeros::<f32>(a.len())
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+        let n = a.len() as i32;
+
+        let mut builder = self.stream.launch_builder(kernel);
+        builder.arg(&mut out_slice);
+        builder.arg(a_slice.as_ref());
+        builder.arg(b_slice.as_ref());
+        builder.arg(&n);
+        unsafe {
+            builder
+                .launch(LaunchConfig::for_num_elems(a.len() as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA kernel launch failed: {:?}", e))
+                })?;
+        }
+
+        Ok(Tensor::new_cuda(
+            self.stream.clone(),
+            Arc::new(out_slice),
+            a.shape().to_vec(),
+        ))
+    }
+
+    fn unary_kernel(&self, kernel: &CudaFunction, x: &Tensor) -> GPResult<Tensor> {
+        let x_cuda = self.upload(x.clone())?;
+        let x_slice = Self::cuda_slice(&x_cuda)?;
+        let mut out_slice = self
+            .stream
+            .alloc_zeros::<f32>(x.len())
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+        let n = x.len() as i32;
+
+        let mut builder = self.stream.launch_builder(kernel);
+        builder.arg(&mut out_slice);
+        builder.arg(x_slice.as_ref());
+        builder.arg(&n);
+        unsafe {
+            builder
+                .launch(LaunchConfig::for_num_elems(x.len() as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA kernel launch failed: {:?}", e))
+                })?;
+        }
+
+        Ok(Tensor::new_cuda(
+            self.stream.clone(),
+            Arc::new(out_slice),
+            x.shape().to_vec(),
+        ))
+    }
+
+    fn reduce_sum_output_shape(
+        input_shape: &[usize],
+        axes: &[usize],
+        keep_dims: bool,
+    ) -> Vec<usize> {
+        if keep_dims {
+            let mut shape = input_shape.to_vec();
+            for &axis in axes {
+                shape[axis] = 1;
+            }
+            shape
+        } else {
+            input_shape
+                .iter()
+                .enumerate()
+                .filter_map(|(axis, &size)| (!axes.contains(&axis)).then_some(size))
+                .collect()
+        }
+    }
+
+    fn should_fallback_reduce_sum(input_shape: &[usize], axes: &[usize]) -> bool {
+        if input_shape.len() > 8 {
+            return true;
+        }
+        let mut seen = vec![false; input_shape.len()];
+        for &axis in axes {
+            if axis >= input_shape.len() || seen[axis] {
+                return true;
+            }
+            seen[axis] = true;
+        }
+        false
     }
 }
 
 #[cfg(feature = "cuda")]
 impl Backend for CUDABackend {
-    fn relu(&self, x: &Tensor) -> GPResult<Tensor> {
-        let in_slice = self.get_cuda_slice(x)?;
-        let n = x.len();
-        let mut out_slice = self.device.alloc_zeros::<f32>(n)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        
-        let func = self.device.get_func("elementwise", "relu_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'relu_kernel' not found".to_string()))?;
-        
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        unsafe { func.launch(cfg, (&mut out_slice, in_slice.as_ref(), n as i32)) }
-            .map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok(Tensor::new_cuda(Arc::new(out_slice), x.shape().to_vec()))
-    }
-
-    fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor> {
-        let in_slice = self.get_cuda_slice(x)?;
-        let n = x.len();
-        let mut out_slice = self.device.alloc_zeros::<f32>(n)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        
-        let func = self.device.get_func("elementwise", "sigmoid_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'sigmoid_kernel' not found".to_string()))?;
-        
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        unsafe { func.launch(cfg, (&mut out_slice, in_slice.as_ref(), n as i32)) }
-            .map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok(Tensor::new_cuda(Arc::new(out_slice), x.shape().to_vec()))
-    }
-
-    fn add(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
-        let a_slice = self.get_cuda_slice(a)?;
-        let b_slice = self.get_cuda_slice(b)?;
-        let n = a.len();
-        let mut out_slice = self.device.alloc_zeros::<f32>(n)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        
-        let func = self.device.get_func("elementwise", "add_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'add_kernel' not found".to_string()))?;
-        
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        unsafe { func.launch(cfg, (&mut out_slice, a_slice.as_ref(), b_slice.as_ref(), n as i32)) }
-            .map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok(Tensor::new_cuda(Arc::new(out_slice), a.shape().to_vec()))
-    }
-
     fn matmul_t(&self, a: &Tensor, b: &Tensor, trans_a: bool, trans_b: bool) -> GPResult<Tensor> {
-        let a_slice = self.get_cuda_slice(a)?;
-        let b_slice = self.get_cuda_slice(b)?;
-        
-        // ndarray shapes are (rows, cols)
         let a_shape = a.shape();
         let b_shape = b.shape();
-        
-        let (m, k) = if trans_a { (a_shape[1], a_shape[0]) } else { (a_shape[0], a_shape[1]) };
-        let (k_b, n) = if trans_b { (b_shape[1], b_shape[0]) } else { (b_shape[0], b_shape[1]) };
-        
+        if a_shape.len() < 2 || b_shape.len() < 2 {
+            return Err(Self::shape_error(a_shape, b_shape));
+        }
+
+        let (m, k) = if trans_a {
+            (a_shape[1], a_shape[0])
+        } else {
+            (a_shape[0], a_shape[1])
+        };
+        let (k_b, n) = if trans_b {
+            (b_shape[1], b_shape[0])
+        } else {
+            (b_shape[0], b_shape[1])
+        };
         if k != k_b {
-            return Err(GPError::IncompatibleShapes { 
-                expected: vec![m, k_b], 
-                found: vec![m, k],
-                exp_len: m * k_b,
-                found_len: m * k,
-            });
+            return Err(Self::shape_error(&[m, k_b], &[m, k]));
         }
 
-        let mut out_slice = self.device.alloc_zeros::<f32>(m * n)
+        let a_cuda = self.upload(a.clone())?;
+        let b_cuda = self.upload(b.clone())?;
+        let a_slice = Self::cuda_slice(&a_cuda)?;
+        let b_slice = Self::cuda_slice(&b_cuda)?;
+        let mut out_slice = self
+            .stream
+            .alloc_zeros::<f32>(m * n)
             .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
 
-        use cudarc::cublas::sys::cublasOperation_t;
-        let op_a = if trans_a { cublasOperation_t::CUBLAS_OP_T } else { cublasOperation_t::CUBLAS_OP_N };
-        let op_b = if trans_b { cublasOperation_t::CUBLAS_OP_T } else { cublasOperation_t::CUBLAS_OP_N };
+        let m_i = m as i32;
+        let n_i = n as i32;
+        let k_i = k as i32;
+        let a_cols = a_shape[1] as i32;
+        let b_cols = b_shape[1] as i32;
+        let trans_a_i = i32::from(trans_a);
+        let trans_b_i = i32::from(trans_b);
+        let block = 16u32;
+        let cfg = LaunchConfig {
+            block_dim: (block, block, 1),
+            grid_dim: (
+                (n as u32 + block - 1) / block,
+                (m as u32 + block - 1) / block,
+                1,
+            ),
+            shared_mem_bytes: 0,
+        };
 
-        // cuBLAS is column-major, but our tensors are row-major.
-        // C = A * B in row-major is equivalent to C^T = B^T * A^T in column-major.
-        // Wait, cudarc's sgemm helper might handle some of this.
-        // Let's use the high-level sgemm if available.
-        
-        use cudarc::cublas::Gemm;
-        // In row-major: C = op(A) * op(B)
-        // With m, n, k as defined for row-major.
-        // We can pass op_b, op_a to sgemm with swapped order to get row-major C.
-        // Actually, let's keep it simple: assume B is already the right shape.
-        
+        let mut builder = self.stream.launch_builder(&self.kernels.matmul);
+        builder.arg(&mut out_slice);
+        builder.arg(a_slice.as_ref());
+        builder.arg(b_slice.as_ref());
+        builder.arg(&m_i);
+        builder.arg(&n_i);
+        builder.arg(&k_i);
+        builder.arg(&a_cols);
+        builder.arg(&b_cols);
+        builder.arg(&trans_a_i);
+        builder.arg(&trans_b_i);
         unsafe {
-            self.blas.sgemm(
-                op_b,
-                op_a,
-                n as i32,
-                m as i32,
-                k as i32,
-                &1.0,
-                b_slice.as_ref(),
-                if trans_b { k as i32 } else { n as i32 },
-                a_slice.as_ref(),
-                if trans_a { m as i32 } else { k as i32 },
-                &0.0,
-                &mut out_slice,
-                n as i32,
-            ).map_err(|e| GPError::BackendError(format!("cuBLAS sgemm failed: {:?}", e)))?;
+            builder.launch(cfg).map_err(|e| {
+                GPError::BackendError(format!("CUDA matmul launch failed: {:?}", e))
+            })?;
         }
 
-        Ok(Tensor::new_cuda(Arc::new(out_slice), vec![m, n]))
-    }
-
-    fn conv2d(&self, input: &Tensor, weight: &Tensor, stride: usize, padding: usize) -> GPResult<Tensor> {
-        let in_slice = self.get_cuda_slice(input)?;
-        let w_slice = self.get_cuda_slice(weight)?;
-        
-        let in_shape = input.shape();
-        let w_shape = weight.shape();
-        
-        let (n, ci, h, w) = (in_shape[0], in_shape[1], in_shape[2], in_shape[3]);
-        let (co, _ci, kh, kw) = (w_shape[0], w_shape[1], w_shape[2], w_shape[3]);
-        
-        let oh = (h + 2 * padding - kh) / stride + 1;
-        let ow = (w + 2 * padding - kw) / stride + 1;
-        
-        let mut out_slice = self.device.alloc_zeros::<f32>(n * co * oh * ow)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        
-        let func = self.device.get_func("elementwise", "conv2d_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'conv2d_kernel' not found".to_string()))?;
-        
-        let total_threads = (n * co * oh * ow) as u32;
-        let cfg = LaunchConfig::for_num_elems(total_threads);
-        
-        unsafe {
-            func.launch(cfg, (
-                &mut out_slice, in_slice.as_ref(), w_slice.as_ref(),
-                n as i32, ci as i32, h as i32, w as i32,
-                co as i32, kh as i32, kw as i32,
-                oh as i32, ow as i32,
-                stride as i32, padding as i32
-            ))
-        }.map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok(Tensor::new_cuda(Arc::new(out_slice), vec![n, co, oh, ow]))
-    }
-
-    fn conv2d_backward(&self, input: &Tensor, weight: &Tensor, grad_output: &Tensor, stride: usize, padding: usize) -> GPResult<(Tensor, Tensor)> {
-        let in_slice = self.get_cuda_slice(input)?;
-        let w_slice = self.get_cuda_slice(weight)?;
-        let grad_out_slice = self.get_cuda_slice(grad_output)?;
-        
-        let in_shape = input.shape();
-        let w_shape = weight.shape();
-        let grad_out_shape = grad_output.shape();
-        
-        let (n, ci, h, w) = (in_shape[0], in_shape[1], in_shape[2], in_shape[3]);
-        let (co, _ci, kh, kw) = (w_shape[0], w_shape[1], w_shape[2], w_shape[3]);
-        let (_n, _co, oh, ow) = (grad_out_shape[0], grad_out_shape[1], grad_out_shape[2], grad_out_shape[3]);
-        
-        // 1. Grad for Input
-        let mut grad_in_slice = self.device.alloc_zeros::<f32>(n * ci * h * w)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        let func_in = self.device.get_func("elementwise", "conv2d_grad_input_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'conv2d_grad_input_kernel' not found".to_string()))?;
-        let cfg_in = LaunchConfig::for_num_elems((n * ci * h * w) as u32);
-        unsafe {
-            func_in.launch(cfg_in, (
-                &mut grad_in_slice, grad_out_slice.as_ref(), w_slice.as_ref(),
-                n as i32, ci as i32, h as i32, w as i32,
-                co as i32, kh as i32, kw as i32,
-                oh as i32, ow as i32,
-                stride as i32, padding as i32
-            ))
-        }.map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-
-        // 2. Grad for Weight
-        let mut grad_w_slice = self.device.alloc_zeros::<f32>(co * ci * kh * kw)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        let func_w = self.device.get_func("elementwise", "conv2d_grad_weight_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'conv2d_grad_weight_kernel' not found".to_string()))?;
-        let cfg_w = LaunchConfig::for_num_elems((co * ci * kh * kw) as u32);
-        unsafe {
-            func_w.launch(cfg_w, (
-                &mut grad_w_slice, grad_out_slice.as_ref(), in_slice.as_ref(),
-                n as i32, ci as i32, h as i32, w as i32,
-                co as i32, kh as i32, kw as i32,
-                oh as i32, ow as i32,
-                stride as i32, padding as i32
-            ))
-        }.map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok((
-            Tensor::new_cuda(Arc::new(grad_in_slice), vec![n, ci, h, w]),
-            Tensor::new_cuda(Arc::new(grad_w_slice), vec![co, ci, kh, kw])
+        Ok(Tensor::new_cuda(
+            self.stream.clone(),
+            Arc::new(out_slice),
+            vec![m, n],
         ))
     }
 
+    fn matmul_into(
+        &self,
+        a: &Tensor,
+        b: &Tensor,
+        trans_a: bool,
+        trans_b: bool,
+        out: &mut Tensor,
+    ) -> GPResult<()> {
+        *out = self.matmul_t(a, b, trans_a, trans_b)?;
+        Ok(())
+    }
+
+    fn conv2d(
+        &self,
+        input: &Tensor,
+        weight: &Tensor,
+        stride: usize,
+        padding: usize,
+    ) -> GPResult<Tensor> {
+        let out = self
+            .cpu
+            .conv2d(&Self::host(input)?, &Self::host(weight)?, stride, padding)?;
+        self.upload(out)
+    }
+
+    fn conv2d_backward(
+        &self,
+        input: &Tensor,
+        weight: &Tensor,
+        grad_output: &Tensor,
+        stride: usize,
+        padding: usize,
+    ) -> GPResult<(Tensor, Tensor)> {
+        let (grad_input, grad_weight) = self.cpu.conv2d_backward(
+            &Self::host(input)?,
+            &Self::host(weight)?,
+            &Self::host(grad_output)?,
+            stride,
+            padding,
+        )?;
+        Ok((self.upload(grad_input)?, self.upload(grad_weight)?))
+    }
+
     fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> GPResult<Tensor> {
-        let in_slice = self.get_cuda_slice(input)?;
-        let in_shape = input.shape();
-        let (n, c, h, w) = (in_shape[0], in_shape[1], in_shape[2], in_shape[3]);
-        
-        let oh = (h - kernel_size) / stride + 1;
-        let ow = (w - kernel_size) / stride + 1;
-        
-        let mut out_slice = self.device.alloc_zeros::<f32>(n * c * oh * ow)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        
-        let func = self.device.get_func("elementwise", "max_pool2d_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'max_pool2d_kernel' not found".to_string()))?;
-        
-        let total_threads = (n * c * oh * ow) as u32;
-        let cfg = LaunchConfig::for_num_elems(total_threads);
-        
-        unsafe {
-            func.launch(cfg, (
-                &mut out_slice, in_slice.as_ref(),
-                n as i32, c as i32, h as i32, w as i32,
-                oh as i32, ow as i32,
-                kernel_size as i32, kernel_size as i32,
-                stride as i32
-            ))
-        }.map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok(Tensor::new_cuda(Arc::new(out_slice), vec![n, c, oh, ow]))
+        let out = self
+            .cpu
+            .max_pool2d(&Self::host(input)?, kernel_size, stride)?;
+        self.upload(out)
     }
 
-    fn max_pool2d_backward(&self, input: &Tensor, grad_output: &Tensor, kernel_size: usize, stride: usize) -> GPResult<Tensor> {
-        let in_slice = self.get_cuda_slice(input)?;
-        let grad_out_slice = self.get_cuda_slice(grad_output)?;
-        
-        let in_shape = input.shape();
-        let grad_out_shape = grad_output.shape();
-        
-        let (n, c, h, w) = (in_shape[0], in_shape[1], in_shape[2], in_shape[3]);
-        let (_n, _c, oh, ow) = (grad_out_shape[0], grad_out_shape[1], grad_out_shape[2], grad_out_shape[3]);
-        
-        let mut grad_in_slice = self.device.alloc_zeros::<f32>(n * c * h * w)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        
-        let func = self.device.get_func("elementwise", "max_pool2d_backward_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'max_pool2d_backward_kernel' not found".to_string()))?;
-        
-        let cfg = LaunchConfig::for_num_elems((n * c * oh * ow) as u32);
-        unsafe {
-            func.launch(cfg, (
-                &mut grad_in_slice, grad_out_slice.as_ref(), in_slice.as_ref(),
-                n as i32, c as i32, h as i32, w as i32,
-                oh as i32, ow as i32,
-                kernel_size as i32, kernel_size as i32,
-                stride as i32
-            ))
-        }.map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok(Tensor::new_cuda(Arc::new(grad_in_slice), vec![n, c, h, w]))
+    fn max_pool2d_backward(
+        &self,
+        input: &Tensor,
+        grad_output: &Tensor,
+        kernel_size: usize,
+        stride: usize,
+    ) -> GPResult<Tensor> {
+        let out = self.cpu.max_pool2d_backward(
+            &Self::host(input)?,
+            &Self::host(grad_output)?,
+            kernel_size,
+            stride,
+        )?;
+        self.upload(out)
     }
 
-    fn add_relu(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
-        let sum = self.add(a, b)?;
-        self.relu(&sum)
+    fn add(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
+        self.elementwise_kernel(&self.kernels.add, a, b)
     }
 
-    fn update_parameter(&self, param: &mut Tensor, grad: &Tensor, learning_rate: f32) -> GPResult<()> {
-        let param_slice = self.get_cuda_slice(param)?;
-        let grad_slice = self.get_cuda_slice(grad)?;
-        let n = param.len();
+    fn add_into(&self, a: &Tensor, b: &Tensor, out: &mut Tensor) -> GPResult<()> {
+        *out = self.add(a, b)?;
+        Ok(())
+    }
 
-        let func = self.device.get_func("elementwise", "sgd_update_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'sgd_update_kernel' not found".to_string()))?;
-        
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        unsafe {
-            func.launch(cfg, (param_slice.as_ref(), grad_slice.as_ref(), learning_rate, n as i32))
-        }.map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
+    fn mul(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
+        self.elementwise_kernel(&self.kernels.mul, a, b)
+    }
+
+    fn mul_into(&self, a: &Tensor, b: &Tensor, out: &mut Tensor) -> GPResult<()> {
+        *out = self.mul(a, b)?;
+        Ok(())
+    }
+
+    fn mul_backward(
+        &self,
+        a: &Tensor,
+        b: &Tensor,
+        grad_output: &Tensor,
+    ) -> GPResult<(Tensor, Tensor)> {
+        let (grad_a, grad_b) =
+            self.cpu
+                .mul_backward(&Self::host(a)?, &Self::host(b)?, &Self::host(grad_output)?)?;
+        Ok((self.upload(grad_a)?, self.upload(grad_b)?))
+    }
+
+    fn relu(&self, x: &Tensor) -> GPResult<Tensor> {
+        self.unary_kernel(&self.kernels.relu, x)
+    }
+
+    fn relu_inplace(&self, x: &mut Tensor) -> GPResult<()> {
+        *x = self.relu(x)?;
+        Ok(())
+    }
+
+    fn sigmoid(&self, x: &Tensor) -> GPResult<Tensor> {
+        self.unary_kernel(&self.kernels.sigmoid, x)
+    }
+
+    fn sigmoid_inplace(&self, x: &mut Tensor) -> GPResult<()> {
+        *x = self.sigmoid(x)?;
+        Ok(())
+    }
+
+    fn tanh(&self, x: &Tensor) -> GPResult<Tensor> {
+        self.unary_kernel(&self.kernels.tanh, x)
+    }
+
+    fn tanh_inplace(&self, x: &mut Tensor) -> GPResult<()> {
+        *x = self.tanh(x)?;
         Ok(())
     }
 
     fn relu_backward(&self, input: &Tensor, grad_output: &Tensor) -> GPResult<Tensor> {
-        let in_slice = self.get_cuda_slice(input)?;
-        let grad_out_slice = self.get_cuda_slice(grad_output)?;
-        let n = input.len();
-        let mut grad_in_slice = self.device.alloc_zeros::<f32>(n)
-            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        
-        let func = self.device.get_func("elementwise", "relu_backward_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'relu_backward_kernel' not found".to_string()))?;
-        
-        let cfg = LaunchConfig::for_num_elems(n as u32);
-        unsafe {
-            func.launch(cfg, (&mut grad_in_slice, in_slice.as_ref(), grad_out_slice.as_ref(), n as i32))
-        }.map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok(Tensor::new_cuda(Arc::new(grad_in_slice), input.shape().to_vec()))
+        self.elementwise_kernel(&self.kernels.relu_backward, input, grad_output)
     }
 
     fn sigmoid_backward(&self, output: &Tensor, grad_output: &Tensor) -> GPResult<Tensor> {
-        let out_slice = self.get_cuda_slice(output)?;
-        let grad_out_slice = self.get_cuda_slice(grad_output)?;
-        let n = output.len();
-        let mut grad_in_slice = self.device.alloc_zeros::<f32>(n)
+        self.elementwise_kernel(&self.kernels.sigmoid_backward, output, grad_output)
+    }
+
+    fn tanh_backward(&self, output: &Tensor, grad_output: &Tensor) -> GPResult<Tensor> {
+        self.elementwise_kernel(&self.kernels.tanh_backward, output, grad_output)
+    }
+
+    fn add_relu(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
+        self.elementwise_kernel(&self.kernels.add_relu, a, b)
+    }
+
+    fn reduce_sum(&self, input: &Tensor, axes: &[usize], keep_dims: bool) -> GPResult<Tensor> {
+        if Self::should_fallback_reduce_sum(input.shape(), axes) {
+            let out = self.cpu.reduce_sum(&Self::host(input)?, axes, keep_dims)?;
+            return self.upload(out);
+        }
+
+        let output_shape = Self::reduce_sum_output_shape(input.shape(), axes, keep_dims);
+        let output_len = output_shape.iter().product::<usize>();
+        let input_cuda = self.upload(input.clone())?;
+        let input_slice = Self::cuda_slice(&input_cuda)?;
+        let mut out_slice = self
+            .stream
+            .alloc_zeros::<f32>(output_len)
             .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
-        
-        let func = self.device.get_func("elementwise", "sigmoid_backward_kernel")
-            .ok_or_else(|| GPError::BackendError("Kernel 'sigmoid_backward_kernel' not found".to_string()))?;
-        
-        let cfg = LaunchConfig::for_num_elems(n as u32);
+
+        let input_shape_i = input
+            .shape()
+            .iter()
+            .map(|&size| size as i32)
+            .collect::<Vec<_>>();
+        let output_shape_i = output_shape
+            .iter()
+            .map(|&size| size as i32)
+            .collect::<Vec<_>>();
+        let mut axes_mask = vec![0i32; input.shape().len()];
+        for &axis in axes {
+            axes_mask[axis] = 1;
+        }
+
+        let input_shape_dev = self
+            .stream
+            .clone_htod(input_shape_i.as_slice())
+            .map_err(|e| GPError::BackendError(format!("CUDA shape upload failed: {:?}", e)))?;
+        let output_shape_dev = self
+            .stream
+            .clone_htod(output_shape_i.as_slice())
+            .map_err(|e| GPError::BackendError(format!("CUDA shape upload failed: {:?}", e)))?;
+        let axes_mask_dev = self
+            .stream
+            .clone_htod(axes_mask.as_slice())
+            .map_err(|e| GPError::BackendError(format!("CUDA axes upload failed: {:?}", e)))?;
+
+        let input_len_i = input.len() as i32;
+        let output_len_i = output_len as i32;
+        let rank_i = input.shape().len() as i32;
+        let output_rank_i = output_shape.len() as i32;
+        let keep_dims_i = i32::from(keep_dims);
+
+        let mut builder = self.stream.launch_builder(&self.kernels.reduce_sum);
+        builder.arg(&mut out_slice);
+        builder.arg(input_slice.as_ref());
+        builder.arg(&input_shape_dev);
+        builder.arg(&output_shape_dev);
+        builder.arg(&axes_mask_dev);
+        builder.arg(&input_len_i);
+        builder.arg(&output_len_i);
+        builder.arg(&rank_i);
+        builder.arg(&output_rank_i);
+        builder.arg(&keep_dims_i);
         unsafe {
-            func.launch(cfg, (&mut grad_in_slice, out_slice.as_ref(), grad_out_slice.as_ref(), n as i32))
-        }.map_err(|e| GPError::BackendError(format!("Kernel launch failed: {:?}", e)))?;
-        
-        Ok(Tensor::new_cuda(Arc::new(grad_in_slice), output.shape().to_vec()))
+            builder
+                .launch(LaunchConfig::for_num_elems(output_len as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA reduce_sum launch failed: {:?}", e))
+                })?;
+        }
+
+        Ok(Tensor::new_cuda(
+            self.stream.clone(),
+            Arc::new(out_slice),
+            output_shape,
+        ))
+    }
+
+    fn update_parameter(
+        &self,
+        param: &mut Tensor,
+        grad: &Tensor,
+        learning_rate: f32,
+    ) -> GPResult<()> {
+        if param.shape() != grad.shape() {
+            return Err(Self::shape_error(param.shape(), grad.shape()));
+        }
+
+        let param_cuda = self.upload(param.clone())?;
+        let grad_cuda = self.upload(grad.clone())?;
+        let param_slice = Self::cuda_slice(&param_cuda)?;
+        let grad_slice = Self::cuda_slice(&grad_cuda)?;
+        let mut out_slice = self
+            .stream
+            .alloc_zeros::<f32>(param.len())
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+        let n = param.len() as i32;
+
+        let mut builder = self.stream.launch_builder(&self.kernels.sgd_update);
+        builder.arg(&mut out_slice);
+        builder.arg(param_slice.as_ref());
+        builder.arg(grad_slice.as_ref());
+        builder.arg(&learning_rate);
+        builder.arg(&n);
+        unsafe {
+            builder
+                .launch(LaunchConfig::for_num_elems(param.len() as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA sgd_update launch failed: {:?}", e))
+                })?;
+        }
+
+        *param = Tensor::new_cuda(
+            self.stream.clone(),
+            Arc::new(out_slice),
+            param.shape().to_vec(),
+        );
+        Ok(())
     }
 }

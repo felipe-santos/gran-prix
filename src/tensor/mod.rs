@@ -5,7 +5,7 @@ use ndarray::{ArrayD, IxDyn, ArrayViewD};
 use serde::{Serialize, Deserialize};
 use crate::{GPError, GPResult, types::Shape, Device};
 #[cfg(feature = "cuda")]
-use cudarc::driver::{LaunchAsync};
+use std::sync::Arc;
 
 /// An N-Dimensional Tensor abstraction supporting multiple backends.
 /// Encapsulates storage (CPU/GPU) and shape information.
@@ -64,10 +64,7 @@ impl Tensor {
         match &self.storage {
             Storage::Cpu(data) => Ok(data),
             #[cfg(feature = "cuda")]
-            Storage::Cuda(_) => Err(GPError::DeviceMismatch { 
-                required: "CPU".to_string(), 
-                actual: "CUDA".to_string() 
-            }),
+            Storage::Cuda(_) => Err(GPError::DeviceMismatch("CPU required, tensor is on CUDA".to_string())),
         }
     }
 
@@ -75,10 +72,7 @@ impl Tensor {
         match &mut self.storage {
             Storage::Cpu(data) => Ok(data),
             #[cfg(feature = "cuda")]
-            Storage::Cuda(_) => Err(GPError::DeviceMismatch { 
-                required: "CPU".to_string(), 
-                actual: "CUDA".to_string() 
-            }),
+            Storage::Cuda(_) => Err(GPError::DeviceMismatch("CPU required, tensor is on CUDA".to_string())),
         }
     }
 
@@ -91,13 +85,16 @@ impl Tensor {
     }
 
     #[cfg(feature = "cuda")]
-    pub fn to_cuda(&self, device: &Arc<cudarc::driver::CudaDevice>) -> GPResult<Self> {
+    pub fn to_cuda(&self, stream: &Arc<cudarc::driver::CudaStream>) -> GPResult<Self> {
         match &self.storage {
             Storage::Cpu(data) => {
-                let slice = device.htod_copy(data.as_slice().ok_or_else(|| GPError::TensorError("Non-contiguous CPU tensor".to_string()))?.to_vec())
+                let slice = stream.clone_htod(data.as_slice().ok_or_else(|| GPError::TensorError("Non-contiguous CPU tensor".to_string()))?)
                     .map_err(|e| GPError::BackendError(format!("CUDA HtoD copy failed: {:?}", e)))?;
                 Ok(Self {
-                    storage: Storage::Cuda(Arc::new(slice)),
+                    storage: Storage::Cuda(storage::CudaStorage {
+                        stream: stream.clone(),
+                        slice: Arc::new(slice),
+                    }),
                     shape: self.shape.clone(),
                 })
             }
@@ -109,8 +106,8 @@ impl Tensor {
         match &self.storage {
             Storage::Cpu(_) => Ok(self.clone()),
             #[cfg(feature = "cuda")]
-            Storage::Cuda(slice) => {
-                let data = slice.device().dtoh_sync_copy(slice.as_ref())
+            Storage::Cuda(storage) => {
+                let data = storage.stream.clone_dtoh(storage.slice.as_ref())
                     .map_err(|e| GPError::BackendError(format!("CUDA DtoH copy failed: {:?}", e)))?;
                 let array = ArrayD::from_shape_vec(self.shape.0.clone(), data)
                     .map_err(|e| GPError::TensorError(format!("Failed to create host array: {:?}", e)))?;
@@ -124,9 +121,13 @@ impl Tensor {
     }
 
     #[cfg(feature = "cuda")]
-    pub fn new_cuda(slice: Arc<cudarc::driver::CudaSlice<f32>>, shape: Vec<usize>) -> Self {
+    pub fn new_cuda(
+        stream: Arc<cudarc::driver::CudaStream>,
+        slice: Arc<cudarc::driver::CudaSlice<f32>>,
+        shape: Vec<usize>,
+    ) -> Self {
         Self {
-            storage: Storage::Cuda(slice),
+            storage: Storage::Cuda(storage::CudaStorage { stream, slice }),
             shape: Shape::from_slice(&shape),
         }
     }
@@ -144,7 +145,7 @@ impl Tensor {
                 Ok(Self::new_cpu(reshaped))
             }
             #[cfg(feature = "cuda")]
-            Storage::Cuda(slice) => {
+            Storage::Cuda(storage) => {
                 let new_size: usize = shape.iter().product();
                 let old_size: usize = self.shape.size();
                 if new_size != old_size {
@@ -156,7 +157,7 @@ impl Tensor {
                     });
                 }
                 Ok(Self {
-                    storage: Storage::Cuda(slice),
+                    storage: Storage::Cuda(storage),
                     shape: Shape::from_slice(shape),
                 })
             }
@@ -183,7 +184,7 @@ impl Tensor {
         match &self.storage {
             Storage::Cpu(_) => Device::Cpu,
             #[cfg(feature = "cuda")]
-            Storage::Cuda(slice) => Device::Cuda(slice.device().id()),
+            Storage::Cuda(storage) => Device::Cuda(storage.slice.ordinal()),
         }
     }
 

@@ -15,8 +15,9 @@ rayon = { version = "1.10", optional = true }
 rustfft = "6.4.1"
 thiserror = "1.0"
 anyhow = "1.0"
+cudarc = { version = "0.19.6", default-features = false, features = ["std", "driver", "nvrtc", "fallback-dynamic-loading", "cuda-12080"], optional = true }
 
 [features]
 default = []
-cuda = []
+cuda = ["dep:cudarc"]
 rayon = ["dep:rayon", "ndarray/rayon"]

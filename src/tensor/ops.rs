@@ -1,19 +1,26 @@
-use super::{Tensor, Storage};
+use super::{Storage, Tensor};
 
 #[cfg(feature = "cuda")]
-use ndarray_rand::RandomExt;
-#[cfg(feature = "cuda")]
-use rand::distributions::Uniform;
+fn host_or_nan(tensor: &Tensor) -> Tensor {
+    tensor
+        .to_host()
+        .unwrap_or_else(|_| Tensor::from_elem(tensor.shape(), f32::NAN))
+}
 
-// Operator overloads are intentionally CPU-only today. Use Backend methods for
-// fallible execution paths that may target accelerator storage.
+// Operator overloads are convenience APIs. CPU tensors execute directly; CUDA
+// tensors are copied back to host because Rust operator traits cannot return
+// `GPResult`. Use Backend methods for fallible accelerator execution.
 impl std::ops::Add for &Tensor {
     type Output = Tensor;
     fn add(self, rhs: Self) -> Self::Output {
         match (&self.storage, &rhs.storage) {
             (Storage::Cpu(a), Storage::Cpu(b)) => (a + b).into(),
             #[cfg(feature = "cuda")]
-            _ => panic!("Binary operations on non-CPU tensors not yet implemented or mismatched devices."),
+            _ => {
+                let lhs = host_or_nan(self);
+                let rhs = host_or_nan(rhs);
+                &lhs + &rhs
+            }
         }
     }
 }
@@ -24,7 +31,11 @@ impl std::ops::Sub for &Tensor {
         match (&self.storage, &rhs.storage) {
             (Storage::Cpu(a), Storage::Cpu(b)) => (a - b).into(),
             #[cfg(feature = "cuda")]
-            _ => panic!("Binary operations on non-CPU tensors not yet implemented or mismatched devices."),
+            _ => {
+                let lhs = host_or_nan(self);
+                let rhs = host_or_nan(rhs);
+                &lhs - &rhs
+            }
         }
     }
 }
@@ -42,7 +53,10 @@ impl std::ops::Sub<&Tensor> for f32 {
         match &rhs.storage {
             Storage::Cpu(a) => (self - a).into(),
             #[cfg(feature = "cuda")]
-            _ => panic!("Scalar subtraction on non-CPU tensors not yet implemented."),
+            _ => {
+                let rhs = host_or_nan(rhs);
+                self - &rhs
+            }
         }
     }
 }
@@ -53,7 +67,10 @@ impl std::ops::Mul<f32> for &Tensor {
         match &self.storage {
             Storage::Cpu(a) => (a * rhs).into(),
             #[cfg(feature = "cuda")]
-            _ => panic!("Scalar multiplication on non-CPU tensors not yet implemented."),
+            _ => {
+                let lhs = host_or_nan(self);
+                &lhs * rhs
+            }
         }
     }
 }
@@ -71,7 +88,11 @@ impl std::ops::Mul<&Tensor> for &Tensor {
         match (&self.storage, &rhs.storage) {
             (Storage::Cpu(a), Storage::Cpu(b)) => (a * b).into(),
             #[cfg(feature = "cuda")]
-            _ => panic!("Element-wise multiplication on non-CPU tensors not yet implemented."),
+            _ => {
+                let lhs = host_or_nan(self);
+                let rhs = host_or_nan(rhs);
+                &lhs * &rhs
+            }
         }
     }
 }
@@ -82,7 +103,10 @@ impl std::ops::Div<f32> for &Tensor {
         match &self.storage {
             Storage::Cpu(a) => (a / rhs).into(),
             #[cfg(feature = "cuda")]
-            _ => panic!("Scalar division on non-CPU tensors not yet implemented."),
+            _ => {
+                let lhs = host_or_nan(self);
+                &lhs / rhs
+            }
         }
     }
 }
@@ -92,7 +116,11 @@ impl std::ops::SubAssign<&Tensor> for Tensor {
         match (&mut self.storage, &rhs.storage) {
             (Storage::Cpu(a), Storage::Cpu(b)) => *a -= b,
             #[cfg(feature = "cuda")]
-            _ => panic!("In-place operations on non-CPU tensors not yet implemented or mismatched devices."),
+            _ => {
+                let lhs = host_or_nan(self);
+                let rhs = host_or_nan(rhs);
+                *self = &lhs - &rhs;
+            }
         }
     }
 }
@@ -102,7 +130,11 @@ impl std::ops::AddAssign<&Tensor> for Tensor {
         match (&mut self.storage, &rhs.storage) {
             (Storage::Cpu(a), Storage::Cpu(b)) => *a += b,
             #[cfg(feature = "cuda")]
-            _ => panic!("In-place operations on non-CPU tensors not yet implemented or mismatched devices."),
+            _ => {
+                let lhs = host_or_nan(self);
+                let rhs = host_or_nan(rhs);
+                *self = &lhs + &rhs;
+            }
         }
     }
 }
@@ -112,18 +144,27 @@ impl PartialEq for Tensor {
         match (&self.storage, &other.storage) {
             (Storage::Cpu(a), Storage::Cpu(b)) => a == b,
             #[cfg(feature = "cuda")]
-            _ => panic!("PartialEq comparison involving CUDA tensors not yet implemented"),
+            _ => {
+                let lhs = host_or_nan(self);
+                let rhs = host_or_nan(other);
+                lhs == rhs
+            }
         }
     }
 }
 
 impl Tensor {
-    pub fn mapv<F>(&self, f: F) -> Self 
-    where F: Fn(f32) -> f32 + Sync + Send {
+    pub fn mapv<F>(&self, f: F) -> Self
+    where
+        F: Fn(f32) -> f32 + Sync + Send,
+    {
         match &self.storage {
             Storage::Cpu(data) => data.mapv(f).into(),
             #[cfg(feature = "cuda")]
-            _ => panic!("mapv not implemented for non-CPU tensors"),
+            _ => {
+                let host = host_or_nan(self);
+                host.mapv(f)
+            }
         }
     }
 }
