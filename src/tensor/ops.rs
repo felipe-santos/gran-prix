@@ -5,7 +5,8 @@ use ndarray_rand::RandomExt;
 #[cfg(feature = "cuda")]
 use rand::distributions::Uniform;
 
-// Operator Overloading for CPU Tensors
+// Operator overloads are intentionally CPU-only today. Use Backend methods for
+// fallible execution paths that may target accelerator storage.
 impl std::ops::Add for &Tensor {
     type Output = Tensor;
     fn add(self, rhs: Self) -> Self::Output {

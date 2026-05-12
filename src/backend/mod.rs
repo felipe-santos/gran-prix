@@ -1,7 +1,7 @@
 use crate::{Tensor, GPResult};
 
 /// Trait defining the physical execution of operations.
-/// This allows us to swap CPU (SIMD/Rayon) for GPU (WGPU/CUDA).
+/// This allows the execution backend to evolve beyond the current CPU path.
 pub trait Backend: Send + Sync + std::fmt::Debug {
     /// Matrix multiplication: a * b (with transpose options). 
     /// Assumes 2D tensors.

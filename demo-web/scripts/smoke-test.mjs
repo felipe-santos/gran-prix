@@ -5,7 +5,7 @@
  * Loads the Node-target build of the bridge (`pkg-node/`), instantiates
  * a Trainer, exercises the surface area that demo-web demos depend on
  * (`predict`, `train_batch`, `train_step`, `get_weights`,
- * `import_weights`, `get_gradient_norms`, `fromArchitecture`), and
+ * `import_weights`, `get_gradient_norms`, `fromNetworkDef`), and
  * verifies each call returns finite, sensibly-shaped results.
  *
  * This is *not* a full end-to-end test of any specific demo — those
@@ -48,7 +48,7 @@ async function main() {
   const { Trainer } = mod;
   check('Trainer class is exported', typeof Trainer === 'function');
 
-  // ── Construction via legacy hidden_layers form ───────────────────────────
+  // ── Construction via hidden_layers shorthand ─────────────────────────────
   // Mirrors `new Trainer(input_dim, [hidden...])` used by the playground
   // and classifier demos.
   const trainer = new Trainer(2, new Uint32Array([8, 4]));
@@ -136,35 +136,6 @@ async function main() {
     'all gradient norms are finite',
     allFinite(norms),
     `len=${norms.length}`
-  );
-
-  // ── fromArchitecture (legacy WasmArchitecture format) ────────────────────
-  // The shape that `demo-web/.../NetworkSerializer.ts::serializeForTrainer`
-  // produces. This is the path the classifier demo uses.
-  const archJson = JSON.stringify({
-    layers: [
-      { id: 'in1', type: 'input', params: { inputSize: 2 } },
-      { id: 'lin1', type: 'linear', params: { inputSize: 2, outputSize: 4 } },
-      { id: 'act1', type: 'activation', params: { activationType: 'tanh' } },
-      { id: 'lin2', type: 'linear', params: { inputSize: 4, outputSize: 1 } },
-      { id: 'out1', type: 'output', params: { outputSize: 1 } },
-    ],
-    connections: [
-      { from: 'in1', to: 'lin1' },
-      { from: 'lin1', to: 'act1' },
-      { from: 'act1', to: 'lin2' },
-      { from: 'lin2', to: 'out1' },
-    ],
-    inputDim: 2,
-    outputDim: 1,
-  });
-
-  const trainer2 = Trainer.fromArchitecture(archJson);
-  const prob2 = trainer2.predict(features);
-  check(
-    'fromArchitecture builds and predicts',
-    isFiniteNumber(prob2) && prob2 >= 0 && prob2 <= 1,
-    `prob=${prob2}`
   );
 
   // ── fromNetworkDef (canonical NetworkDef JSON) ───────────────────────────

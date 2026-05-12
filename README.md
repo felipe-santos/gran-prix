@@ -83,7 +83,7 @@ Key technical docs:
 - Model persistence through the canonical `NetworkDef JSON + flat weights` package.
 - Full graph and parameter persistence through `serde` where tighter Rust-level coupling is useful.
 - WASM bindings for browser inference and evolution.
-- Test coverage across math, robustness, recurrence, persistence, CNN paths, CPU backend behavior, and CUDA parity scaffolding.
+- Test coverage across math, robustness, recurrence, persistence, CNN paths, and CPU backend behavior. CUDA remains experimental scaffolding.
 
 ---
 
