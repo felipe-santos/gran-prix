@@ -13,6 +13,21 @@ extern "C" __global__ void gp_mul(float* out, const float* a, const float* b, in
     }
 }
 
+extern "C" __global__ void gp_mul_backward(
+    float* grad_a,
+    float* grad_b,
+    const float* a,
+    const float* b,
+    const float* grad_output,
+    int n
+) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        grad_a[i] = grad_output[i] * b[i];
+        grad_b[i] = grad_output[i] * a[i];
+    }
+}
+
 extern "C" __global__ void gp_relu(float* out, const float* x, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
@@ -131,6 +146,44 @@ extern "C" __global__ void gp_reduce_sum(
     }
 
     out[out_idx] = sum;
+}
+
+extern "C" __global__ void gp_max_pool2d(
+    float* out,
+    const float* input,
+    int n,
+    int c,
+    int h,
+    int w,
+    int oh,
+    int ow,
+    int kernel_size,
+    int stride
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * c * oh * ow;
+    if (idx >= total) {
+        return;
+    }
+
+    int wi = idx % ow;
+    int hi = (idx / ow) % oh;
+    int ci = (idx / (oh * ow)) % c;
+    int ni = idx / (c * oh * ow);
+
+    float max_val = -3.402823466e+38f;
+    for (int kh = 0; kh < kernel_size; ++kh) {
+        for (int kw = 0; kw < kernel_size; ++kw) {
+            int cur_h = hi * stride + kh;
+            int cur_w = wi * stride + kw;
+            float value = input[ni * (c * h * w) + ci * (h * w) + cur_h * w + cur_w];
+            if (value > max_val) {
+                max_val = value;
+            }
+        }
+    }
+
+    out[idx] = max_val;
 }
 
 extern "C" __global__ void gp_max_pool2d_backward(

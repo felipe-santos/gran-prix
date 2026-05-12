@@ -1,9 +1,7 @@
 //! CUDA backend — experimental.
 //!
-//! The feature currently provides CUDA tensor storage and a `Backend`
-//! implementation that falls back to the CPU backend after copying tensors to
-//! host memory. This keeps the `cuda` feature compileable and panic-free while
-//! native kernels/cuBLAS are rebuilt against the current backend trait.
+//! The feature currently provides CUDA tensor storage and native kernels for
+//! the core backend operations.
 
 #[cfg(feature = "cuda")]
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -11,7 +9,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
 #[cfg(feature = "cuda")]
-use crate::backend::{cpu::CPUBackend, Backend};
+use crate::backend::Backend;
 #[cfg(feature = "cuda")]
 use crate::{GPError, GPResult, Tensor};
 #[cfg(feature = "cuda")]
@@ -27,7 +25,6 @@ mod kernels;
 pub struct CUDABackend {
     stream: Arc<cudarc::driver::CudaStream>,
     kernels: CudaKernels,
-    cpu: CPUBackend,
 }
 
 #[cfg(feature = "cuda")]
@@ -35,6 +32,7 @@ pub struct CUDABackend {
 struct CudaKernels {
     add: CudaFunction,
     mul: CudaFunction,
+    mul_backward: CudaFunction,
     relu: CudaFunction,
     sigmoid: CudaFunction,
     tanh: CudaFunction,
@@ -44,6 +42,7 @@ struct CudaKernels {
     add_relu: CudaFunction,
     sgd_update: CudaFunction,
     reduce_sum: CudaFunction,
+    max_pool2d: CudaFunction,
     max_pool2d_backward: CudaFunction,
     conv2d: CudaFunction,
     conv2d_grad_input: CudaFunction,
@@ -74,6 +73,9 @@ impl CUDABackend {
                 mul: module.load_function("gp_mul").map_err(|e| {
                     GPError::BackendError(format!("CUDA gp_mul load failed: {:?}", e))
                 })?,
+                mul_backward: module.load_function("gp_mul_backward").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_mul_backward load failed: {:?}", e))
+                })?,
                 relu: module.load_function("gp_relu").map_err(|e| {
                     GPError::BackendError(format!("CUDA gp_relu load failed: {:?}", e))
                 })?,
@@ -100,6 +102,9 @@ impl CUDABackend {
                 })?,
                 reduce_sum: module.load_function("gp_reduce_sum").map_err(|e| {
                     GPError::BackendError(format!("CUDA gp_reduce_sum load failed: {:?}", e))
+                })?,
+                max_pool2d: module.load_function("gp_max_pool2d").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_max_pool2d load failed: {:?}", e))
                 })?,
                 max_pool2d_backward: module.load_function("gp_max_pool2d_backward").map_err(
                     |e| {
@@ -134,19 +139,11 @@ impl CUDABackend {
             ))
         })??;
 
-        Ok(Self {
-            stream,
-            kernels,
-            cpu: CPUBackend,
-        })
+        Ok(Self { stream, kernels })
     }
 
     pub fn device(&self) -> &Arc<cudarc::driver::CudaStream> {
         &self.stream
-    }
-
-    fn host(tensor: &Tensor) -> GPResult<Tensor> {
-        tensor.to_host()
     }
 
     fn upload(&self, tensor: Tensor) -> GPResult<Tensor> {
@@ -259,18 +256,31 @@ impl CUDABackend {
         }
     }
 
-    fn should_fallback_reduce_sum(input_shape: &[usize], axes: &[usize]) -> bool {
+    fn validate_reduce_sum_axes(input_shape: &[usize], axes: &[usize]) -> GPResult<()> {
         if input_shape.len() > 8 {
-            return true;
+            return Err(GPError::NotImplemented(format!(
+                "CUDA reduce_sum supports tensors up to rank 8, got rank {}",
+                input_shape.len()
+            )));
         }
         let mut seen = vec![false; input_shape.len()];
         for &axis in axes {
-            if axis >= input_shape.len() || seen[axis] {
-                return true;
+            if axis >= input_shape.len() {
+                return Err(GPError::TensorError(format!(
+                    "reduce_sum axis {} out of bounds for rank {}",
+                    axis,
+                    input_shape.len()
+                )));
+            }
+            if seen[axis] {
+                return Err(GPError::TensorError(format!(
+                    "reduce_sum axis {} appears more than once",
+                    axis
+                )));
             }
             seen[axis] = true;
         }
-        false
+        Ok(())
     }
 
     fn conv2d_dims(
@@ -312,6 +322,33 @@ impl CUDABackend {
         let oh = (h + 2 * padding - kh) / stride + 1;
         let ow = (w + 2 * padding - kw) / stride + 1;
         Ok((n, ci, h, w, co, kh, kw, oh, ow))
+    }
+
+    fn max_pool2d_dims(
+        input_shape: &[usize],
+        kernel_size: usize,
+        stride: usize,
+    ) -> GPResult<(usize, usize, usize, usize, usize, usize)> {
+        if input_shape.len() != 4 || kernel_size == 0 || stride == 0 {
+            return Err(Self::shape_error(&[0, 0, kernel_size, stride], input_shape));
+        }
+
+        let (n, c, h, w) = (
+            input_shape[0],
+            input_shape[1],
+            input_shape[2],
+            input_shape[3],
+        );
+        if h < kernel_size || w < kernel_size {
+            return Err(Self::shape_error(
+                &[n, c, kernel_size, kernel_size],
+                input_shape,
+            ));
+        }
+
+        let oh = (h - kernel_size) / stride + 1;
+        let ow = (w - kernel_size) / stride + 1;
+        Ok((n, c, h, w, oh, ow))
     }
 }
 
@@ -563,10 +600,47 @@ impl Backend for CUDABackend {
     }
 
     fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> GPResult<Tensor> {
-        let out = self
-            .cpu
-            .max_pool2d(&Self::host(input)?, kernel_size, stride)?;
-        self.upload(out)
+        let (n, c, h, w, oh, ow) = Self::max_pool2d_dims(input.shape(), kernel_size, stride)?;
+        let input_cuda = self.upload(input.clone())?;
+        let input_slice = Self::cuda_slice(&input_cuda)?;
+        let mut out_slice = self
+            .stream
+            .alloc_zeros::<f32>(n * c * oh * ow)
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+
+        let n_i = n as i32;
+        let c_i = c as i32;
+        let h_i = h as i32;
+        let w_i = w as i32;
+        let oh_i = oh as i32;
+        let ow_i = ow as i32;
+        let kernel_i = kernel_size as i32;
+        let stride_i = stride as i32;
+
+        let mut builder = self.stream.launch_builder(&self.kernels.max_pool2d);
+        builder.arg(&mut out_slice);
+        builder.arg(input_slice.as_ref());
+        builder.arg(&n_i);
+        builder.arg(&c_i);
+        builder.arg(&h_i);
+        builder.arg(&w_i);
+        builder.arg(&oh_i);
+        builder.arg(&ow_i);
+        builder.arg(&kernel_i);
+        builder.arg(&stride_i);
+        unsafe {
+            builder
+                .launch(LaunchConfig::for_num_elems((n * c * oh * ow) as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA max_pool2d launch failed: {:?}", e))
+                })?;
+        }
+
+        Ok(Tensor::new_cuda(
+            self.stream.clone(),
+            Arc::new(out_slice),
+            vec![n, c, oh, ow],
+        ))
     }
 
     fn max_pool2d_backward(
@@ -576,20 +650,15 @@ impl Backend for CUDABackend {
         kernel_size: usize,
         stride: usize,
     ) -> GPResult<Tensor> {
-        if input.shape().len() != 4 || grad_output.shape().len() != 4 {
-            return Err(Self::shape_error(input.shape(), grad_output.shape()));
-        }
-
-        let input_shape = input.shape();
+        let (n, c, h, w, expected_oh, expected_ow) =
+            Self::max_pool2d_dims(input.shape(), kernel_size, stride)?;
         let grad_shape = grad_output.shape();
-        let (n, c, h, w) = (
-            input_shape[0],
-            input_shape[1],
-            input_shape[2],
-            input_shape[3],
-        );
-        let expected_oh = (h - kernel_size) / stride + 1;
-        let expected_ow = (w - kernel_size) / stride + 1;
+        if grad_shape.len() != 4 {
+            return Err(Self::shape_error(
+                &[n, c, expected_oh, expected_ow],
+                grad_shape,
+            ));
+        }
         if grad_shape != [n, c, expected_oh, expected_ow] {
             return Err(Self::shape_error(
                 &[n, c, expected_oh, expected_ow],
@@ -671,10 +740,56 @@ impl Backend for CUDABackend {
         b: &Tensor,
         grad_output: &Tensor,
     ) -> GPResult<(Tensor, Tensor)> {
-        let (grad_a, grad_b) =
-            self.cpu
-                .mul_backward(&Self::host(a)?, &Self::host(b)?, &Self::host(grad_output)?)?;
-        Ok((self.upload(grad_a)?, self.upload(grad_b)?))
+        if a.shape() != b.shape() {
+            return Err(Self::shape_error(a.shape(), b.shape()));
+        }
+        if a.shape() != grad_output.shape() {
+            return Err(Self::shape_error(a.shape(), grad_output.shape()));
+        }
+
+        let a_cuda = self.upload(a.clone())?;
+        let b_cuda = self.upload(b.clone())?;
+        let grad_cuda = self.upload(grad_output.clone())?;
+        let a_slice = Self::cuda_slice(&a_cuda)?;
+        let b_slice = Self::cuda_slice(&b_cuda)?;
+        let grad_slice = Self::cuda_slice(&grad_cuda)?;
+        let mut grad_a_slice = self
+            .stream
+            .alloc_zeros::<f32>(a.len())
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+        let mut grad_b_slice = self
+            .stream
+            .alloc_zeros::<f32>(b.len())
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+        let n = a.len() as i32;
+
+        let mut builder = self.stream.launch_builder(&self.kernels.mul_backward);
+        builder.arg(&mut grad_a_slice);
+        builder.arg(&mut grad_b_slice);
+        builder.arg(a_slice.as_ref());
+        builder.arg(b_slice.as_ref());
+        builder.arg(grad_slice.as_ref());
+        builder.arg(&n);
+        unsafe {
+            builder
+                .launch(LaunchConfig::for_num_elems(a.len() as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA mul_backward launch failed: {:?}", e))
+                })?;
+        }
+
+        Ok((
+            Tensor::new_cuda(
+                self.stream.clone(),
+                Arc::new(grad_a_slice),
+                a.shape().to_vec(),
+            ),
+            Tensor::new_cuda(
+                self.stream.clone(),
+                Arc::new(grad_b_slice),
+                b.shape().to_vec(),
+            ),
+        ))
     }
 
     fn relu(&self, x: &Tensor) -> GPResult<Tensor> {
@@ -721,10 +836,7 @@ impl Backend for CUDABackend {
     }
 
     fn reduce_sum(&self, input: &Tensor, axes: &[usize], keep_dims: bool) -> GPResult<Tensor> {
-        if Self::should_fallback_reduce_sum(input.shape(), axes) {
-            let out = self.cpu.reduce_sum(&Self::host(input)?, axes, keep_dims)?;
-            return self.upload(out);
-        }
+        Self::validate_reduce_sum_axes(input.shape(), axes)?;
 
         let output_shape = Self::reduce_sum_output_shape(input.shape(), axes, keep_dims);
         let output_len = output_shape.iter().product::<usize>();

@@ -63,6 +63,22 @@ mod cuda_tests {
 
         let grad = Tensor::from_shape_vec(&[2, 3], vec![1.0, 0.5, -1.0, 2.0, -0.25, 0.75])?;
         let cuda_grad = grad.to_cuda(cuda_backend.device())?;
+        let (cpu_mul_grad_a, cpu_mul_grad_b) = cpu_backend.mul_backward(&a, &b, &grad)?;
+        let (cuda_mul_grad_a, cuda_mul_grad_b) =
+            cuda_backend.mul_backward(&cuda_a, &cuda_b, &cuda_grad)?;
+        assert_parity(
+            &cpu_mul_grad_a,
+            &cuda_mul_grad_a.to_host()?,
+            "Mul backward lhs",
+            1e-6,
+        );
+        assert_parity(
+            &cpu_mul_grad_b,
+            &cuda_mul_grad_b.to_host()?,
+            "Mul backward rhs",
+            1e-6,
+        );
+
         assert_parity(
             &cpu_backend.relu_backward(&a, &grad)?,
             &cuda_backend.relu_backward(&cuda_a, &cuda_grad)?.to_host()?,
@@ -146,6 +162,14 @@ mod cuda_tests {
                 .to_host()?,
             "ReduceSum axes 0,2",
             1e-6,
+        );
+        assert!(
+            cuda_backend.reduce_sum(&cuda_t3, &[9], false).is_err(),
+            "CUDA reduce_sum should reject out-of-range axes instead of falling back to CPU"
+        );
+        assert!(
+            cuda_backend.reduce_sum(&cuda_t3, &[1, 1], false).is_err(),
+            "CUDA reduce_sum should reject duplicate axes instead of falling back to CPU"
         );
 
         let n = 1;
