@@ -12,7 +12,7 @@ pub use batchnorm::BatchNorm;
 
 /// Builds a parameter name from a layer's prefix and a role suffix.
 ///
-/// Empty prefix returns the empty string, preserving legacy behavior for
+/// Empty prefix returns the empty string, preserving direct-layer behavior for
 /// layers used outside of `NetworkDef::compile` (where no prefix is set
 /// by default). Non-empty prefix produces `"<prefix>.<role>"`.
 pub(crate) fn make_param_name(prefix: &str, role: &str) -> String {

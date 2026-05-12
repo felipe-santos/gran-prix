@@ -27,7 +27,7 @@ use crate::layers::{Linear, Activation, RNNCell, GRUCell, BatchNorm};
 
 // Re-export ActivationType as the canonical activation enum for this module.
 pub use crate::layers::ActivationType;
-use crate::graph::{Graph, dsl::GraphBuilder};
+use crate::graph::{Graph, dsl::GraphBuilder, verifier::Verifier};
 use crate::backend::Backend;
 use crate::Layer;
 
@@ -163,6 +163,32 @@ impl NetworkDef {
 
         let mut current_dim = self.input_dim;
         for (i, layer) in self.layers.iter().enumerate() {
+            match layer {
+                LayerDef::Dropout { rate } => {
+                    if !rate.is_finite() || !(0.0..1.0).contains(rate) {
+                        return Err(GPError::InferenceError(format!(
+                            "NetworkDef: layer {} has invalid dropout rate {}; expected finite value in [0, 1)",
+                            i, rate
+                        )));
+                    }
+                }
+                LayerDef::BatchNorm { num_features } => {
+                    if *num_features == 0 {
+                        return Err(GPError::InferenceError(format!(
+                            "NetworkDef: layer {} has zero BatchNorm features",
+                            i
+                        )));
+                    }
+                    if *num_features != current_dim {
+                        return Err(GPError::InferenceError(format!(
+                            "NetworkDef: layer {} BatchNorm num_features={} does not match current dimension {}",
+                            i, num_features, current_dim
+                        )));
+                    }
+                }
+                _ => {}
+            }
+
             // Check that the layer's expected input matches the current flow
             if let Some(expected) = layer.expected_input_dim() {
                 if expected != current_dim {
@@ -249,6 +275,8 @@ impl NetworkDef {
                 }
             }
         }
+
+        Verifier::verify(&graph)?;
 
         Ok(CompiledNetwork {
             graph,
@@ -505,6 +533,34 @@ mod tests {
         ]);
         assert!(net.validate().is_ok());
         assert_eq!(net.output_dim(), 2);
+    }
+
+    #[test]
+    fn test_validate_rejects_invalid_dropout_rate() {
+        let net = NetworkDef::new(4, vec![
+            LayerDef::Dropout { rate: 1.0 },
+            LayerDef::Linear { in_features: 4, out_features: 2 },
+        ]);
+        let err = net.validate().unwrap_err();
+        assert!(err.to_string().contains("invalid dropout rate"));
+
+        let net = NetworkDef::new(4, vec![
+            LayerDef::Dropout { rate: f32::NAN },
+            LayerDef::Linear { in_features: 4, out_features: 2 },
+        ]);
+        let err = net.validate().unwrap_err();
+        assert!(err.to_string().contains("invalid dropout rate"));
+    }
+
+    #[test]
+    fn test_validate_rejects_batchnorm_dimension_mismatch() {
+        let net = NetworkDef::new(4, vec![
+            LayerDef::Linear { in_features: 4, out_features: 8 },
+            LayerDef::BatchNorm { num_features: 4 },
+            LayerDef::Linear { in_features: 8, out_features: 2 },
+        ]);
+        let err = net.validate().unwrap_err();
+        assert!(err.to_string().contains("BatchNorm num_features=4"));
     }
 
     #[test]

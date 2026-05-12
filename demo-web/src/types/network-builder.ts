@@ -363,31 +363,6 @@ export interface SerializedNetwork {
     appVersion?: string;
 }
 
-// ─── WASM Integration ───────────────────────────────────────────────────────
-
-/**
- * Simplified layer configuration for WASM
- * This is what gets sent to the Rust/WASM trainer
- */
-export interface WasmLayerConfig {
-    /** Layer type as string */
-    type: string;
-    /** Flattened parameters */
-    params: Record<string, number | string | boolean>;
-}
-
-/**
- * Network configuration for WASM trainer
- */
-export interface WasmNetworkConfig {
-    /** Input dimensionality */
-    inputDim: number;
-    /** Array of layer configurations */
-    layers: WasmLayerConfig[];
-    /** Output dimensionality */
-    outputDim: number;
-}
-
 // ─── Utility Types ──────────────────────────────────────────────────────────
 
 /**

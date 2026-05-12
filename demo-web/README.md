@@ -13,6 +13,11 @@ The app is not just one game demo anymore. It is a visual lab for real-time infe
 - Shared React components for stats, charts, canvases, controls, and network visualization.
 - WASM loader utilities that connect the JavaScript simulation loop to the Rust neural core.
 
+Related technical docs:
+
+- [`../docs/core-map.md`](../docs/core-map.md): Rust core architecture.
+- [`../docs/wasm-contract.md`](../docs/wasm-contract.md): browser/WASM model contract.
+
 ---
 
 ## Prerequisites
@@ -107,3 +112,15 @@ The strongest public story for this app is:
 > A real neural model is running in your browser, learning from local signals, and adapting the experience without sending raw behavior to a server.
 
 The mouse-behavior hero and Neural Playground should be treated as the primary proof points. The other simulations support the same thesis across control systems, reinforcement learning, and multi-agent environments.
+
+Technically, new builder/trainer work should converge on the canonical model package:
+
+```ts
+{
+  networkDef: string;
+  weights: number[];
+  metadata?: Record<string, unknown>;
+}
+```
+
+Network Builder exports should target `Trainer.fromNetworkDef`.

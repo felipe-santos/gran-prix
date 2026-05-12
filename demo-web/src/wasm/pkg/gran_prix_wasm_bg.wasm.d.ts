@@ -3,7 +3,6 @@
 export const memory: WebAssembly.Memory;
 export const __wbg_trainer_free: (a: number, b: number) => void;
 export const trainer_freezeByPrefix: (a: number, b: number, c: number) => [number, number];
-export const trainer_fromArchitecture: (a: number, b: number) => [number, number, number];
 export const trainer_fromNetworkDef: (a: number, b: number) => [number, number, number];
 export const trainer_fromNetworkDefWithLoss: (a: number, b: number, c: number) => [number, number, number];
 export const trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];

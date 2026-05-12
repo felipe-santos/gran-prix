@@ -19,7 +19,7 @@
  * // Import common types
  * import { GameStats, PerformanceData } from '@/types/common';
  *
- * // Import from index (legacy compatibility)
+ * // Import from index
  * import { VacuumAgent, DroneAgent } from '@/types';
  * ```
  */
@@ -252,8 +252,6 @@ export type {
     ConnectionDraftState,
     CanvasViewState,
     SerializedNetwork,
-    WasmLayerConfig,
-    WasmNetworkConfig,
     DragItem,
     PaletteLayerDragItem,
     CanvasLayerDragItem,
@@ -273,4 +271,3 @@ export {
     isRNNLayer,
     isGRULayer,
 } from './network-builder';
-

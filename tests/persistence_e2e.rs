@@ -13,7 +13,7 @@
 //! inference, and the test should be loosened or the determinism
 //! contract documented and enforced elsewhere.
 //!
-//! The repo serializes `Graph` directly via `serde` for some legacy paths,
+//! The repo can serialize `Graph` directly via `serde` for Rust-native paths,
 //! but `Graph` skips its `engine` field (`#[serde(skip)]`) and there is no
 //! existing test that proves a *trained* `Graph` re-instantiates with the
 //! same forward behavior. This test pins down a different, simpler

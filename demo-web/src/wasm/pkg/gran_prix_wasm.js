@@ -509,24 +509,6 @@ export class Trainer {
         return v2;
     }
     /**
-     * Backward-compatible: parses the old `WasmArchitecture` JSON format
-     * by converting it to a [`NetworkDef`] internally.
-     *
-     * Supported layer types: Input, Linear, Activation (relu/sigmoid/tanh),
-     * Rnn, Gru, Output, Dropout (passthrough), Batchnorm (passthrough).
-     * @param {string} json
-     * @returns {Trainer}
-     */
-    static fromArchitecture(json) {
-        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
-        const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.trainer_fromArchitecture(ptr0, len0);
-        if (ret[2]) {
-            throw takeFromExternrefTable0(ret[1]);
-        }
-        return Trainer.__wrap(ret[0]);
-    }
-    /**
      * Creates a trainer from a [`NetworkDef`] JSON string.
      *
      * This replaces the old `WasmArchitecture` format. The JSON schema

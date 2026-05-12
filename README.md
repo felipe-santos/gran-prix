@@ -64,6 +64,12 @@ tests/               Integration, parity, robustness, persistence, and autograd 
 docs/                Theory and project notes
 ```
 
+Key technical docs:
+
+- [Core map](docs/core-map.md): how the Rust engine is structured and where it is going.
+- [WASM contract](docs/wasm-contract.md): how browser code should package architectures, weights, trainers, and agents.
+- [Theory notes](docs/theory.md): mathematical foundations for the educational layer.
+
 ---
 
 ## Core capabilities
@@ -73,7 +79,9 @@ docs/                Theory and project notes
 - Reverse-mode autograd for training.
 - Layers including linear, activation, batch norm, dropout, RNN, and GRU.
 - Losses, optimizers, schedulers, and parameter stores.
-- Model and graph persistence through `serde`.
+- Declarative `NetworkDef` architecture format for validation, compilation, JSON persistence, and WASM interop.
+- Model persistence through the canonical `NetworkDef JSON + flat weights` package.
+- Full graph and parameter persistence through `serde` where tighter Rust-level coupling is useful.
 - WASM bindings for browser inference and evolution.
 - Test coverage across math, robustness, recurrence, persistence, CNN paths, CPU backend behavior, and CUDA parity scaffolding.
 
@@ -219,6 +227,8 @@ The project is moving toward three connected goals:
 
 3. **A memorable visual proof**  
    Turn the demo web app into a strong public showcase: users should immediately understand that a real neural model is running locally, learning continuously, and making decisions without a server.
+
+The technical spine for that direction is `NetworkDef`: the visual builder, WASM trainer, examples, model persistence, and future demos should all converge on the same architecture contract.
 
 The best first product-facing demo is the behavioral/intention layer: a page that reacts to local mouse and timing signals, shows the model's confidence, and proves the privacy/latency story in one screen.
 

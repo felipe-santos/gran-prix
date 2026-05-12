@@ -1,5 +1,6 @@
 use gran_prix::backend::cpu::CPUBackend;
 use gran_prix::backend::Backend;
+use gran_prix::graph::{Graph, OpType};
 use gran_prix::Tensor;
 
 #[test]
@@ -41,4 +42,25 @@ fn test_cpu_add_relu_fused() {
     let res = backend.add_relu(&a, &b).unwrap();
     let expected = Tensor::from_shape_vec(&[1, 2], vec![0.0, 2.0]).unwrap();
     assert_eq!(res, expected);
+}
+
+#[test]
+fn test_add_relu_inplace_recomputes_from_inputs() {
+    let mut graph = Graph::new(Box::new(CPUBackend));
+    let a = graph.input(Tensor::from_shape_vec(&[1, 2], vec![-2.0, 1.0]).unwrap());
+    let b = graph.input(Tensor::from_shape_vec(&[1, 2], vec![1.0, 2.0]).unwrap());
+    let out = graph.op(OpType::AddReLU, vec![a, b]);
+
+    let first = graph.execute(out).unwrap();
+    assert_eq!(first.as_slice().unwrap(), &[0.0, 3.0]);
+
+    if let gran_prix::graph::Node::Input(t) = &mut graph.nodes_mut()[a.0] {
+        *t = Tensor::from_shape_vec(&[1, 2], vec![3.0, -5.0]).unwrap();
+    }
+    if let gran_prix::graph::Node::Input(t) = &mut graph.nodes_mut()[b.0] {
+        *t = Tensor::from_shape_vec(&[1, 2], vec![4.0, 1.0]).unwrap();
+    }
+
+    let second = graph.execute(out).unwrap();
+    assert_eq!(second.as_slice().unwrap(), &[7.0, 0.0]);
 }

@@ -22,8 +22,7 @@ export { NETWORK_TEMPLATES, getTemplateById, getBeginnerTemplates } from './Temp
 // Utilities
 export { validateNetworkGraph, isValidNetwork } from './NetworkBuilder/ArchitectureValidator';
 export {
-    serializeNetworkForWasm,
-    serializeForTrainer,
+    serializeNetworkDef,
     checkWasmCompatibility,
     SerializationError,
 } from './NetworkBuilder/NetworkSerializer';

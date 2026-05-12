@@ -266,18 +266,6 @@ impl Trainer {
         Self::build(net, loss_kind)
     }
 
-    /// Backward-compatible: parses the old `WasmArchitecture` JSON format
-    /// by converting it to a [`NetworkDef`] internally.
-    ///
-    /// Supported layer types: Input, Linear, Activation (relu/sigmoid/tanh),
-    /// Rnn, Gru, Output, Dropout (passthrough), Batchnorm (passthrough).
-    #[wasm_bindgen(js_name = fromArchitecture)]
-    pub fn from_architecture(json: &str) -> Result<Trainer, JsValue> {
-        let net_def = convert_legacy_architecture(json).map_err(|e| JsValue::from_str(&e))?;
-        let loss_kind = LossKind::from_output_dim(net_def.output_dim());
-        Self::build(net_def, loss_kind)
-    }
-
     /// Internal builder shared by all public constructors. Centralizes
     /// the validation, JSON snapshot, and graph compilation so the
     /// invariants (loss/architecture compatibility, canonical JSON,
@@ -943,410 +931,14 @@ impl Trainer {
     }
 }
 
-// ── Legacy Architecture Conversion ─────────────────────────────────────────
-//
-// Converts the old WasmArchitecture JSON format (used by Network Builder v2)
-// to the canonical NetworkDef format. This preserves backward compatibility
-// while allowing the frontend to migrate at its own pace.
-
-use serde::Deserialize;
-
-#[derive(Deserialize)]
-struct LegacyArchitecture {
-    layers: Vec<LegacyLayer>,
-    connections: Vec<LegacyConnection>,
-    #[serde(rename = "inputDim")]
-    input_dim: usize,
-    #[serde(rename = "outputDim")]
-    #[allow(dead_code)]
-    output_dim: usize,
-}
-
-#[derive(Deserialize)]
-struct LegacyLayer {
-    id: String,
-    #[serde(rename = "type")]
-    layer_type: String,
-    params: LegacyParams,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase", default)]
-struct LegacyParams {
-    input_size: Option<usize>,
-    output_size: Option<usize>,
-    hidden_size: Option<usize>,
-    activation_type: Option<String>,
-    /// Dropout rate in [0, 1]. Optional in the legacy format; if omitted
-    /// we default to 0.0 (no-op) rather than the common ML default of 0.5,
-    /// because silently dropping half of a model's activations when the
-    /// caller said nothing would change inference behavior in a way the
-    /// caller cannot have intended.
-    dropout_rate: Option<f32>,
-    /// BatchNorm feature count. Optional; defaults to the current flow
-    /// dimension at the layer's position in the BFS.
-    num_features: Option<usize>,
-}
-
-#[derive(Deserialize)]
-struct LegacyConnection {
-    from: String,
-    to: String,
-}
-
-/// Converts the old `WasmArchitecture` JSON to a `NetworkDef`.
-///
-/// Walks connections from the input layer in BFS order. `input` and
-/// `output` layers are markers in the legacy graph format and produce no
-/// computation node. `dropout` and `batchnorm` *do* produce computation
-/// nodes and are mapped to the corresponding [`LayerDef`].
-///
-/// The error type is `String` (not `JsValue`) so the function can be
-/// unit-tested in a native target without a WASM runtime. The WASM
-/// caller wraps the result with `JsValue::from_str` at the boundary.
-fn convert_legacy_architecture(json: &str) -> Result<NetworkDef, String> {
-    let arch: LegacyArchitecture = serde_json::from_str(json)
-        .map_err(|e| format!("Failed to parse architecture: {}", e))?;
-
-    // Find input layer
-    let input_layer = arch.layers.iter()
-        .find(|l| l.layer_type == "input")
-        .ok_or_else(|| "No input layer found".to_string())?;
-
-    // BFS from input following connections
-    let mut processed = vec![input_layer.id.clone()];
-    let mut queue: Vec<String> = arch.connections.iter()
-        .filter(|c| c.from == input_layer.id)
-        .map(|c| c.to.clone())
-        .collect();
-
-    let mut layer_defs = Vec::new();
-    let mut current_dim = arch.input_dim;
-
-    while !queue.is_empty() {
-        let layer_id = queue.remove(0);
-        if processed.contains(&layer_id) { continue; }
-
-        let layer = arch.layers.iter()
-            .find(|l| l.id == layer_id)
-            .ok_or_else(|| format!("Layer {} not found", layer_id))?;
-
-        match layer.layer_type.as_str() {
-            "linear" => {
-                let in_f = layer.params.input_size.unwrap_or(current_dim);
-                let out_f = layer.params.output_size
-                    .ok_or_else(|| "Linear layer missing outputSize".to_string())?;
-                layer_defs.push(LayerDef::Linear { in_features: in_f, out_features: out_f });
-                current_dim = out_f;
-            }
-            "activation" => {
-                let act_str = layer.params.activation_type.as_deref().unwrap_or("relu");
-                let function = match act_str {
-                    "relu" => ActivationType::ReLU,
-                    "sigmoid" => ActivationType::Sigmoid,
-                    "tanh" => ActivationType::Tanh,
-                    "softmax" => ActivationType::Softmax,
-                    _ => return Err(format!("Unknown activation: {}", act_str)),
-                };
-                layer_defs.push(LayerDef::Activation { function });
-            }
-            "rnn" => {
-                let in_s = layer.params.input_size.unwrap_or(current_dim);
-                let h_s = layer.params.hidden_size
-                    .ok_or_else(|| "RNN layer missing hiddenSize".to_string())?;
-                layer_defs.push(LayerDef::Rnn { input_size: in_s, hidden_size: h_s });
-                current_dim = h_s;
-            }
-            "gru" => {
-                let in_s = layer.params.input_size.unwrap_or(current_dim);
-                let h_s = layer.params.hidden_size
-                    .ok_or_else(|| "GRU layer missing hiddenSize".to_string())?;
-                layer_defs.push(LayerDef::Gru { input_size: in_s, hidden_size: h_s });
-                current_dim = h_s;
-            }
-            "dropout" => {
-                let rate = layer.params.dropout_rate.unwrap_or(0.0);
-                if !(0.0..=1.0).contains(&rate) {
-                    return Err(format!("Dropout rate {} out of range [0, 1]", rate));
-                }
-                layer_defs.push(LayerDef::Dropout { rate });
-                // Dropout is identity in shape; current_dim unchanged.
-            }
-            "batchnorm" => {
-                let nf = layer.params.num_features.unwrap_or(current_dim);
-                if nf != current_dim {
-                    return Err(format!(
-                        "BatchNorm numFeatures={} mismatches current flow dim {}",
-                        nf, current_dim
-                    ));
-                }
-                layer_defs.push(LayerDef::BatchNorm { num_features: nf });
-                // BatchNorm is identity in shape; current_dim unchanged.
-            }
-            "input" | "output" => {
-                // Markers in the legacy graph format, not computation nodes.
-            }
-            other => {
-                return Err(format!("Unknown layer type: {}", other));
-            }
-        }
-
-        processed.push(layer_id.clone());
-        for conn in &arch.connections {
-            if conn.from == layer_id && !queue.contains(&conn.to) && !processed.contains(&conn.to) {
-                queue.push(conn.to.clone());
-            }
-        }
-    }
-
-    if layer_defs.is_empty() {
-        return Err("Architecture produced no layers".to_string());
-    }
-
-    Ok(NetworkDef::new(arch.input_dim, layer_defs))
-}
 
 // ── Tests ─────────────────────────────────────────────────────────────────
-//
-// `convert_legacy_architecture` returns `Result<_, String>` so tests can
-// run in the native target (`cargo test`). The WASM-only `Trainer` API
-// is exercised through `wasm-pack test` if/when WASM-side tests are
-// reintroduced.
 
 #[cfg(test)]
-mod legacy_converter_tests {
+mod loss_compat_tests {
     use super::*;
     use gran_prix::network_def::LayerDef;
 
-    /// Minimal happy path: input → linear → output. Mirrors the JSON
-    /// shape produced by `demo-web/src/components/playground/v2/
-    /// NetworkBuilder/NetworkSerializer.ts::serializeForTrainer`.
-    #[test]
-    fn converts_minimal_input_linear_output() {
-        let json = r#"{
-            "layers": [
-                {"id": "in1", "type": "input", "params": {"inputSize": 2}},
-                {"id": "lin1", "type": "linear", "params": {"inputSize": 2, "outputSize": 4}},
-                {"id": "out1", "type": "output", "params": {"outputSize": 4}}
-            ],
-            "connections": [
-                {"from": "in1", "to": "lin1"},
-                {"from": "lin1", "to": "out1"}
-            ],
-            "inputDim": 2,
-            "outputDim": 4
-        }"#;
-        let net = convert_legacy_architecture(json).expect("converts");
-        assert_eq!(net.input_dim, 2);
-        assert_eq!(net.layers.len(), 1);
-        assert!(matches!(net.layers[0],
-            LayerDef::Linear { in_features: 2, out_features: 4 }));
-    }
-
-    /// The bug this fix addresses: dropout and batchnorm layers used to
-    /// be silently dropped. Now they map to `LayerDef::Dropout` and
-    /// `LayerDef::BatchNorm` respectively.
-    #[test]
-    fn dropout_and_batchnorm_are_no_longer_silently_skipped() {
-        let json = r#"{
-            "layers": [
-                {"id": "in1",  "type": "input",     "params": {"inputSize": 4}},
-                {"id": "lin1", "type": "linear",    "params": {"inputSize": 4, "outputSize": 8}},
-                {"id": "drop1","type": "dropout",   "params": {"dropoutRate": 0.3}},
-                {"id": "bn1",  "type": "batchnorm", "params": {"numFeatures": 8}},
-                {"id": "lin2", "type": "linear",    "params": {"inputSize": 8, "outputSize": 1}},
-                {"id": "out1", "type": "output",    "params": {"outputSize": 1}}
-            ],
-            "connections": [
-                {"from": "in1",  "to": "lin1"},
-                {"from": "lin1", "to": "drop1"},
-                {"from": "drop1","to": "bn1"},
-                {"from": "bn1",  "to": "lin2"},
-                {"from": "lin2", "to": "out1"}
-            ],
-            "inputDim": 4,
-            "outputDim": 1
-        }"#;
-        let net = convert_legacy_architecture(json).expect("converts");
-        assert_eq!(net.layers.len(), 4); // linear, dropout, batchnorm, linear
-
-        match &net.layers[1] {
-            LayerDef::Dropout { rate } => assert!((rate - 0.3).abs() < 1e-6),
-            other => panic!("expected Dropout, got {other:?}"),
-        }
-        match &net.layers[2] {
-            LayerDef::BatchNorm { num_features } => assert_eq!(*num_features, 8),
-            other => panic!("expected BatchNorm, got {other:?}"),
-        }
-    }
-
-    /// Default `dropoutRate` is 0.0 (no-op), not 0.5. A missing rate
-    /// must not silently change inference behavior — the choice of 0.0
-    /// over 0.5 is documented in `LegacyParams::dropout_rate`.
-    #[test]
-    fn dropout_without_rate_defaults_to_zero() {
-        let json = r#"{
-            "layers": [
-                {"id": "in1", "type": "input",   "params": {"inputSize": 2}},
-                {"id": "d1",  "type": "dropout", "params": {}},
-                {"id": "out", "type": "output",  "params": {"outputSize": 2}}
-            ],
-            "connections": [
-                {"from": "in1", "to": "d1"},
-                {"from": "d1",  "to": "out"}
-            ],
-            "inputDim": 2,
-            "outputDim": 2
-        }"#;
-        let net = convert_legacy_architecture(json).expect("converts");
-        match &net.layers[0] {
-            LayerDef::Dropout { rate } => assert_eq!(*rate, 0.0),
-            other => panic!("expected Dropout, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn dropout_rejects_out_of_range_rate() {
-        let json = r#"{
-            "layers": [
-                {"id": "in1", "type": "input",   "params": {"inputSize": 2}},
-                {"id": "d1",  "type": "dropout", "params": {"dropoutRate": 1.5}},
-                {"id": "out", "type": "output",  "params": {"outputSize": 2}}
-            ],
-            "connections": [
-                {"from": "in1", "to": "d1"},
-                {"from": "d1",  "to": "out"}
-            ],
-            "inputDim": 2,
-            "outputDim": 2
-        }"#;
-        let err = convert_legacy_architecture(json).unwrap_err();
-        assert!(err.contains("out of range"), "unexpected error: {err}");
-    }
-
-    /// BatchNorm `numFeatures` must equal the current flow dimension.
-    /// A mismatch is a configuration bug — fail loud rather than
-    /// silently produce the wrong model.
-    #[test]
-    fn batchnorm_with_mismatched_num_features_errors() {
-        let json = r#"{
-            "layers": [
-                {"id": "in1", "type": "input",     "params": {"inputSize": 4}},
-                {"id": "bn1", "type": "batchnorm", "params": {"numFeatures": 99}},
-                {"id": "out", "type": "output",    "params": {"outputSize": 4}}
-            ],
-            "connections": [
-                {"from": "in1", "to": "bn1"},
-                {"from": "bn1", "to": "out"}
-            ],
-            "inputDim": 4,
-            "outputDim": 4
-        }"#;
-        let err = convert_legacy_architecture(json).unwrap_err();
-        assert!(err.contains("mismatches"), "unexpected error: {err}");
-    }
-
-    /// Default `numFeatures` is the current flow dim — convenience
-    /// for the common case where BatchNorm sits right after a Linear.
-    #[test]
-    fn batchnorm_inherits_num_features_from_flow() {
-        let json = r#"{
-            "layers": [
-                {"id": "in1", "type": "input",     "params": {"inputSize": 4}},
-                {"id": "lin", "type": "linear",    "params": {"outputSize": 8}},
-                {"id": "bn1", "type": "batchnorm", "params": {}},
-                {"id": "out", "type": "output",    "params": {"outputSize": 8}}
-            ],
-            "connections": [
-                {"from": "in1", "to": "lin"},
-                {"from": "lin", "to": "bn1"},
-                {"from": "bn1", "to": "out"}
-            ],
-            "inputDim": 4,
-            "outputDim": 8
-        }"#;
-        let net = convert_legacy_architecture(json).expect("converts");
-        match &net.layers[1] {
-            LayerDef::BatchNorm { num_features } => assert_eq!(*num_features, 8),
-            other => panic!("expected BatchNorm, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn unknown_layer_type_errors() {
-        let json = r#"{
-            "layers": [
-                {"id": "in1", "type": "input",  "params": {"inputSize": 2}},
-                {"id": "x1",  "type": "wat",    "params": {}},
-                {"id": "out", "type": "output", "params": {"outputSize": 2}}
-            ],
-            "connections": [
-                {"from": "in1", "to": "x1"},
-                {"from": "x1",  "to": "out"}
-            ],
-            "inputDim": 2,
-            "outputDim": 2
-        }"#;
-        let err = convert_legacy_architecture(json).unwrap_err();
-        assert!(err.contains("Unknown layer type"), "got: {err}");
-    }
-
-    #[test]
-    fn missing_input_layer_errors() {
-        let json = r#"{
-            "layers": [
-                {"id": "lin1", "type": "linear", "params": {"inputSize": 2, "outputSize": 4}}
-            ],
-            "connections": [],
-            "inputDim": 2,
-            "outputDim": 4
-        }"#;
-        let err = convert_legacy_architecture(json).unwrap_err();
-        assert!(err.contains("No input"), "got: {err}");
-    }
-
-    #[test]
-    fn malformed_json_errors() {
-        let err = convert_legacy_architecture("{ not valid json").unwrap_err();
-        assert!(err.contains("Failed to parse"), "got: {err}");
-    }
-
-    /// `from_architecture` builds a `NetworkDef` whose `output_dim`
-    /// drives `LossKind` auto-detection. A legacy architecture with
-    /// a multi-class output (here: 3) must produce a multi-class
-    /// trainer.
-    ///
-    /// We exercise this through `Trainer::build` rather than via
-    /// `Trainer::from_architecture` directly because the public
-    /// constructor returns `Result<Trainer, JsValue>` and `JsValue`
-    /// is awkward to inspect in a native test. The internal `build`
-    /// returns the same Trainer with the same loss-kind logic.
-    #[test]
-    fn from_architecture_with_multi_output_produces_multi_class_loss() {
-        let net = convert_legacy_architecture(
-            r#"{
-                "layers": [
-                    {"id": "in1",  "type": "input",  "params": {"inputSize": 4}},
-                    {"id": "lin1", "type": "linear", "params": {"inputSize": 4, "outputSize": 3}},
-                    {"id": "out",  "type": "output", "params": {"outputSize": 3}}
-                ],
-                "connections": [
-                    {"from": "in1",  "to": "lin1"},
-                    {"from": "lin1", "to": "out"}
-                ],
-                "inputDim": 4,
-                "outputDim": 3
-            }"#,
-        )
-        .expect("legacy arch parses");
-        assert_eq!(net.output_dim(), 3);
-        assert_eq!(LossKind::from_output_dim(net.output_dim()), LossKind::CategoricalCrossEntropy);
-    }
-
-    /// `validate_loss_compat` rejects a `BinaryCrossEntropy` trainer
-    /// whose architecture ends in `Sigmoid` (the loss already applies
-    /// sigmoid internally — applying it again would corrupt the
-    /// gradient).
     #[test]
     fn validate_loss_compat_rejects_terminal_sigmoid_with_bce() {
         let net = NetworkDef::new(2, vec![
@@ -1357,8 +949,6 @@ mod legacy_converter_tests {
         assert!(err.contains("Sigmoid"), "expected Sigmoid diagnostic, got: {err}");
     }
 
-    /// Same check for the multi-class side — terminal `Softmax` with
-    /// `CategoricalCrossEntropy` is rejected.
     #[test]
     fn validate_loss_compat_rejects_terminal_softmax_with_cce() {
         let net = NetworkDef::new(2, vec![
@@ -1369,25 +959,18 @@ mod legacy_converter_tests {
         assert!(err.contains("Softmax"), "expected Softmax diagnostic, got: {err}");
     }
 
-    /// Compatible architectures are accepted: terminal Linear (logits)
-    /// with either loss; non-terminal Sigmoid/Softmax (used as a hidden
-    /// activation) is fine.
     #[test]
     fn validate_loss_compat_accepts_compatible_architectures() {
-        // Terminal Linear with BCE — canonical binary.
         let net1 = NetworkDef::new(2, vec![
             LayerDef::Linear { in_features: 2, out_features: 1 },
         ]);
         assert!(validate_loss_compat(&net1, LossKind::BinaryCrossEntropy).is_ok());
 
-        // Terminal Linear with CCE — canonical multi-class.
         let net2 = NetworkDef::new(2, vec![
             LayerDef::Linear { in_features: 2, out_features: 3 },
         ]);
         assert!(validate_loss_compat(&net2, LossKind::CategoricalCrossEntropy).is_ok());
 
-        // Sigmoid is OK as a hidden activation under either loss as
-        // long as it's not terminal.
         let net3 = NetworkDef::new(2, vec![
             LayerDef::Linear { in_features: 2, out_features: 4 },
             LayerDef::Activation { function: ActivationType::Sigmoid },

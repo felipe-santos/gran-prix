@@ -42,7 +42,7 @@ pub trait Layer: Send + Sync + std::fmt::Debug {
     /// affirm that the layer has no parameters to name. This catches the
     /// case where a future layer adds parameters and forgets the naming.
     ///
-    /// Empty prefix preserves the legacy behavior of registering
+    /// Empty prefix preserves direct graph-building behavior by registering
     /// parameters with empty names — used when a layer is built outside
     /// of `NetworkDef::compile`.
     fn set_name_prefix(&mut self, prefix: String);

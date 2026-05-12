@@ -344,13 +344,8 @@ impl ParamStore {
     ///
     /// # Atomicity
     ///
-    /// All values are validated **before** any parameter tensor is
-    /// mutated. On a validation error the store is left untouched.
-    /// Past validation, mutation proceeds tensor-by-tensor; if a
-    /// per-tensor `Tensor::from_shape_vec` fails (e.g., allocator
-    /// failure under memory pressure) the store may be left partially
-    /// updated. Callers concerned with this edge case should clone the
-    /// store before calling and roll back on error.
+    /// All values and replacement tensors are built before any stored
+    /// parameter is mutated. On error, the store is left untouched.
     pub fn import_flat(&mut self, weights: &[f32]) -> GPResult<()> {
         let total: usize = self.tensors.iter().map(|t| t.len()).sum();
         if weights.len() != total {
@@ -383,14 +378,16 @@ impl ParamStore {
         }
 
         let mut offset = 0;
-        for tensor in &mut self.tensors {
+        let mut replacement_tensors = Vec::with_capacity(self.tensors.len());
+        for tensor in &self.tensors {
             let count = tensor.len();
             let slice = &weights[offset..offset + count];
             let shape = tensor.shape().to_vec();
             let new_tensor = Tensor::from_shape_vec(&shape, slice.to_vec())?;
-            *tensor = new_tensor;
+            replacement_tensors.push(new_tensor);
             offset += count;
         }
+        self.tensors = replacement_tensors;
         Ok(())
     }
 

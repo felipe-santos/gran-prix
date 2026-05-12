@@ -83,8 +83,9 @@ impl OpType {
             OpType::AddReLU => backend.add_relu(inputs[0], inputs[1]),
             OpType::BatchNorm { epsilon } => batchnorm_forward(inputs[0], inputs[1], inputs[2], *epsilon),
             OpType::Dropout { rate } => {
-                if !training || *rate <= 0.0 || *rate >= 1.0 {
-                    return Ok(inputs[0].clone()); // Inference or invalid rate: identity
+                validate_dropout_rate(*rate)?;
+                if !training || *rate == 0.0 {
+                    return Ok(inputs[0].clone()); // Inference or rate=0: identity
                 }
                 // Training mode: inverted dropout
                 // mask[i] = 0 with probability `rate`, else scale by 1/(1-rate)
@@ -130,7 +131,10 @@ impl OpType {
             OpType::ReLU => elementwise_inplace(inputs[0], out, |x| if x < 0.0 { 0.0 } else { x }),
             OpType::Tanh => elementwise_inplace(inputs[0], out, |x| x.tanh()),
             OpType::Sigmoid => elementwise_inplace(inputs[0], out, |x| 1.0 / (1.0 + (-x).exp())),
-            OpType::AddReLU => { backend.relu_inplace(out)?; Ok(()) }
+            OpType::AddReLU => {
+                backend.add_into(inputs[0], inputs[1], out)?;
+                backend.relu_inplace(out)
+            }
             OpType::Custom(op) => op.forward_inplace(inputs, out, backend, training, rng_seed),
             _ => {
                 let res = self.forward(inputs, backend, training, rng_seed)?;
@@ -195,7 +199,8 @@ impl OpType {
             }
             OpType::BatchNorm { epsilon } => batchnorm_backward(inputs[0], inputs[1], grad_output, *epsilon),
             OpType::Dropout { rate } => {
-                if *rate <= 0.0 || *rate >= 1.0 {
+                validate_dropout_rate(*rate)?;
+                if *rate == 0.0 {
                     // No dropout applied → gradient passes through unchanged
                     return Ok(vec![grad_output.clone()]);
                 }
@@ -213,8 +218,9 @@ impl OpType {
                         Ok(vec![Tensor::from_shape_vec(grad_output.shape(), grad_data)?])
                     }
                     None => {
-                        // No cached output → conservative: pass through (inference mode)
-                        Ok(vec![grad_output.clone()])
+                        Err(GPError::InferenceError(
+                            "Dropout backward requires cached forward output".to_string()
+                        ))
                     }
                 }
             }
@@ -261,6 +267,9 @@ impl OpType {
             }
             OpType::ReLU | OpType::Sigmoid | OpType::Tanh | OpType::Softmax
             | OpType::Dropout { .. } | OpType::BatchNorm { .. } => {
+                if let OpType::Dropout { rate } = self {
+                    validate_dropout_rate(*rate)?;
+                }
                 Ok(input_shapes[0].clone())
             }
             OpType::Reshape { target_shape } => Ok(target_shape.clone()),
@@ -270,6 +279,16 @@ impl OpType {
 }
 
 // ── Helper Functions ───────────────────────────────────────────────────────
+
+fn validate_dropout_rate(rate: f32) -> GPResult<()> {
+    if rate.is_finite() && (0.0..1.0).contains(&rate) {
+        return Ok(());
+    }
+    Err(GPError::InferenceError(format!(
+        "Dropout rate must be finite and in [0, 1), got {}",
+        rate
+    )))
+}
 
 /// Element-wise in-place operation: `out[i] = f(in[i])`.
 fn elementwise_inplace(input: &Tensor, out: &mut Tensor, f: fn(f32) -> f32) -> GPResult<()> {

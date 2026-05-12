@@ -13,7 +13,7 @@ import { NetworkCanvas } from './NetworkCanvas';
 import { LayerPalette } from './LayerPalette';
 import { TemplateLibrary } from '../Templates/TemplateLibrary';
 import {
-    serializeNetworkForWasm,
+    serializeNetworkDef,
     checkWasmCompatibility,
     SerializationError,
 } from './NetworkSerializer';
@@ -38,7 +38,7 @@ import {
 // ─── Component Props ────────────────────────────────────────────────────────
 
 interface NetworkBuilderProps {
-    /** Callback when ready to train (receives WASM config) */
+    /** Callback when ready to train (receives canonical NetworkDef package) */
     onTrain?: (config: any) => void;
     /** Initial network to load */
     initialNetwork?: NetworkTemplate;
@@ -121,10 +121,18 @@ export const NetworkBuilder: React.FC<NetworkBuilderProps> = ({
 
     const handleTrain = useCallback(() => {
         try {
-            const wasmConfig = serializeNetworkForWasm(networkGraph.graph);
-            console.log('[NetworkBuilder] WASM Config:', wasmConfig);
+            const networkDef = serializeNetworkDef(networkGraph.graph);
+            const modelPackage = {
+                networkDef,
+                metadata: {
+                    name: networkGraph.graph.metadata.name,
+                    createdAt: new Date().toISOString(),
+                    source: 'network-builder-v2',
+                },
+            };
+            console.log('[NetworkBuilder] NetworkDef:', networkDef);
             if (onTrain) {
-                onTrain(wasmConfig);
+                onTrain(modelPackage);
             } else {
                 alert('Training callback not provided');
             }

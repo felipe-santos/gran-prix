@@ -10,7 +10,7 @@ pub struct Linear {
     /// Optional prefix used when registering parameters. Set by
     /// `NetworkDef::compile` to e.g. `"layers[3]"` so that the parameters
     /// land in `ParamStore` as `"layers[3].weight"` and `"layers[3].bias"`.
-    /// Default empty preserves legacy behavior for direct `Linear::new`
+    /// Default empty preserves direct `Linear::new`
     /// users that don't go through `NetworkDef`.
     #[serde(default)]
     pub name_prefix: String,

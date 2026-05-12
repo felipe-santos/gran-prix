@@ -66,6 +66,21 @@ fn test_dropout_rate_zero_is_identity() {
 }
 
 #[test]
+fn test_dropout_rate_one_is_rejected() {
+    let mut graph = Graph::new(Box::new(CPUBackend));
+    let input = graph.input(Tensor::from_shape_vec(&[1, 4], vec![1.0, 2.0, 3.0, 4.0]).unwrap());
+    let mut gb = GraphBuilder::new(&mut graph);
+    let output = gb.dropout(input, 1.0);
+
+    graph.set_training(true);
+    let err = graph.execute(output).unwrap_err();
+    assert!(
+        err.to_string().contains("Dropout rate"),
+        "expected dropout rate validation error, got {err}"
+    );
+}
+
+#[test]
 fn test_dropout_preserves_shape() {
     let mut graph = Graph::new(Box::new(CPUBackend));
     let input = graph.input(Tensor::new_zeros(&[4, 8]));

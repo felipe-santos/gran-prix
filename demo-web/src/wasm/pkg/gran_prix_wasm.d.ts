@@ -355,14 +355,6 @@ export class Trainer {
      */
     freezeByPrefix(prefix: string): Uint32Array;
     /**
-     * Backward-compatible: parses the old `WasmArchitecture` JSON format
-     * by converting it to a [`NetworkDef`] internally.
-     *
-     * Supported layer types: Input, Linear, Activation (relu/sigmoid/tanh),
-     * Rnn, Gru, Output, Dropout (passthrough), Batchnorm (passthrough).
-     */
-    static fromArchitecture(json: string): Trainer;
-    /**
      * Creates a trainer from a [`NetworkDef`] JSON string.
      *
      * This replaces the old `WasmArchitecture` format. The JSON schema
@@ -600,7 +592,6 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_trainer_free: (a: number, b: number) => void;
     readonly trainer_freezeByPrefix: (a: number, b: number, c: number) => [number, number];
-    readonly trainer_fromArchitecture: (a: number, b: number) => [number, number, number];
     readonly trainer_fromNetworkDef: (a: number, b: number) => [number, number, number];
     readonly trainer_fromNetworkDefWithLoss: (a: number, b: number, c: number) => [number, number, number];
     readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
