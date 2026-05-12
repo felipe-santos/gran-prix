@@ -133,6 +133,190 @@ extern "C" __global__ void gp_reduce_sum(
     out[out_idx] = sum;
 }
 
+extern "C" __global__ void gp_max_pool2d_backward(
+    float* grad_input,
+    const float* input,
+    const float* grad_output,
+    int n,
+    int c,
+    int h,
+    int w,
+    int oh,
+    int ow,
+    int kernel_size,
+    int stride
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * c * oh * ow;
+    if (idx >= total) {
+        return;
+    }
+
+    int wi = idx % ow;
+    int hi = (idx / ow) % oh;
+    int ci = (idx / (oh * ow)) % c;
+    int ni = idx / (c * oh * ow);
+
+    float max_val = -3.402823466e+38f;
+    int max_h = 0;
+    int max_w = 0;
+
+    for (int kh = 0; kh < kernel_size; ++kh) {
+        for (int kw = 0; kw < kernel_size; ++kw) {
+            int cur_h = hi * stride + kh;
+            int cur_w = wi * stride + kw;
+            float value = input[ni * (c * h * w) + ci * (h * w) + cur_h * w + cur_w];
+            if (value > max_val) {
+                max_val = value;
+                max_h = cur_h;
+                max_w = cur_w;
+            }
+        }
+    }
+
+    atomicAdd(
+        &grad_input[ni * (c * h * w) + ci * (h * w) + max_h * w + max_w],
+        grad_output[idx]
+    );
+}
+
+extern "C" __global__ void gp_conv2d(
+    float* out,
+    const float* input,
+    const float* weight,
+    int n,
+    int ci,
+    int h,
+    int w,
+    int co,
+    int kh,
+    int kw,
+    int oh,
+    int ow,
+    int stride,
+    int padding
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * co * oh * ow;
+    if (idx >= total) {
+        return;
+    }
+
+    int wi = idx % ow;
+    int hi = (idx / ow) % oh;
+    int coi = (idx / (oh * ow)) % co;
+    int ni = idx / (co * oh * ow);
+
+    float sum = 0.0f;
+    for (int cii = 0; cii < ci; ++cii) {
+        for (int khi = 0; khi < kh; ++khi) {
+            for (int kwi = 0; kwi < kw; ++kwi) {
+                int in_h = hi * stride + khi - padding;
+                int in_w = wi * stride + kwi - padding;
+                if (in_h >= 0 && in_h < h && in_w >= 0 && in_w < w) {
+                    sum += input[ni * (ci * h * w) + cii * (h * w) + in_h * w + in_w] *
+                           weight[coi * (ci * kh * kw) + cii * (kh * kw) + khi * kw + kwi];
+                }
+            }
+        }
+    }
+
+    out[idx] = sum;
+}
+
+extern "C" __global__ void gp_conv2d_grad_input(
+    float* grad_input,
+    const float* weight,
+    const float* grad_output,
+    int n,
+    int ci,
+    int h,
+    int w,
+    int co,
+    int kh,
+    int kw,
+    int oh,
+    int ow,
+    int stride,
+    int padding
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n * ci * h * w;
+    if (idx >= total) {
+        return;
+    }
+
+    int wi = idx % w;
+    int hi = (idx / w) % h;
+    int cii = (idx / (h * w)) % ci;
+    int ni = idx / (ci * h * w);
+
+    float sum = 0.0f;
+    for (int coi = 0; coi < co; ++coi) {
+        for (int khi = 0; khi < kh; ++khi) {
+            for (int kwi = 0; kwi < kw; ++kwi) {
+                int out_h_unstrided = hi + padding - khi;
+                int out_w_unstrided = wi + padding - kwi;
+                if (out_h_unstrided >= 0 && out_w_unstrided >= 0 &&
+                    out_h_unstrided % stride == 0 && out_w_unstrided % stride == 0) {
+                    int out_h = out_h_unstrided / stride;
+                    int out_w = out_w_unstrided / stride;
+                    if (out_h >= 0 && out_h < oh && out_w >= 0 && out_w < ow) {
+                        sum += grad_output[ni * (co * oh * ow) + coi * (oh * ow) + out_h * ow + out_w] *
+                               weight[coi * (ci * kh * kw) + cii * (kh * kw) + khi * kw + kwi];
+                    }
+                }
+            }
+        }
+    }
+
+    grad_input[idx] = sum;
+}
+
+extern "C" __global__ void gp_conv2d_grad_weight(
+    float* grad_weight,
+    const float* input,
+    const float* grad_output,
+    int n,
+    int ci,
+    int h,
+    int w,
+    int co,
+    int kh,
+    int kw,
+    int oh,
+    int ow,
+    int stride,
+    int padding
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = co * ci * kh * kw;
+    if (idx >= total) {
+        return;
+    }
+
+    int kwi = idx % kw;
+    int khi = (idx / kw) % kh;
+    int cii = (idx / (kh * kw)) % ci;
+    int coi = idx / (ci * kh * kw);
+
+    float sum = 0.0f;
+    for (int ni = 0; ni < n; ++ni) {
+        for (int out_h = 0; out_h < oh; ++out_h) {
+            for (int out_w = 0; out_w < ow; ++out_w) {
+                int in_h = out_h * stride + khi - padding;
+                int in_w = out_w * stride + kwi - padding;
+                if (in_h >= 0 && in_h < h && in_w >= 0 && in_w < w) {
+                    sum += grad_output[ni * (co * oh * ow) + coi * (oh * ow) + out_h * ow + out_w] *
+                           input[ni * (ci * h * w) + cii * (h * w) + in_h * w + in_w];
+                }
+            }
+        }
+    }
+
+    grad_weight[idx] = sum;
+}
+
 extern "C" __global__ void gp_matmul(
     float* out,
     const float* a,

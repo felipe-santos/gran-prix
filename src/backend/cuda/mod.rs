@@ -44,6 +44,10 @@ struct CudaKernels {
     add_relu: CudaFunction,
     sgd_update: CudaFunction,
     reduce_sum: CudaFunction,
+    max_pool2d_backward: CudaFunction,
+    conv2d: CudaFunction,
+    conv2d_grad_input: CudaFunction,
+    conv2d_grad_weight: CudaFunction,
     matmul: CudaFunction,
 }
 
@@ -96,6 +100,26 @@ impl CUDABackend {
                 })?,
                 reduce_sum: module.load_function("gp_reduce_sum").map_err(|e| {
                     GPError::BackendError(format!("CUDA gp_reduce_sum load failed: {:?}", e))
+                })?,
+                max_pool2d_backward: module.load_function("gp_max_pool2d_backward").map_err(
+                    |e| {
+                        GPError::BackendError(format!(
+                            "CUDA gp_max_pool2d_backward load failed: {:?}",
+                            e
+                        ))
+                    },
+                )?,
+                conv2d: module.load_function("gp_conv2d").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_conv2d load failed: {:?}", e))
+                })?,
+                conv2d_grad_input: module.load_function("gp_conv2d_grad_input").map_err(|e| {
+                    GPError::BackendError(format!("CUDA gp_conv2d_grad_input load failed: {:?}", e))
+                })?,
+                conv2d_grad_weight: module.load_function("gp_conv2d_grad_weight").map_err(|e| {
+                    GPError::BackendError(format!(
+                        "CUDA gp_conv2d_grad_weight load failed: {:?}",
+                        e
+                    ))
                 })?,
                 matmul: module.load_function("gp_matmul").map_err(|e| {
                     GPError::BackendError(format!("CUDA gp_matmul load failed: {:?}", e))
@@ -248,6 +272,47 @@ impl CUDABackend {
         }
         false
     }
+
+    fn conv2d_dims(
+        input_shape: &[usize],
+        weight_shape: &[usize],
+        stride: usize,
+        padding: usize,
+    ) -> GPResult<(
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+        usize,
+    )> {
+        if input_shape.len() != 4 || weight_shape.len() != 4 {
+            return Err(Self::shape_error(input_shape, weight_shape));
+        }
+
+        let (n, ci, h, w) = (
+            input_shape[0],
+            input_shape[1],
+            input_shape[2],
+            input_shape[3],
+        );
+        let (co, weight_ci, kh, kw) = (
+            weight_shape[0],
+            weight_shape[1],
+            weight_shape[2],
+            weight_shape[3],
+        );
+        if ci != weight_ci || stride == 0 || h + 2 * padding < kh || w + 2 * padding < kw {
+            return Err(Self::shape_error(&[0, ci, kh, kw], weight_shape));
+        }
+
+        let oh = (h + 2 * padding - kh) / stride + 1;
+        let ow = (w + 2 * padding - kw) / stride + 1;
+        Ok((n, ci, h, w, co, kh, kw, oh, ow))
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -343,10 +408,57 @@ impl Backend for CUDABackend {
         stride: usize,
         padding: usize,
     ) -> GPResult<Tensor> {
-        let out = self
-            .cpu
-            .conv2d(&Self::host(input)?, &Self::host(weight)?, stride, padding)?;
-        self.upload(out)
+        let (n, ci, h, w, co, kh, kw, oh, ow) =
+            Self::conv2d_dims(input.shape(), weight.shape(), stride, padding)?;
+        let input_cuda = self.upload(input.clone())?;
+        let weight_cuda = self.upload(weight.clone())?;
+        let input_slice = Self::cuda_slice(&input_cuda)?;
+        let weight_slice = Self::cuda_slice(&weight_cuda)?;
+        let mut out_slice = self
+            .stream
+            .alloc_zeros::<f32>(n * co * oh * ow)
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+
+        let n_i = n as i32;
+        let ci_i = ci as i32;
+        let h_i = h as i32;
+        let w_i = w as i32;
+        let co_i = co as i32;
+        let kh_i = kh as i32;
+        let kw_i = kw as i32;
+        let oh_i = oh as i32;
+        let ow_i = ow as i32;
+        let stride_i = stride as i32;
+        let padding_i = padding as i32;
+
+        let mut builder = self.stream.launch_builder(&self.kernels.conv2d);
+        builder.arg(&mut out_slice);
+        builder.arg(input_slice.as_ref());
+        builder.arg(weight_slice.as_ref());
+        builder.arg(&n_i);
+        builder.arg(&ci_i);
+        builder.arg(&h_i);
+        builder.arg(&w_i);
+        builder.arg(&co_i);
+        builder.arg(&kh_i);
+        builder.arg(&kw_i);
+        builder.arg(&oh_i);
+        builder.arg(&ow_i);
+        builder.arg(&stride_i);
+        builder.arg(&padding_i);
+        unsafe {
+            builder
+                .launch(LaunchConfig::for_num_elems((n * co * oh * ow) as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA conv2d launch failed: {:?}", e))
+                })?;
+        }
+
+        Ok(Tensor::new_cuda(
+            self.stream.clone(),
+            Arc::new(out_slice),
+            vec![n, co, oh, ow],
+        ))
     }
 
     fn conv2d_backward(
@@ -357,14 +469,97 @@ impl Backend for CUDABackend {
         stride: usize,
         padding: usize,
     ) -> GPResult<(Tensor, Tensor)> {
-        let (grad_input, grad_weight) = self.cpu.conv2d_backward(
-            &Self::host(input)?,
-            &Self::host(weight)?,
-            &Self::host(grad_output)?,
-            stride,
-            padding,
-        )?;
-        Ok((self.upload(grad_input)?, self.upload(grad_weight)?))
+        let (n, ci, h, w, co, kh, kw, oh, ow) =
+            Self::conv2d_dims(input.shape(), weight.shape(), stride, padding)?;
+        if grad_output.shape() != [n, co, oh, ow] {
+            return Err(Self::shape_error(&[n, co, oh, ow], grad_output.shape()));
+        }
+
+        let input_cuda = self.upload(input.clone())?;
+        let weight_cuda = self.upload(weight.clone())?;
+        let grad_cuda = self.upload(grad_output.clone())?;
+        let input_slice = Self::cuda_slice(&input_cuda)?;
+        let weight_slice = Self::cuda_slice(&weight_cuda)?;
+        let grad_slice = Self::cuda_slice(&grad_cuda)?;
+        let mut grad_input_slice = self
+            .stream
+            .alloc_zeros::<f32>(input.len())
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+        let mut grad_weight_slice = self
+            .stream
+            .alloc_zeros::<f32>(weight.len())
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+
+        let n_i = n as i32;
+        let ci_i = ci as i32;
+        let h_i = h as i32;
+        let w_i = w as i32;
+        let co_i = co as i32;
+        let kh_i = kh as i32;
+        let kw_i = kw as i32;
+        let oh_i = oh as i32;
+        let ow_i = ow as i32;
+        let stride_i = stride as i32;
+        let padding_i = padding as i32;
+
+        let mut grad_input_builder = self.stream.launch_builder(&self.kernels.conv2d_grad_input);
+        grad_input_builder.arg(&mut grad_input_slice);
+        grad_input_builder.arg(weight_slice.as_ref());
+        grad_input_builder.arg(grad_slice.as_ref());
+        grad_input_builder.arg(&n_i);
+        grad_input_builder.arg(&ci_i);
+        grad_input_builder.arg(&h_i);
+        grad_input_builder.arg(&w_i);
+        grad_input_builder.arg(&co_i);
+        grad_input_builder.arg(&kh_i);
+        grad_input_builder.arg(&kw_i);
+        grad_input_builder.arg(&oh_i);
+        grad_input_builder.arg(&ow_i);
+        grad_input_builder.arg(&stride_i);
+        grad_input_builder.arg(&padding_i);
+        unsafe {
+            grad_input_builder
+                .launch(LaunchConfig::for_num_elems(input.len() as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA conv2d grad_input launch failed: {:?}", e))
+                })?;
+        }
+
+        let mut grad_weight_builder = self.stream.launch_builder(&self.kernels.conv2d_grad_weight);
+        grad_weight_builder.arg(&mut grad_weight_slice);
+        grad_weight_builder.arg(input_slice.as_ref());
+        grad_weight_builder.arg(grad_slice.as_ref());
+        grad_weight_builder.arg(&n_i);
+        grad_weight_builder.arg(&ci_i);
+        grad_weight_builder.arg(&h_i);
+        grad_weight_builder.arg(&w_i);
+        grad_weight_builder.arg(&co_i);
+        grad_weight_builder.arg(&kh_i);
+        grad_weight_builder.arg(&kw_i);
+        grad_weight_builder.arg(&oh_i);
+        grad_weight_builder.arg(&ow_i);
+        grad_weight_builder.arg(&stride_i);
+        grad_weight_builder.arg(&padding_i);
+        unsafe {
+            grad_weight_builder
+                .launch(LaunchConfig::for_num_elems(weight.len() as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!("CUDA conv2d grad_weight launch failed: {:?}", e))
+                })?;
+        }
+
+        Ok((
+            Tensor::new_cuda(
+                self.stream.clone(),
+                Arc::new(grad_input_slice),
+                input.shape().to_vec(),
+            ),
+            Tensor::new_cuda(
+                self.stream.clone(),
+                Arc::new(grad_weight_slice),
+                weight.shape().to_vec(),
+            ),
+        ))
     }
 
     fn max_pool2d(&self, input: &Tensor, kernel_size: usize, stride: usize) -> GPResult<Tensor> {
@@ -381,13 +576,75 @@ impl Backend for CUDABackend {
         kernel_size: usize,
         stride: usize,
     ) -> GPResult<Tensor> {
-        let out = self.cpu.max_pool2d_backward(
-            &Self::host(input)?,
-            &Self::host(grad_output)?,
-            kernel_size,
-            stride,
-        )?;
-        self.upload(out)
+        if input.shape().len() != 4 || grad_output.shape().len() != 4 {
+            return Err(Self::shape_error(input.shape(), grad_output.shape()));
+        }
+
+        let input_shape = input.shape();
+        let grad_shape = grad_output.shape();
+        let (n, c, h, w) = (
+            input_shape[0],
+            input_shape[1],
+            input_shape[2],
+            input_shape[3],
+        );
+        let expected_oh = (h - kernel_size) / stride + 1;
+        let expected_ow = (w - kernel_size) / stride + 1;
+        if grad_shape != [n, c, expected_oh, expected_ow] {
+            return Err(Self::shape_error(
+                &[n, c, expected_oh, expected_ow],
+                grad_shape,
+            ));
+        }
+
+        let input_cuda = self.upload(input.clone())?;
+        let grad_cuda = self.upload(grad_output.clone())?;
+        let input_slice = Self::cuda_slice(&input_cuda)?;
+        let grad_slice = Self::cuda_slice(&grad_cuda)?;
+        let mut out_slice = self
+            .stream
+            .alloc_zeros::<f32>(input.len())
+            .map_err(|e| GPError::BackendError(format!("CUDA alloc failed: {:?}", e)))?;
+
+        let n_i = n as i32;
+        let c_i = c as i32;
+        let h_i = h as i32;
+        let w_i = w as i32;
+        let oh_i = expected_oh as i32;
+        let ow_i = expected_ow as i32;
+        let kernel_i = kernel_size as i32;
+        let stride_i = stride as i32;
+
+        let mut builder = self
+            .stream
+            .launch_builder(&self.kernels.max_pool2d_backward);
+        builder.arg(&mut out_slice);
+        builder.arg(input_slice.as_ref());
+        builder.arg(grad_slice.as_ref());
+        builder.arg(&n_i);
+        builder.arg(&c_i);
+        builder.arg(&h_i);
+        builder.arg(&w_i);
+        builder.arg(&oh_i);
+        builder.arg(&ow_i);
+        builder.arg(&kernel_i);
+        builder.arg(&stride_i);
+        unsafe {
+            builder
+                .launch(LaunchConfig::for_num_elems(grad_output.len() as u32))
+                .map_err(|e| {
+                    GPError::BackendError(format!(
+                        "CUDA max_pool2d_backward launch failed: {:?}",
+                        e
+                    ))
+                })?;
+        }
+
+        Ok(Tensor::new_cuda(
+            self.stream.clone(),
+            Arc::new(out_slice),
+            input.shape().to_vec(),
+        ))
     }
 
     fn add(&self, a: &Tensor, b: &Tensor) -> GPResult<Tensor> {
