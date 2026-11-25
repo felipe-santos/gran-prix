@@ -1,0 +1,40 @@
+{
+  "name": "@gran-prix/labels",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Labelers for the Gran-Prix DOM pipeline: Readability on jsdom (ids + text alignment), a truth-rule importer, label merging with a fixed source precedence, the LLM labeler interface (disabled), and the dataset builder.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@gran-prix/contracts": "workspace:*",
+    "@mozilla/readability": "^0.6.0",
+    "jsdom": "^27.0.0"
+  },
+  "devDependencies": {
+    "@gran-prix/features": "workspace:*",
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}

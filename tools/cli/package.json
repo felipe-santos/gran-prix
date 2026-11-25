@@ -35,6 +35,7 @@
     "@gran-prix/contracts": "workspace:*",
     "@gran-prix/features": "workspace:*",
     "@gran-prix/infer-ts": "workspace:*",
+    "@gran-prix/labels": "workspace:*",
     "@gran-prix/model": "workspace:*",
     "@gran-prix/report": "workspace:*",
     "tldts": "~7.5.3"
