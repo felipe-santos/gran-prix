@@ -43,7 +43,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
       - name: Cache cargo
@@ -88,7 +88,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Download nodejs package
         uses: actions/download-artifact@v4
         with:
@@ -99,7 +99,7 @@ jobs:
       - name: Seeded initialization check
         run: node demo-web/scripts/seeded-init-check.mjs
 
-  # demo-web imports `@gran-prix/wasm`, resolved to packages/wasm/dist/web (built by the wasm job).
+  # demo-web depends on the workspace package `@gran-prix/wasm` (packages/wasm/dist/web, built by the wasm job).
   demo-web:
     name: demo-web build
     needs: wasm
@@ -112,15 +112,15 @@ jobs:
         with:
           name: wasm-dist-web
           path: packages/wasm/dist/web
+      # pnpm version comes from "packageManager" in the root package.json (single source of truth).
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
-          cache-dependency-path: './demo-web/package-lock.json'
+          node-version: 22
+          cache: pnpm
       - name: Install dependencies
-        run: npm ci
-        working-directory: ./demo-web
+        run: pnpm install --frozen-lockfile
       - name: Build
-        run: npm run build
-        working-directory: ./demo-web
+        run: pnpm --filter demo-web build
