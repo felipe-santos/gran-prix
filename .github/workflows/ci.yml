@@ -19,7 +19,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Core crate (repo root) and the WASM bridge crate, both on the native target.
+  # Cargo workspace (core crate at the repo root + gran-prix-wasm) on the native target.
   rust:
     name: Rust tests
     runs-on: ubuntu-latest
@@ -29,14 +29,9 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            gran-prix-wasm
-      - name: Test core crate
-        run: cargo test
-      - name: Test WASM bridge crate
-        run: cargo test
-        working-directory: ./gran-prix-wasm
+          workspaces: .
+      - name: Test workspace (core + WASM bridge)
+        run: cargo test --workspace
 
   # Size-optimized WASM build with a size budget (scripts/check-wasm-size.mjs).
   wasm:
