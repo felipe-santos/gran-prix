@@ -24,6 +24,27 @@ use crate::errors::IntoJsResult;
 use gran_prix::GPError;
 use std::cell::RefCell;
 
+/// Index of the fittest agent (higher is better).
+///
+/// Starts from `f32::NEG_INFINITY`, so populations whose fitness is entirely
+/// negative still select the true maximum. Non-finite scores (NaN, +/-inf) are
+/// treated as the worst possible and are never selected while at least one
+/// finite score exists. If no score is finite (or the slice is empty), index 0
+/// is returned.
+fn best_index(fitness_scores: &[f32]) -> usize {
+    let mut best_idx = 0;
+    let mut best_score = f32::NEG_INFINITY;
+
+    for (i, &score) in fitness_scores.iter().enumerate() {
+        if score.is_finite() && score > best_score {
+            best_score = score;
+            best_idx = i;
+        }
+    }
+
+    best_idx
+}
+
 /// Population of neural network agents
 ///
 /// Manages a collection of `NeuralBrain` instances and provides evolutionary
@@ -244,15 +265,7 @@ impl Population {
         }
 
         // Find best brain by fitness
-        let mut best_idx = 0;
-        let mut best_score = -1.0;
-
-        for (i, &score) in fitness_scores.iter().enumerate() {
-            if score > best_score {
-                best_score = score;
-                best_idx = i;
-            }
-        }
+        let best_idx = best_index(fitness_scores);
 
         let best_brain = &self.brains[best_idx];
         let best_weights = best_brain.export_weights()
@@ -320,16 +333,7 @@ impl Population {
             return JsValue::NULL;
         }
 
-        let mut best_idx = 0;
-        let mut best_score = -1.0;
-        for (i, &score) in fitness_scores.iter().enumerate() {
-            if score > best_score {
-                best_score = score;
-                best_idx = i;
-            }
-        }
-
-        self.brains[best_idx].get_graph_snapshot()
+        self.brains[best_index(fitness_scores)].get_graph_snapshot()
     }
 
     /// Set global convolution kernel for all brains
@@ -401,5 +405,43 @@ mod tests {
         let fitness = vec![1.0, 2.0]; // Wrong size!
         let result = pop.evolve(&fitness, 0.15, 0.5, MutationStrategy::Additive);
         assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod best_index_tests {
+    use super::best_index;
+
+    #[test]
+    fn all_negative_fitness_picks_true_maximum() {
+        assert_eq!(best_index(&[-5.0, -2.0, -9.0]), 1);
+    }
+
+    #[test]
+    fn all_below_minus_one_does_not_default_to_first() {
+        assert_eq!(best_index(&[-10.0, -3.0, -7.0, -100.0]), 1);
+    }
+
+    #[test]
+    fn positive_fitness_still_picks_maximum() {
+        assert_eq!(best_index(&[1.0, 5.0, 2.0, 3.0, 4.0]), 1);
+    }
+
+    #[test]
+    fn nan_is_never_selected_while_finite_exists() {
+        assert_eq!(best_index(&[f32::NAN, -4.0, f32::NAN]), 1);
+        assert_eq!(best_index(&[f32::NAN, f32::NAN, -1000.0]), 2);
+        assert_eq!(best_index(&[3.0, f32::NAN, 7.0, f32::NAN]), 2);
+    }
+
+    #[test]
+    fn infinities_are_treated_as_worst() {
+        assert_eq!(best_index(&[f32::INFINITY, -2.0, f32::NEG_INFINITY]), 1);
+    }
+
+    #[test]
+    fn no_finite_value_falls_back_to_first() {
+        assert_eq!(best_index(&[f32::NAN, f32::NAN]), 0);
+        assert_eq!(best_index(&[]), 0);
     }
 }
