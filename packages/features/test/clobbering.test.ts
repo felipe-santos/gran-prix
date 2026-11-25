@@ -80,4 +80,18 @@ describe("probe on a page with clobbering names", () => {
     const form = raw.nodes.find((n) => n.attrs.id === "f1");
     expect(form?.child_elems).toBe(FORM_NAMES.length + 2); // controls + label + button
   });
+
+  it("probeLoadedPage returns the whole document html even when <img name=documentElement> shadows document.documentElement", async () => {
+    const p = await launched.context.newPage();
+    try {
+      await p.route("https://fixture.test/**", (r) => r.fulfill({ status: 200, contentType: "text/html", body: page((n) => n) }));
+      await p.goto("https://fixture.test/p", { waitUntil: "load" });
+      const { html } = await probeLoadedPage(p, { quietMs: 100 });
+      expect(html.startsWith("<html")).toBe(true);
+      expect(html).toContain("Clobber test</title>");
+      expect(html).toContain("</body></html>");
+    } finally {
+      await p.close();
+    }
+  });
 });

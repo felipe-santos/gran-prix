@@ -17,32 +17,53 @@ import { sha256Of, type FileRef } from "@gran-prix/contracts";
  * enter them either, so they have no ids). Kept as a string because this package has no DOM lib.
  */
 export const FLATTEN_SOURCE = `(() => {
-  const clone = document.cloneNode(true);
+  // Clobber-proof and Trusted-Types-proof (attempt 2 of the dom-v0 corpus). The page can shadow properties of its own
+  // elements and of \`document\` with named controls (<form><input name="shadowRoot">, <img name="cloneNode">), and a
+  // document with \`require-trusted-types-for 'script'\` rejects \`script.textContent = ""\`. So every read goes through the
+  // getters and methods taken from the prototypes here (a minimal copy of packages/features/src/probe/dom.ts: this expression
+  // runs after the page's scripts, in a separate evaluate, so it cannot share the bundle's closure), and scripts are emptied by
+  // removing their child nodes, which is not a Trusted Types sink.
+  const get = (proto, key) => Object.getOwnPropertyDescriptor(proto, key).get;
+  const E = Element.prototype, N = Node.prototype, D = Document.prototype, F = DocumentFragment.prototype;
+  const shadowRootOf = get(E, "shadowRoot"), attributesOf = get(E, "attributes"), outerHTMLOf = get(E, "outerHTML");
+  const childNodesOf = get(N, "childNodes"), firstChildOf = get(N, "firstChild"), nodeTypeOf = get(N, "nodeType");
+  const docElOf = get(D, "documentElement"), doctypeOf = get(D, "doctype"), doctypeNameOf = get(DocumentType.prototype, "name");
+  const attrNameOf = get(Attr.prototype, "name");
+  const getAttr = E.getAttribute, removeAttr = E.removeAttribute, prepend = E.prepend;
+  const cloneNode = N.cloneNode, removeChild = N.removeChild;
+  const qsDoc = D.querySelector, qsaDoc = D.querySelectorAll, createFragment = D.createDocumentFragment, importNode = D.importNode;
+  const qsaFrag = F.querySelectorAll, append = F.append;
+  const qsa = (root, sel) => (nodeTypeOf.call(root) === 9 ? qsaDoc : qsaFrag).call(root, sel);
+
+  const clone = cloneNode.call(document, true);
   const hosts = [];
   const collect = (root) => {
-    for (const el of root.querySelectorAll("*")) {
-      if (el.shadowRoot) { hosts.push(el); collect(el.shadowRoot); }
+    for (const el of qsa(root, "*")) {
+      const sr = shadowRootOf.call(el);
+      if (sr) { hosts.push(el); collect(sr); }
     }
   };
   collect(document);
   let inlined = 0;
   for (const host of hosts) {
-    const id = host.getAttribute("data-gp-id");
+    const id = getAttr.call(host, "data-gp-id");
     if (!id) continue;
-    const target = clone.querySelector('[data-gp-id="' + id + '"]');
+    const target = qsDoc.call(clone, '[data-gp-id="' + id + '"]');
     if (!target) continue;
-    const frag = clone.createDocumentFragment();
-    for (const child of host.shadowRoot.childNodes) frag.append(clone.importNode(child, true));
-    target.prepend(frag);
+    const frag = createFragment.call(clone);
+    for (const child of childNodesOf.call(shadowRootOf.call(host))) append.call(frag, importNode.call(clone, child, true));
+    prepend.call(target, frag);
     inlined++;
   }
   // Scripts are emptied, not removed: every probed element (scripts included) keeps its data-gp-id.
-  for (const s of Array.from(clone.querySelectorAll("script"))) {
-    for (const a of Array.from(s.attributes)) if (a.name !== "data-gp-id") s.removeAttribute(a.name);
-    s.textContent = "";
+  for (const s of Array.from(qsaDoc.call(clone, "script"))) {
+    for (const a of Array.from(attributesOf.call(s))) { const n = attrNameOf.call(a); if (n !== "data-gp-id") removeAttr.call(s, n); }
+    let c;
+    while ((c = firstChildOf.call(s))) removeChild.call(s, c);
   }
-  const doctype = clone.doctype ? "<!DOCTYPE " + clone.doctype.name + ">" : "";
-  return { html: doctype + clone.documentElement.outerHTML, shadow_hosts_inlined: inlined };
+  const dt = doctypeOf.call(clone);
+  const doctype = dt ? "<!DOCTYPE " + doctypeNameOf.call(dt) + ">" : "";
+  return { html: doctype + outerHTMLOf.call(docElOf.call(clone)), shadow_hosts_inlined: inlined };
 })()`;
 
 export interface FlattenedPage {

@@ -59,7 +59,7 @@ export interface ProbedPage {
   raw: RawProbe;
   /** Did the page reach networkidle within the cap? */
   network: "idle" | "timeout";
-  /** Rendered HTML, `document.documentElement.outerHTML`, taken right after the probe. */
+  /** Rendered HTML, `document.documentElement.outerHTML` (read through the prototype getters), taken right after the probe. */
   html: string;
 }
 
@@ -75,6 +75,11 @@ export async function probeLoadedPage(page: Page, opts: ProbePageOptions = {}): 
     if (!api) throw new Error("gp-features bundle is not installed in this page");
     return api.probe(o);
   }, probeOpts);
-  const html = await page.evaluate(() => document.documentElement.outerHTML);
+  // Through the prototype getters: a page can shadow `document.documentElement` with <img name="documentElement">.
+  const html = await page.evaluate(() => {
+    const get = (proto: object, key: string) => (Object.getOwnPropertyDescriptor(proto, key) as PropertyDescriptor).get as () => unknown;
+    const root = get(Document.prototype, "documentElement").call(document) as Element;
+    return get(Element.prototype, "outerHTML").call(root) as string;
+  });
   return { raw, network, html };
 }
