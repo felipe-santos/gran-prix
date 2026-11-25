@@ -14,6 +14,7 @@ import { LLM_LABEL_STAGES } from "./label-llm.js";
 import { packageStage } from "./package.js";
 import { TOKENS_STAGES } from "./tokens/index.js";
 import { trainStage } from "./train.js";
+import { TRAIN_CV_STAGES } from "./train-cv/index.js";
 
 export const ALL_STAGES: StagePlugin[] = [
   ...DEMO_STAGES,
@@ -31,4 +32,6 @@ export const ALL_STAGES: StagePlugin[] = [
   ...EVALUATE_STAGES,
   // L6 (tokens): measure.tokens (E3.5: D1 / D2 / pruned markdown, cl100k_base, median and IQR of the reduction)
   ...TOKENS_STAGES,
+  // L5e (decision chain): train.cv (nested grouped CV of the MLP: OOF bundle, tau*, final model)
+  ...TRAIN_CV_STAGES,
 ];

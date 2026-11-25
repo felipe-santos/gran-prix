@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { StageRegistry, checkPipeline, runPipeline, type StagePlugin } from "../src/index.js";
 import { ALL_STAGES } from "../src/stages/index.js";
 import { EVALUATE_IMPL } from "../src/stages/evaluate/stage.js";
-import { GROUPS, OP, PARAMS, ROWS, defaultWeight, snapshotOf, specWith, stage, world, type World } from "./evaluate-fixtures.js";
+import { FIXTURE_REOPEN, GROUPS, OP, PARAMS, ROWS, defaultWeight, snapshotOf, specWith, stage, world, type World } from "./evaluate-fixtures.js";
 import { cleanupTmp } from "./helpers.js";
 
 afterAll(cleanupTmp);
@@ -234,7 +234,7 @@ describe("NodeLabels as a baseline", () => {
     id: "eval",
     kind: "evaluate",
     impl: EVALUATE_IMPL,
-    params,
+    params: { reopen_reason: FIXTURE_REOPEN, ...params },
     inputs: { model: { external: "model" }, dataset: { external: "dataset" }, [port]: [{ external: "lab" }] },
   });
   const labelWorld = (type: "NodeLabelsSet" | "Bundle" = "NodeLabelsSet"): World => {

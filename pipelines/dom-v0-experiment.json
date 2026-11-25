@@ -1,0 +1,428 @@
+{
+  "format": "gran-prix.pipeline-spec",
+  "format_version": "1.0.0",
+  "name": "dom-v0-experiment",
+  "description": "The DOM experiment of protocol plano/experimento-dom-v0.md (E3), as a pipeline: captured snapshots (external) -> features -> label layers (human and LLM as externals; the heuristics and baselines as stages) -> merge -> dataset (hash split by domain, 55/15/30) -> train.cv x 5 seeds (grouped CV with nested tuning over the fixed 12-configuration grid, OOF bundle, tau*, final model) -> package -> evaluate on dev (OOF bundles of the 5 MLP seeds and of the GBDT, the heuristics, the router: G0 and the best baselines) and on the test (one frozen model per seed, opened once each: test-openings.jsonl). Run it only after the protocol, the guide, the salt and the code are frozen. The externals point into data/ and DO NOT EXIST yet: the pipeline validates (gp validate) but does not run. The GBDT is Python and offline, outside the pipeline: run tools/baselines/gbdt/gbdt.py on the Dataset artifact (--emit test) and put bundle-dev-oof/ and bundle-test/ at the paths below. G3-G6 (QA, tokens, runtime, logged-in) come from other pipelines; the verdict is node scripts/decide-dom-v0.mjs over these reports. Run from the repo root: gp run pipelines/dom-v0-experiment.json. The test split of each seed is opened by its eval_test stage and registered in <data dir>/test-openings.jsonl.",
+  "vars": { "split_salt": "gp-dom-v0-s0", "bootstrap_seed": 20261125, "resamples": 10000 },
+  "externals": {
+    "snapshots": { "type": "SnapshotSet", "path": "data/snapshots" },
+    "schema": { "type": "FeatureSchema", "path": "packages/features/src/schema/feature-schema.v0.json" },
+    "labels_human": { "type": "NodeLabelsSet", "path": "data/labels/human" },
+    "labels_llm": { "type": "NodeLabelsSet", "path": "data/labels/llm" },
+    "gbdt_dev_oof": { "type": "Bundle", "path": "data/gbdt/bundle-dev-oof" },
+    "gbdt_test": { "type": "Bundle", "path": "data/gbdt/bundle-test" }
+  },
+  "stages": [
+    {
+      "id": "extract",
+      "kind": "extract",
+      "impl": "ts:extract.dom-node@1.0.0",
+      "params": {},
+      "inputs": { "snapshots": { "external": "snapshots" }, "schema": { "external": "schema" } }
+    },
+    {
+      "id": "label_readability",
+      "kind": "label",
+      "impl": "ts:label.heuristic@1.0.0",
+      "params": { "labeler": "readability", "min_coverage": 0 },
+      "inputs": { "snapshots": { "external": "snapshots" }, "features": { "stage": "extract", "output": "features" } }
+    },
+    {
+      "id": "label_trafilatura_precision",
+      "kind": "label",
+      "impl": "ts:label.trafilatura@1.0.0",
+      "params": { "mode": "precision", "min_coverage": 0 },
+      "inputs": { "snapshots": { "external": "snapshots" }, "features": { "stage": "extract", "output": "features" } }
+    },
+    {
+      "id": "label_trafilatura_default",
+      "kind": "label",
+      "impl": "ts:label.trafilatura@1.0.0",
+      "params": { "mode": "default", "min_coverage": 0 },
+      "inputs": { "snapshots": { "external": "snapshots" }, "features": { "stage": "extract", "output": "features" } }
+    },
+    {
+      "id": "label_trafilatura_recall",
+      "kind": "label",
+      "impl": "ts:label.trafilatura@1.0.0",
+      "params": { "mode": "recall", "min_coverage": 0 },
+      "inputs": { "snapshots": { "external": "snapshots" }, "features": { "stage": "extract", "output": "features" } }
+    },
+    {
+      "id": "label_defuddle_default",
+      "kind": "label",
+      "impl": "ts:label.defuddle@1.0.0",
+      "params": { "switches": {}, "min_coverage": 0 },
+      "inputs": { "snapshots": { "external": "snapshots" }, "features": { "stage": "extract", "output": "features" } }
+    },
+    {
+      "id": "label_defuddle_no_low_scoring",
+      "kind": "label",
+      "impl": "ts:label.defuddle@1.0.0",
+      "params": { "switches": { "removeLowScoring": false }, "min_coverage": 0 },
+      "inputs": { "snapshots": { "external": "snapshots" }, "features": { "stage": "extract", "output": "features" } }
+    },
+    {
+      "id": "label_router_oracle",
+      "kind": "label",
+      "impl": "ts:label.router@1.0.0",
+      "params": { "type_from": "category", "min_coverage": 0 },
+      "inputs": { "snapshots": { "external": "snapshots" }, "features": { "stage": "extract", "output": "features" } }
+    },
+    {
+      "id": "label_merge",
+      "kind": "label",
+      "impl": "ts:label.merge@1.0.0",
+      "params": {},
+      "inputs": { "layers": [{ "external": "labels_human" }, { "external": "labels_llm" }] }
+    },
+    {
+      "id": "dataset",
+      "kind": "dataset",
+      "impl": "ts:dataset.jsonl@1.0.0",
+      "params": {
+        "split": {
+          "seed": "${vars.split_salt}",
+          "ranges": { "train": [0, 55], "val": [55, 70], "test": [70, 100] },
+          "group_by": "group_key"
+        },
+        "allowed_sources": ["human", "llm"]
+      },
+      "inputs": {
+        "features": { "stage": "extract", "output": "features" },
+        "labels": { "stage": "label_merge", "output": "labels" },
+        "schema": { "external": "schema" },
+        "snapshots": { "external": "snapshots" }
+      }
+    },
+    {
+      "id": "cv_s1",
+      "kind": "train",
+      "impl": "ts:train.cv@1.0.0",
+      "params": { "seed": 1, "grid_name": "dom-v0-mlp-v1", "name": "dom-v0-mlp-s1", "task_name": "dom-main-content" },
+      "inputs": { "dataset": { "stage": "dataset", "output": "dataset" } }
+    },
+    {
+      "id": "cv_s2",
+      "kind": "train",
+      "impl": "ts:train.cv@1.0.0",
+      "params": { "seed": 2, "grid_name": "dom-v0-mlp-v1", "name": "dom-v0-mlp-s2", "task_name": "dom-main-content" },
+      "inputs": { "dataset": { "stage": "dataset", "output": "dataset" } }
+    },
+    {
+      "id": "cv_s3",
+      "kind": "train",
+      "impl": "ts:train.cv@1.0.0",
+      "params": { "seed": 3, "grid_name": "dom-v0-mlp-v1", "name": "dom-v0-mlp-s3", "task_name": "dom-main-content" },
+      "inputs": { "dataset": { "stage": "dataset", "output": "dataset" } }
+    },
+    {
+      "id": "cv_s4",
+      "kind": "train",
+      "impl": "ts:train.cv@1.0.0",
+      "params": { "seed": 4, "grid_name": "dom-v0-mlp-v1", "name": "dom-v0-mlp-s4", "task_name": "dom-main-content" },
+      "inputs": { "dataset": { "stage": "dataset", "output": "dataset" } }
+    },
+    {
+      "id": "cv_s5",
+      "kind": "train",
+      "impl": "ts:train.cv@1.0.0",
+      "params": { "seed": 5, "grid_name": "dom-v0-mlp-v1", "name": "dom-v0-mlp-s5", "task_name": "dom-main-content" },
+      "inputs": { "dataset": { "stage": "dataset", "output": "dataset" } }
+    },
+    {
+      "id": "package_s1",
+      "kind": "package",
+      "impl": "ts:package.bundle@1.0.0",
+      "params": {},
+      "inputs": { "model": { "stage": "cv_s1", "output": "model" } }
+    },
+    {
+      "id": "package_s2",
+      "kind": "package",
+      "impl": "ts:package.bundle@1.0.0",
+      "params": {},
+      "inputs": { "model": { "stage": "cv_s2", "output": "model" } }
+    },
+    {
+      "id": "package_s3",
+      "kind": "package",
+      "impl": "ts:package.bundle@1.0.0",
+      "params": {},
+      "inputs": { "model": { "stage": "cv_s3", "output": "model" } }
+    },
+    {
+      "id": "package_s4",
+      "kind": "package",
+      "impl": "ts:package.bundle@1.0.0",
+      "params": {},
+      "inputs": { "model": { "stage": "cv_s4", "output": "model" } }
+    },
+    {
+      "id": "package_s5",
+      "kind": "package",
+      "impl": "ts:package.bundle@1.0.0",
+      "params": {},
+      "inputs": { "model": { "stage": "cv_s5", "output": "model" } }
+    },
+    {
+      "id": "eval_dev",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params": {
+        "seed": "${vars.bootstrap_seed}",
+        "split": "dev",
+        "resamples": "${vars.resamples}",
+        "cluster_by": "group_key",
+        "stratified": true,
+        "aggregation": "macro_page",
+        "threshold": "accept",
+        "aggregates": [{ "name": "hard", "strata": ["product", "docs", "forum", "landing", "spa"] }],
+        "label_baseline": {
+          "names": [
+            "readability",
+            "trafilatura-precision",
+            "trafilatura-default",
+            "trafilatura-recall",
+            "defuddle-default",
+            "defuddle-no-low-scoring",
+            "router-oracle"
+          ]
+        },
+        "dataset_name": "dom-v0",
+        "gates": []
+      },
+      "inputs": {
+        "model": { "stage": "cv_s1", "output": "model" },
+        "dataset": { "stage": "dataset", "output": "dataset" },
+        "baselines": [
+          { "stage": "cv_s1", "output": "oof" },
+          { "stage": "cv_s2", "output": "oof" },
+          { "stage": "cv_s3", "output": "oof" },
+          { "stage": "cv_s4", "output": "oof" },
+          { "stage": "cv_s5", "output": "oof" },
+          { "external": "gbdt_dev_oof" }
+        ],
+        "label_baselines": [
+          { "stage": "label_readability", "output": "labels" },
+          { "stage": "label_trafilatura_precision", "output": "labels" },
+          { "stage": "label_trafilatura_default", "output": "labels" },
+          { "stage": "label_trafilatura_recall", "output": "labels" },
+          { "stage": "label_defuddle_default", "output": "labels" },
+          { "stage": "label_defuddle_no_low_scoring", "output": "labels" },
+          { "stage": "label_router_oracle", "output": "labels" }
+        ]
+      }
+    },
+    {
+      "id": "eval_test_s1",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params": {
+        "seed": "${vars.bootstrap_seed}",
+        "split": "test",
+        "resamples": "${vars.resamples}",
+        "cluster_by": "group_key",
+        "stratified": true,
+        "aggregation": "macro_page",
+        "threshold": "accept",
+        "aggregates": [{ "name": "hard", "strata": ["product", "docs", "forum", "landing", "spa"] }],
+        "label_baseline": {
+          "names": [
+            "readability",
+            "trafilatura-precision",
+            "trafilatura-default",
+            "trafilatura-recall",
+            "defuddle-default",
+            "defuddle-no-low-scoring",
+            "router-oracle"
+          ]
+        },
+        "dataset_name": "dom-v0",
+        "gates": []
+      },
+      "inputs": {
+        "model": { "stage": "cv_s1", "output": "model" },
+        "dataset": { "stage": "dataset", "output": "dataset" },
+        "baselines": [{ "external": "gbdt_test" }],
+        "label_baselines": [
+          { "stage": "label_readability", "output": "labels" },
+          { "stage": "label_trafilatura_precision", "output": "labels" },
+          { "stage": "label_trafilatura_default", "output": "labels" },
+          { "stage": "label_trafilatura_recall", "output": "labels" },
+          { "stage": "label_defuddle_default", "output": "labels" },
+          { "stage": "label_defuddle_no_low_scoring", "output": "labels" },
+          { "stage": "label_router_oracle", "output": "labels" }
+        ]
+      }
+    },
+    {
+      "id": "eval_test_s2",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params": {
+        "seed": "${vars.bootstrap_seed}",
+        "split": "test",
+        "resamples": "${vars.resamples}",
+        "cluster_by": "group_key",
+        "stratified": true,
+        "aggregation": "macro_page",
+        "threshold": "accept",
+        "aggregates": [{ "name": "hard", "strata": ["product", "docs", "forum", "landing", "spa"] }],
+        "label_baseline": {
+          "names": [
+            "readability",
+            "trafilatura-precision",
+            "trafilatura-default",
+            "trafilatura-recall",
+            "defuddle-default",
+            "defuddle-no-low-scoring",
+            "router-oracle"
+          ]
+        },
+        "dataset_name": "dom-v0",
+        "gates": []
+      },
+      "inputs": {
+        "model": { "stage": "cv_s2", "output": "model" },
+        "dataset": { "stage": "dataset", "output": "dataset" },
+        "baselines": [{ "external": "gbdt_test" }],
+        "label_baselines": [
+          { "stage": "label_readability", "output": "labels" },
+          { "stage": "label_trafilatura_precision", "output": "labels" },
+          { "stage": "label_trafilatura_default", "output": "labels" },
+          { "stage": "label_trafilatura_recall", "output": "labels" },
+          { "stage": "label_defuddle_default", "output": "labels" },
+          { "stage": "label_defuddle_no_low_scoring", "output": "labels" },
+          { "stage": "label_router_oracle", "output": "labels" }
+        ]
+      }
+    },
+    {
+      "id": "eval_test_s3",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params": {
+        "seed": "${vars.bootstrap_seed}",
+        "split": "test",
+        "resamples": "${vars.resamples}",
+        "cluster_by": "group_key",
+        "stratified": true,
+        "aggregation": "macro_page",
+        "threshold": "accept",
+        "aggregates": [{ "name": "hard", "strata": ["product", "docs", "forum", "landing", "spa"] }],
+        "label_baseline": {
+          "names": [
+            "readability",
+            "trafilatura-precision",
+            "trafilatura-default",
+            "trafilatura-recall",
+            "defuddle-default",
+            "defuddle-no-low-scoring",
+            "router-oracle"
+          ]
+        },
+        "dataset_name": "dom-v0",
+        "gates": []
+      },
+      "inputs": {
+        "model": { "stage": "cv_s3", "output": "model" },
+        "dataset": { "stage": "dataset", "output": "dataset" },
+        "baselines": [{ "external": "gbdt_test" }],
+        "label_baselines": [
+          { "stage": "label_readability", "output": "labels" },
+          { "stage": "label_trafilatura_precision", "output": "labels" },
+          { "stage": "label_trafilatura_default", "output": "labels" },
+          { "stage": "label_trafilatura_recall", "output": "labels" },
+          { "stage": "label_defuddle_default", "output": "labels" },
+          { "stage": "label_defuddle_no_low_scoring", "output": "labels" },
+          { "stage": "label_router_oracle", "output": "labels" }
+        ]
+      }
+    },
+    {
+      "id": "eval_test_s4",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params": {
+        "seed": "${vars.bootstrap_seed}",
+        "split": "test",
+        "resamples": "${vars.resamples}",
+        "cluster_by": "group_key",
+        "stratified": true,
+        "aggregation": "macro_page",
+        "threshold": "accept",
+        "aggregates": [{ "name": "hard", "strata": ["product", "docs", "forum", "landing", "spa"] }],
+        "label_baseline": {
+          "names": [
+            "readability",
+            "trafilatura-precision",
+            "trafilatura-default",
+            "trafilatura-recall",
+            "defuddle-default",
+            "defuddle-no-low-scoring",
+            "router-oracle"
+          ]
+        },
+        "dataset_name": "dom-v0",
+        "gates": []
+      },
+      "inputs": {
+        "model": { "stage": "cv_s4", "output": "model" },
+        "dataset": { "stage": "dataset", "output": "dataset" },
+        "baselines": [{ "external": "gbdt_test" }],
+        "label_baselines": [
+          { "stage": "label_readability", "output": "labels" },
+          { "stage": "label_trafilatura_precision", "output": "labels" },
+          { "stage": "label_trafilatura_default", "output": "labels" },
+          { "stage": "label_trafilatura_recall", "output": "labels" },
+          { "stage": "label_defuddle_default", "output": "labels" },
+          { "stage": "label_defuddle_no_low_scoring", "output": "labels" },
+          { "stage": "label_router_oracle", "output": "labels" }
+        ]
+      }
+    },
+    {
+      "id": "eval_test_s5",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params": {
+        "seed": "${vars.bootstrap_seed}",
+        "split": "test",
+        "resamples": "${vars.resamples}",
+        "cluster_by": "group_key",
+        "stratified": true,
+        "aggregation": "macro_page",
+        "threshold": "accept",
+        "aggregates": [{ "name": "hard", "strata": ["product", "docs", "forum", "landing", "spa"] }],
+        "label_baseline": {
+          "names": [
+            "readability",
+            "trafilatura-precision",
+            "trafilatura-default",
+            "trafilatura-recall",
+            "defuddle-default",
+            "defuddle-no-low-scoring",
+            "router-oracle"
+          ]
+        },
+        "dataset_name": "dom-v0",
+        "gates": []
+      },
+      "inputs": {
+        "model": { "stage": "cv_s5", "output": "model" },
+        "dataset": { "stage": "dataset", "output": "dataset" },
+        "baselines": [{ "external": "gbdt_test" }],
+        "label_baselines": [
+          { "stage": "label_readability", "output": "labels" },
+          { "stage": "label_trafilatura_precision", "output": "labels" },
+          { "stage": "label_trafilatura_default", "output": "labels" },
+          { "stage": "label_trafilatura_recall", "output": "labels" },
+          { "stage": "label_defuddle_default", "output": "labels" },
+          { "stage": "label_defuddle_no_low_scoring", "output": "labels" },
+          { "stage": "label_router_oracle", "output": "labels" }
+        ]
+      }
+    }
+  ]
+}
