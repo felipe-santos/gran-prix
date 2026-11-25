@@ -37,6 +37,23 @@ jobs:
           node-version: 20
           cache: 'npm'
           cache-dependency-path: './demo-web/package-lock.json'
+      # demo-web imports `@gran-prix/wasm`, resolved to packages/wasm/dist/web.
+      # Nothing generated is committed, so the WASM is built here (same steps as the CI `wasm` job).
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: wasm
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.14.0
+      - name: Build WASM into packages/wasm/dist
+        run: >
+          node scripts/build-wasm.mjs --target web
+          --web-out packages/wasm/dist/web
       - name: Install dependencies
         run: npm install
         working-directory: ./demo-web

@@ -5,7 +5,7 @@
  * This prevents magic numbers scattered throughout components.
  */
 
-import { MutationStrategy } from '../wasm/pkg/gran_prix_wasm';
+import { MutationStrategy } from '@gran-prix/wasm';
 
 /**
  * Evolution hyperparameters for the car avoidance demo

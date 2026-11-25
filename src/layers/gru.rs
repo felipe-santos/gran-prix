@@ -70,6 +70,30 @@ impl GRUCell {
         }
     }
 
+    /// Seeded counterpart of [`GRUCell::new`] (same `Uniform[-1, 1)` distribution).
+    /// Draw order: `wz_ih`, `wz_hh`, `wr_ih`, `wr_hh`, `wn_ih`, `wn_hh`.
+    pub fn new_seeded(input_size: usize, hidden_size: usize, rng: &mut crate::init::InitRng) -> Self {
+        let wz_ih = Tensor::new_random_seeded(&[input_size, hidden_size], rng);
+        let wz_hh = Tensor::new_random_seeded(&[hidden_size, hidden_size], rng);
+        let wr_ih = Tensor::new_random_seeded(&[input_size, hidden_size], rng);
+        let wr_hh = Tensor::new_random_seeded(&[hidden_size, hidden_size], rng);
+        let wn_ih = Tensor::new_random_seeded(&[input_size, hidden_size], rng);
+        let wn_hh = Tensor::new_random_seeded(&[hidden_size, hidden_size], rng);
+        let b = || Tensor::new_zeros(&[1, hidden_size]);
+
+        Self {
+            hidden_size,
+            input_size,
+            wz_ih, bz_ih: b(), wz_hh, bz_hh: b(),
+            wr_ih, br_ih: b(), wr_hh, br_hh: b(),
+            wn_ih, bn_ih: b(), wn_hh, bn_hh: b(),
+            hidden_state: None,
+            state_node_id: None,
+            prev_state_input_id: None,
+            name_prefix: String::new(),
+        }
+    }
+
     pub fn reset_memory(&mut self) {
         self.hidden_state = None;
     }

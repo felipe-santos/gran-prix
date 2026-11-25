@@ -61,6 +61,25 @@ impl RNNCell {
         }
     }
 
+    /// Seeded counterpart of [`RNNCell::new`] (same `Uniform[-1, 1)` distribution).
+    /// Draw order: `weight_ih`, then `weight_hh`.
+    pub fn new_seeded(input_size: usize, hidden_size: usize, rng: &mut crate::init::InitRng) -> Self {
+        let weight_ih = Tensor::new_random_seeded(&[input_size, hidden_size], rng);
+        let weight_hh = Tensor::new_random_seeded(&[hidden_size, hidden_size], rng);
+        Self {
+            hidden_size,
+            input_size,
+            weight_ih,
+            bias_ih: Tensor::new_zeros(&[1, hidden_size]),
+            weight_hh,
+            bias_hh: Tensor::new_zeros(&[1, hidden_size]),
+            hidden_state: None,
+            state_node_id: None,
+            prev_state_input_id: None,
+            name_prefix: String::new(),
+        }
+    }
+
     /// Explicitly zeroes out the memory of the cell.
     pub fn reset_memory(&mut self) {
         self.hidden_state = None;

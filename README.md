@@ -58,6 +58,7 @@ The project is intentionally positioned between a low-level learning engine and 
 ```text
 src/                 Rust core: tensors, graph, layers, loss, optimizers, backends
 gran-prix-wasm/      WASM bindings and browser-facing neural agents
+packages/wasm/       `@gran-prix/wasm`: the single WASM build (gitignored `dist/web` and `dist/node`)
 demo-web/            React + Vite visual laboratory
 examples/            Native Rust examples
 tests/               Integration, parity, robustness, persistence, and autograd tests
@@ -166,17 +167,17 @@ cargo test
 
 ## Quick start: WASM laboratory
 
-Build the WASM package:
+Build the WASM package (requires `wasm-pack` and the `wasm32-unknown-unknown` Rust target):
 
 ```bash
-cd gran-prix-wasm
-wasm-pack build --target web
+node scripts/build-wasm.mjs --target both \
+  --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 ```
 
 Run the visual demo app:
 
 ```bash
-cd ../demo-web
+cd demo-web
 npm install
 npm run dev
 ```
@@ -249,7 +250,23 @@ cd demo-web
 npm run build
 ```
 
-Generated WASM packages are currently checked into `demo-web/public/pkg` and `demo-web/src/wasm/pkg` so the demo can run without rebuilding Rust every time. Rebuild `gran-prix-wasm` when the Rust/WASM API changes.
+No generated WASM is committed. `demo-web` imports `@gran-prix/wasm`, which resolves to `packages/wasm/dist/web`, so build the WASM (see below) before `npm run dev` or `npm run build`, and again whenever the Rust/WASM API changes. CI and the GitHub Pages deploy build it the same way.
+
+### Building WASM
+
+Requires [`wasm-pack`](https://rustwasm.github.io/wasm-pack/) and the `wasm32-unknown-unknown` Rust target.
+
+```bash
+node scripts/build-wasm.mjs --target both \
+  --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node   # same as `npm run build` in packages/wasm
+node scripts/check-wasm-size.mjs packages/wasm/dist/web/gran_prix_wasm_bg.wasm   # fails if raw > 480,000 B or gzip > 200,000 B
+node demo-web/scripts/smoke-test.mjs          # runs the bridge from Node (reads packages/wasm/dist/node)
+node demo-web/scripts/seeded-init-check.mjs   # seeded initialization is reproducible
+```
+
+The Node scripts read `packages/wasm/dist/node` by default; set `GRAN_PRIX_WASM_NODE` to use another directory. Without options, `scripts/build-wasm.mjs` still writes to `gran-prix-wasm/pkg` (web) and `gran-prix-wasm/pkg-node` (Node).
+
+The build script applies the size profile (`opt-level=z`, LTO, `codegen-units=1`, `panic=abort`, `wasm-opt -Oz`) through `CARGO_PROFILE_RELEASE_*` environment variables, so it keeps working if the crates move into a Cargo workspace. `scripts/check-wasm-parity.mjs <node-package-A> <node-package-B>` checks that two builds produce bit-identical outputs. The CI workflow (`.github/workflows/ci.yml`) runs the Rust tests, this build with the size check, the Node smoke tests and the demo-web build (which consumes the WASM built by the `wasm` job) on pull requests and on pushes to branches other than `main`.
 
 ---
 

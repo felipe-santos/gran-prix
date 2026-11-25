@@ -1,5 +1,5 @@
 import * as planck from 'planck-js';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 import {
     WALKER_POPULATION_SIZE,
     WALKER_INPUTS,

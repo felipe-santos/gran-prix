@@ -26,6 +26,14 @@ model.json
 demo-web/node_modules
 demo-web/dist
 
-gran-prix-wasm/target
 
-IDEIAS//home/ubuntu/files/PRIX/gran-prix/gran-prix-wasm/pkg-node/
+IDEIAS/
+gran-prix-wasm/pkg-node/
+
+
+# Local Claude Code settings (personal)
+.claude/settings.json
+
+# Agent git worktrees (created by Claude Code)
+.claude/worktrees/
+gran-prix-wasm/pkg/

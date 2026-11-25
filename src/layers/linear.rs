@@ -31,6 +31,15 @@ impl Linear {
 
         Self { weights, biases, name_prefix: String::new() }
     }
+
+    /// Seeded counterpart of [`Linear::new`]: same Xavier-uniform distribution,
+    /// but drawn from `rng` (row-major over `weights`; biases are zeros).
+    pub fn new_seeded(input_dim: usize, output_dim: usize, rng: &mut crate::init::InitRng) -> Self {
+        let scale = (6.0 / (input_dim as f32 + output_dim as f32)).sqrt();
+        let weights = Tensor::new_random_scaled_seeded(&[input_dim, output_dim], scale, rng);
+        let biases = Tensor::new_zeros(&[1, output_dim]);
+        Self { weights, biases, name_prefix: String::new() }
+    }
 }
 
 #[typetag::serde]

@@ -1,5 +1,5 @@
 import React from 'react';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 import { TRADER_INPUTS, TRADER_HIDDEN, TRADER_OUTPUTS } from '../../types';
 import { NetworkViz } from '../shared/NetworkViz';
 

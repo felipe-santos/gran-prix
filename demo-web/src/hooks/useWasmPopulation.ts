@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import * as wasm from '../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 import { POPULATION_SIZE, EVOLUTION_INPUTS, EVOLUTION_HIDDEN, EVOLUTION_OUTPUTS } from '../types';
 import { ensureWasmLoaded } from '../lib/wasmLoader';
 

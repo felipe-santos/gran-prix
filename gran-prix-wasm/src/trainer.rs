@@ -209,6 +209,21 @@ fn js_err(e: GPError) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
 
+/// Runs `f` with the graph in training mode (Dropout active) and always
+/// restores eval mode afterwards, on the success and the error path.
+///
+/// The `Trainer` is in eval mode at rest: every `predict*` path relies on
+/// that, and additionally forces eval mode itself before running.
+fn with_training_mode<T>(
+    graph: &mut Graph,
+    f: impl FnOnce(&mut Graph) -> Result<T, JsValue>,
+) -> Result<T, JsValue> {
+    graph.set_training(true);
+    let result = f(graph);
+    graph.set_training(false);
+    result
+}
+
 #[wasm_bindgen]
 impl Trainer {
     /// Creates a trainer with a simple MLP: Input → (Linear+Tanh)×N → Linear(1).
@@ -266,18 +281,58 @@ impl Trainer {
         Self::build(net, loss_kind)
     }
 
+    /// Like [`Trainer::from_network_def`], but all random weights are derived
+    /// deterministically from `seed`: the same `(json, seed)` always produces
+    /// bit-identical weights (`get_weights()`), independent of `Math.random`
+    /// or the platform RNG.
+    ///
+    /// The seed is a `u32` so JavaScript callers can pass a plain `number`
+    /// (no `BigInt`); it is widened to `u64` internally.
+    #[wasm_bindgen(js_name = fromNetworkDefSeeded)]
+    pub fn from_network_def_seeded(json: &str, seed: u32) -> Result<Trainer, JsValue> {
+        let net = NetworkDef::from_json(json).map_err(js_err)?;
+        let loss_kind = LossKind::from_output_dim(net.output_dim());
+        Self::build_with_seed(net, loss_kind, Some(u64::from(seed)))
+    }
+
+    /// Seeded variant of [`Trainer::from_network_def_with_loss`]
+    /// (explicit `loss_kind`, deterministic weights from a `u32` `seed`).
+    #[wasm_bindgen(js_name = fromNetworkDefWithLossSeeded)]
+    pub fn from_network_def_with_loss_seeded(
+        json: &str,
+        loss_kind: LossKind,
+        seed: u32,
+    ) -> Result<Trainer, JsValue> {
+        let net = NetworkDef::from_json(json).map_err(js_err)?;
+        Self::build_with_seed(net, loss_kind, Some(u64::from(seed)))
+    }
+
     /// Internal builder shared by all public constructors. Centralizes
     /// the validation, JSON snapshot, and graph compilation so the
     /// invariants (loss/architecture compatibility, canonical JSON,
     /// pre-allocated input buffer) hold uniformly across construction
     /// paths.
     fn build(net: NetworkDef, loss_kind: LossKind) -> Result<Trainer, JsValue> {
+        Self::build_with_seed(net, loss_kind, None)
+    }
+
+    /// [`Trainer::build`] with optional deterministic initialization
+    /// (`Some(seed)` uses `NetworkDef::compile_seeded`).
+    fn build_with_seed(
+        net: NetworkDef,
+        loss_kind: LossKind,
+        seed: Option<u64>,
+    ) -> Result<Trainer, JsValue> {
         validate_loss_compat(&net, loss_kind).map_err(|e| JsValue::from_str(&e))?;
 
         let input_dim = net.input_dim;
         let output_dim = net.output_dim();
         let net_json = net.to_json().map_err(js_err)?;
-        let compiled = net.compile(Box::new(CPUBackend)).map_err(js_err)?;
+        let compiled = match seed {
+            Some(s) => net.compile_seeded(Box::new(CPUBackend), s),
+            None => net.compile(Box::new(CPUBackend)),
+        }
+        .map_err(js_err)?;
 
         Ok(Trainer {
             graph: RefCell::new(compiled.graph),
@@ -326,35 +381,41 @@ impl Trainer {
         let target = NodeId(self.output_node);
         let order = graph.topological_sort(target).map_err(js_err)?;
 
+        // One clear per batch: per-sample forward+backward accumulates the
+        // parameter gradients in the ParamStore (node gradients are per call).
         graph.clear_gradients();
 
-        for i in 0..batch_size {
-            // Inject input
-            {
-                let mut input_buffer = self.input_tensor.borrow_mut();
-                if let Ok(slice) = input_buffer.as_slice_mut() {
-                    let start = i * self.input_dim;
-                    for d in 0..self.input_dim {
-                        slice[d] = inputs[start + d];
+        // Training mode so Dropout is active; eval mode is restored on exit.
+        with_training_mode(&mut graph, |graph| {
+            for i in 0..batch_size {
+                // Inject input
+                {
+                    let mut input_buffer = self.input_tensor.borrow_mut();
+                    if let Ok(slice) = input_buffer.as_slice_mut() {
+                        let start = i * self.input_dim;
+                        for d in 0..self.input_dim {
+                            slice[d] = inputs[start + d];
+                        }
+                    }
+                    if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(self.input_node) {
+                        t.copy_from(&input_buffer).map_err(js_err)?;
                     }
                 }
-                if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(self.input_node) {
-                    t.copy_from(&input_buffer).map_err(js_err)?;
-                }
+
+                let result = graph.execute_with_order(&order, target).map_err(js_err)?;
+
+                let target_tensor = Tensor::from_shape_vec(&[1, 1], vec![targets[i]]).map_err(js_err)?;
+                let loss_fn = gran_prix::loss::BCEWithLogits;
+
+                let mut grad = loss_fn.gradient(&result, &target_tensor).map_err(js_err)?;
+                grad.map_inplace(|v| *v /= batch_size as f32).map_err(js_err)?;
+
+                total_loss += loss_fn.calculate(&result, &target_tensor).map_err(js_err)?;
+
+                graph.backward(NodeId(self.output_node), grad).map_err(js_err)?;
             }
-
-            let result = graph.execute_with_order(&order, target).map_err(js_err)?;
-
-            let target_tensor = Tensor::from_shape_vec(&[1, 1], vec![targets[i]]).unwrap();
-            let loss_fn = gran_prix::loss::BCEWithLogits;
-
-            let mut grad = loss_fn.gradient(&result, &target_tensor).map_err(js_err)?;
-            grad.map_inplace(|v| *v /= batch_size as f32).unwrap();
-
-            total_loss += loss_fn.calculate(&result, &target_tensor).map_err(js_err)?;
-
-            graph.backward(NodeId(self.output_node), grad).map_err(js_err)?;
-        }
+            Ok(())
+        })?;
 
         use gran_prix::optim::Optimizer;
         let mut opt = self.optimizer.borrow_mut();
@@ -416,42 +477,48 @@ impl Trainer {
         let mut graph = self.graph.borrow_mut();
         let target = NodeId(self.output_node);
         let order = graph.topological_sort(target).map_err(js_err)?;
+        // One clear per batch: per-sample forward+backward accumulates the
+        // parameter gradients in the ParamStore (node gradients are per call).
         graph.clear_gradients();
 
         let mut total_loss = 0.0_f32;
         let loss_fn = gran_prix::loss::CrossEntropyWithLogits;
 
-        for i in 0..batch_size {
-            // Inject input row i into the graph's input node.
-            {
-                let mut input_buffer = self.input_tensor.borrow_mut();
-                let slice = input_buffer.as_slice_mut().map_err(js_err)?;
-                let start = i * self.input_dim;
-                for d in 0..self.input_dim {
-                    slice[d] = inputs[start + d];
-                }
-                if let Some(gran_prix::graph::Node::Input(ref mut t)) =
-                    graph.nodes_mut().get_mut(self.input_node)
+        // Training mode so Dropout is active; eval mode is restored on exit.
+        with_training_mode(&mut graph, |graph| {
+            for i in 0..batch_size {
+                // Inject input row i into the graph's input node.
                 {
-                    t.copy_from(&input_buffer).map_err(js_err)?;
+                    let mut input_buffer = self.input_tensor.borrow_mut();
+                    let slice = input_buffer.as_slice_mut().map_err(js_err)?;
+                    let start = i * self.input_dim;
+                    for d in 0..self.input_dim {
+                        slice[d] = inputs[start + d];
+                    }
+                    if let Some(gran_prix::graph::Node::Input(ref mut t)) =
+                        graph.nodes_mut().get_mut(self.input_node)
+                    {
+                        t.copy_from(&input_buffer).map_err(js_err)?;
+                    }
                 }
+
+                // Build one-hot target [1, output_dim] for this sample.
+                let mut one_hot = vec![0.0_f32; self.output_dim];
+                one_hot[class_indices[i] as usize] = 1.0;
+                let target_tensor =
+                    Tensor::from_shape_vec(&[1, self.output_dim], one_hot).map_err(js_err)?;
+
+                let result = graph.execute_with_order(&order, target).map_err(js_err)?;
+                let mut grad = loss_fn.gradient(&result, &target_tensor).map_err(js_err)?;
+                // Scale by 1/batch_size so the accumulated gradient is the
+                // mean-batch gradient (matches `train_batch`'s convention).
+                grad.map_inplace(|v| *v /= batch_size as f32).map_err(js_err)?;
+
+                total_loss += loss_fn.calculate(&result, &target_tensor).map_err(js_err)?;
+                graph.backward(target, grad).map_err(js_err)?;
             }
-
-            // Build one-hot target [1, output_dim] for this sample.
-            let mut one_hot = vec![0.0_f32; self.output_dim];
-            one_hot[class_indices[i] as usize] = 1.0;
-            let target_tensor =
-                Tensor::from_shape_vec(&[1, self.output_dim], one_hot).map_err(js_err)?;
-
-            let result = graph.execute_with_order(&order, target).map_err(js_err)?;
-            let mut grad = loss_fn.gradient(&result, &target_tensor).map_err(js_err)?;
-            // Scale by 1/batch_size so the accumulated gradient is the
-            // mean-batch gradient (matches `train_batch`'s convention).
-            grad.map_inplace(|v| *v /= batch_size as f32).map_err(js_err)?;
-
-            total_loss += loss_fn.calculate(&result, &target_tensor).map_err(js_err)?;
-            graph.backward(target, grad).map_err(js_err)?;
-        }
+            Ok(())
+        })?;
 
         use gran_prix::optim::Optimizer;
         let mut opt = self.optimizer.borrow_mut();
@@ -674,6 +741,7 @@ impl Trainer {
         }
 
         let mut graph = self.graph.borrow_mut();
+        graph.set_training(false); // predictions never run in training mode
         let logits = batched_forward_logits(
             &mut graph,
             self.input_node,
@@ -714,6 +782,7 @@ impl Trainer {
             return Err(JsValue::from_str("Features dimension mismatch"));
         }
         let mut graph = self.graph.borrow_mut();
+        graph.set_training(false); // predictions never run in training mode
         {
             let mut input_buffer = self.input_tensor.borrow_mut();
             let slice = input_buffer.as_slice_mut().map_err(js_err)?;
@@ -761,6 +830,7 @@ impl Trainer {
         }
 
         let mut graph = self.graph.borrow_mut();
+        graph.set_training(false); // predictions never run in training mode
         {
             let mut input_buffer = self.input_tensor.borrow_mut();
             let slice = input_buffer.as_slice_mut().map_err(js_err)?;
@@ -879,6 +949,7 @@ impl Trainer {
         }
 
         let mut graph = self.graph.borrow_mut();
+        graph.set_training(false); // predictions never run in training mode
         let logits = batched_forward_logits(
             &mut graph,
             self.input_node,
@@ -892,6 +963,7 @@ impl Trainer {
 
     pub fn get_decision_boundary(&self, resolution: usize, feature_map: js_sys::Function) -> Result<Vec<f32>, JsValue> {
         let mut graph = self.graph.borrow_mut();
+        graph.set_training(false); // predictions never run in training mode
         let target = NodeId(self.output_node);
         graph.sync_params().map_err(js_err)?;
 
@@ -979,3 +1051,7 @@ mod loss_compat_tests {
         assert!(validate_loss_compat(&net3, LossKind::BinaryCrossEntropy).is_ok());
     }
 }
+
+#[cfg(test)]
+#[path = "trainer_tests.rs"]
+mod trainer_tests;

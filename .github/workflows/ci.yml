@@ -1,0 +1,126 @@
+# Continuous integration for pull requests and feature branches.
+# `main` is covered by deploy.yml (GitHub Pages), so pushes to main do not run this workflow.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: ["main"]
+
+permissions:
+  contents: read
+
+# One run per event and branch; a newer commit cancels the run it supersedes.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Cargo workspace (core crate at the repo root + gran-prix-wasm) on the native target.
+  rust:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - name: Test workspace (core + WASM bridge)
+        run: cargo test --workspace
+
+  # Size-optimized WASM build with a size budget (scripts/check-wasm-size.mjs).
+  wasm:
+    name: WASM build and size budget
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: wasm
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.14.0
+      - name: Build WASM (web and nodejs) into packages/wasm/dist
+        run: >
+          node scripts/build-wasm.mjs --target both
+          --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
+      - name: Check WASM size budget
+        run: node scripts/check-wasm-size.mjs packages/wasm/dist/web/gran_prix_wasm_bg.wasm
+      - name: Upload web package for demo-web
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-dist-web
+          path: packages/wasm/dist/web
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload nodejs package for the smoke tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-dist-node
+          path: packages/wasm/dist/node
+          if-no-files-found: error
+          retention-days: 7
+
+  # Runs the bridge from Node against the package built by the wasm job
+  # (smoke-test.mjs and seeded-init-check.mjs read packages/wasm/dist/node by default).
+  node-smoke:
+    name: Node smoke test
+    needs: wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Download nodejs package
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-dist-node
+          path: packages/wasm/dist/node
+      - name: Smoke test
+        run: node demo-web/scripts/smoke-test.mjs
+      - name: Seeded initialization check
+        run: node demo-web/scripts/seeded-init-check.mjs
+
+  # demo-web imports `@gran-prix/wasm`, resolved to packages/wasm/dist/web (built by the wasm job).
+  demo-web:
+    name: demo-web build
+    needs: wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download web package
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-dist-web
+          path: packages/wasm/dist/web
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: './demo-web/package-lock.json'
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./demo-web
+      - name: Build
+        run: npm run build
+        working-directory: ./demo-web

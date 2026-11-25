@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 
 // Components
 import { PlaygroundCanvas, DataPoint } from './PlaygroundCanvas';

@@ -1,4 +1,4 @@
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 import {
     GRID_POPULATION_SIZE,
     GRID_INPUTS,
@@ -35,7 +35,7 @@ export interface GridStats {
     alive: number;
 }
 
-// ─── Internal Helpers (Copied from useSmartGridGameLoop.ts) ──────────────────
+// ─── Internal Helpers ──────────────────
 
 function houseDemandAt(hour: number): number {
     const base = 0.5;

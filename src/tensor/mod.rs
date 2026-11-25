@@ -1,9 +1,9 @@
 pub mod storage;
 pub use storage::Storage;
 
-use ndarray::{ArrayD, IxDyn, ArrayViewD};
-use serde::{Serialize, Deserialize};
-use crate::{GPError, GPResult, types::Shape, Device};
+use crate::{types::Shape, Device, GPError, GPResult};
+use ndarray::{ArrayD, ArrayViewD, IxDyn};
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "cuda")]
 use std::sync::Arc;
 
@@ -18,8 +18,8 @@ pub struct Tensor {
 impl Tensor {
     pub fn copy_from(&mut self, other: &Self) -> GPResult<()> {
         if self.shape() != other.shape() {
-            return Err(GPError::IncompatibleShapes { 
-                expected: self.shape().to_vec(), 
+            return Err(GPError::IncompatibleShapes {
+                expected: self.shape().to_vec(),
                 found: other.shape().to_vec(),
                 exp_len: self.len(),
                 found_len: other.len(),
@@ -48,7 +48,24 @@ impl Tensor {
     pub fn new_random(dims: &[usize]) -> Self {
         use ndarray_rand::RandomExt;
         use rand::distributions::Uniform;
-        Self::new_cpu(ArrayD::random(ndarray::IxDyn(dims), Uniform::new(-1.0, 1.0)))
+        Self::new_cpu(ArrayD::random(
+            ndarray::IxDyn(dims),
+            Uniform::new(-1.0, 1.0),
+        ))
+    }
+
+    /// Seeded counterpart of [`Tensor::new_random`]: `Uniform[-1, 1)` drawn from
+    /// the given deterministic RNG (see [`crate::init`]), in row-major order.
+    pub fn new_random_seeded(dims: &[usize], rng: &mut crate::init::InitRng) -> Self {
+        Self::new_random_scaled_seeded(dims, 1.0, rng)
+    }
+
+    /// Like [`Tensor::new_random_seeded`] but each sample is multiplied by `scale`
+    /// (used for Xavier scaling).
+    pub fn new_random_scaled_seeded(dims: &[usize], scale: f32, rng: &mut crate::init::InitRng) -> Self {
+        Self::new_cpu(ArrayD::from_shape_simple_fn(IxDyn(dims), || {
+            crate::init::next_symmetric_f32(rng) * scale
+        }))
     }
 
     pub fn shape(&self) -> &[usize] {
@@ -64,7 +81,9 @@ impl Tensor {
         match &self.storage {
             Storage::Cpu(data) => Ok(data),
             #[cfg(feature = "cuda")]
-            Storage::Cuda(_) => Err(GPError::DeviceMismatch("CPU required, tensor is on CUDA".to_string())),
+            Storage::Cuda(_) => Err(GPError::DeviceMismatch(
+                "CPU required, tensor is on CUDA".to_string(),
+            )),
         }
     }
 
@@ -72,7 +91,9 @@ impl Tensor {
         match &mut self.storage {
             Storage::Cpu(data) => Ok(data),
             #[cfg(feature = "cuda")]
-            Storage::Cuda(_) => Err(GPError::DeviceMismatch("CPU required, tensor is on CUDA".to_string())),
+            Storage::Cuda(_) => Err(GPError::DeviceMismatch(
+                "CPU required, tensor is on CUDA".to_string(),
+            )),
         }
     }
 
@@ -88,8 +109,13 @@ impl Tensor {
     pub fn to_cuda(&self, stream: &Arc<cudarc::driver::CudaStream>) -> GPResult<Self> {
         match &self.storage {
             Storage::Cpu(data) => {
-                let slice = stream.clone_htod(data.as_slice().ok_or_else(|| GPError::TensorError("Non-contiguous CPU tensor".to_string()))?)
-                    .map_err(|e| GPError::BackendError(format!("CUDA HtoD copy failed: {:?}", e)))?;
+                let slice = stream
+                    .clone_htod(data.as_slice().ok_or_else(|| {
+                        GPError::TensorError("Non-contiguous CPU tensor".to_string())
+                    })?)
+                    .map_err(|e| {
+                        GPError::BackendError(format!("CUDA HtoD copy failed: {:?}", e))
+                    })?;
                 Ok(Self {
                     storage: Storage::Cuda(storage::CudaStorage {
                         stream: stream.clone(),
@@ -107,10 +133,15 @@ impl Tensor {
             Storage::Cpu(_) => Ok(self.clone()),
             #[cfg(feature = "cuda")]
             Storage::Cuda(storage) => {
-                let data = storage.stream.clone_dtoh(storage.slice.as_ref())
-                    .map_err(|e| GPError::BackendError(format!("CUDA DtoH copy failed: {:?}", e)))?;
-                let array = ArrayD::from_shape_vec(self.shape.0.clone(), data)
-                    .map_err(|e| GPError::TensorError(format!("Failed to create host array: {:?}", e)))?;
+                let data = storage
+                    .stream
+                    .clone_dtoh(storage.slice.as_ref())
+                    .map_err(|e| {
+                        GPError::BackendError(format!("CUDA DtoH copy failed: {:?}", e))
+                    })?;
+                let array = ArrayD::from_shape_vec(self.shape.0.clone(), data).map_err(|e| {
+                    GPError::TensorError(format!("Failed to create host array: {:?}", e))
+                })?;
                 Ok(Self::new_cpu(array))
             }
         }
@@ -135,13 +166,14 @@ impl Tensor {
     pub fn into_shape(self, shape: &[usize]) -> GPResult<Self> {
         match self.storage {
             Storage::Cpu(data) => {
-                let reshaped = data.into_shape(IxDyn(shape))
-                    .map_err(|_e| GPError::IncompatibleShapes { 
-                        expected: shape.to_vec(), 
-                        found: self.shape.as_slice().to_vec(),
-                        exp_len: shape.iter().product(),
-                        found_len: self.shape.size(),
-                    })?;
+                let reshaped =
+                    data.into_shape(IxDyn(shape))
+                        .map_err(|_e| GPError::IncompatibleShapes {
+                            expected: shape.to_vec(),
+                            found: self.shape.as_slice().to_vec(),
+                            exp_len: shape.iter().product(),
+                            found_len: self.shape.size(),
+                        })?;
                 Ok(Self::new_cpu(reshaped))
             }
             #[cfg(feature = "cuda")]
@@ -149,8 +181,8 @@ impl Tensor {
                 let new_size: usize = shape.iter().product();
                 let old_size: usize = self.shape.size();
                 if new_size != old_size {
-                    return Err(GPError::IncompatibleShapes { 
-                        expected: shape.to_vec(), 
+                    return Err(GPError::IncompatibleShapes {
+                        expected: shape.to_vec(),
                         found: self.shape.as_slice().to_vec(),
                         exp_len: new_size,
                         found_len: old_size,
@@ -167,7 +199,6 @@ impl Tensor {
     pub fn into_dyn(self) -> Self {
         self
     }
-    
 }
 
 // Crate-internal: allows backend code to convert ndarray → Tensor directly.
@@ -190,9 +221,11 @@ impl Tensor {
 
     pub fn mean(&self) -> GPResult<f32> {
         match &self.storage {
-            Storage::Cpu(data) => data.mean().ok_or_else(|| GPError::TensorError("Empty tensor".to_string())),
+            Storage::Cpu(data) => data
+                .mean()
+                .ok_or_else(|| GPError::TensorError("Empty tensor".to_string())),
             #[cfg(feature = "cuda")]
-            Storage::Cuda(_) => Err(GPError::NotImplemented("mean() for CUDA".to_string())),
+            Storage::Cuda(_) => self.to_host()?.mean(),
         }
     }
 
@@ -202,7 +235,9 @@ impl Tensor {
 
     pub fn as_slice(&self) -> GPResult<&[f32]> {
         match &self.storage {
-            Storage::Cpu(a) => a.as_slice().ok_or_else(|| GPError::TensorError("Failed to get CPU slice".to_string())),
+            Storage::Cpu(a) => a
+                .as_slice()
+                .ok_or_else(|| GPError::TensorError("Failed to get CPU slice".to_string())),
             #[cfg(feature = "cuda")]
             _ => Err(GPError::BackendError("Not a CPU tensor".to_string())),
         }
@@ -210,7 +245,9 @@ impl Tensor {
 
     pub fn as_slice_mut(&mut self) -> GPResult<&mut [f32]> {
         match &mut self.storage {
-            Storage::Cpu(a) => a.as_slice_mut().ok_or_else(|| GPError::TensorError("Failed to get CPU slice mut".to_string())),
+            Storage::Cpu(a) => a
+                .as_slice_mut()
+                .ok_or_else(|| GPError::TensorError("Failed to get CPU slice mut".to_string())),
             #[cfg(feature = "cuda")]
             _ => Err(GPError::BackendError("Not a CPU tensor".to_string())),
         }
@@ -242,9 +279,7 @@ impl Tensor {
     /// Returns an error if `data.len()` doesn't match the product of `dims`.
     pub fn from_shape_vec(dims: &[usize], data: Vec<f32>) -> GPResult<Self> {
         let array = ArrayD::from_shape_vec(IxDyn(dims), data)
-            .map_err(|e| GPError::TensorError(format!(
-                "Shape/data mismatch: {}", e
-            )))?;
+            .map_err(|e| GPError::TensorError(format!("Shape/data mismatch: {}", e)))?;
         Ok(Self::new_cpu(array))
     }
 
@@ -272,20 +307,24 @@ impl Tensor {
     pub fn get_flat_mut(&mut self, index: usize) -> GPResult<&mut f32> {
         let len = self.len();
         let slice = self.as_slice_mut()?;
-        slice.get_mut(index)
-            .ok_or_else(|| GPError::TensorError(format!(
-                "Index {} out of bounds (tensor has {} elements)", index, len
-            )))
+        slice.get_mut(index).ok_or_else(|| {
+            GPError::TensorError(format!(
+                "Index {} out of bounds (tensor has {} elements)",
+                index, len
+            ))
+        })
     }
 
     /// Gets a reference to an element at the given flat index.
     pub fn get_flat(&self, index: usize) -> GPResult<f32> {
         let slice = self.as_slice()?;
-        slice.get(index)
-            .copied()
-            .ok_or_else(|| GPError::TensorError(format!(
-                "Index {} out of bounds (tensor has {} elements)", index, slice.len()
-            )))
+        slice.get(index).copied().ok_or_else(|| {
+            GPError::TensorError(format!(
+                "Index {} out of bounds (tensor has {} elements)",
+                index,
+                slice.len()
+            ))
+        })
     }
 
     /// Gets the value at a 2D index [row, col].
@@ -295,7 +334,8 @@ impl Tensor {
         let shape = self.shape().to_vec();
         if shape.len() < 2 || row >= shape[0] || col >= shape[1] {
             return Err(GPError::TensorError(format!(
-                "2D index [{}, {}] out of bounds for shape {:?}", row, col, shape
+                "2D index [{}, {}] out of bounds for shape {:?}",
+                row, col, shape
             )));
         }
         let flat_idx = row * shape[1] + col;
@@ -309,7 +349,8 @@ impl Tensor {
         let shape = self.shape().to_vec();
         if shape.len() < 2 || row >= shape[0] || col >= shape[1] {
             return Err(GPError::TensorError(format!(
-                "2D index [{}, {}] out of bounds for shape {:?}", row, col, shape
+                "2D index [{}, {}] out of bounds for shape {:?}",
+                row, col, shape
             )));
         }
         let flat_idx = row * shape[1] + col;

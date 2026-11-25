@@ -1,4 +1,4 @@
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 import {
     TRADER_POPULATION_SIZE,
     TRADER_INPUTS,
@@ -39,7 +39,7 @@ export interface TraderStats {
     alive: number;
 }
 
-// ─── Internal Helpers (Copied from useTraderGameLoop.ts) ──────────────────────
+// ─── Internal Helpers ──────────────────────
 
 function generatePriceSeries(numCandles: number, startPrice: number): Candle[] {
     const mu = 0.0002; const sigma = 0.015;
