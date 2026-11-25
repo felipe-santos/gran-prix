@@ -262,9 +262,10 @@ document per page, `label_source: "llm"`, 3 classes, `labeler.llm` with model, p
   label document (`llm_run.guide_sha256`, `labeler.llm.prompt_sha256`).
 * **Input to the model:** blocks `n<idx>|tag|ancestor>path|"text"` in document order (id = the element's `data-gp-id`), in
   chunks of `chunk_blocks` (400) with `ctx_blocks` (10) read-only context blocks. Answer: `{"labels":[{"id","c":"M|S|N","u","m"}]}`
-  under a JSON schema. Unknown, repeated or missing ids, or malformed JSON: ONE retry with a correction message; then the
-  page is `failed`, writes no labels and is never guessed (`on_missing: "leave_unlabeled"` leaves only missing ids
-  unlabeled instead). `u` (doubt) = confidence 0.5.
+  under a JSON schema. Unknown, repeated or missing ids, or malformed JSON: ONE retry with a correction message. Ids still
+  missing after it stay unlabeled and are never guessed (`on_missing: "leave_unlabeled"`, the default, as protocol 5.3 says);
+  `on_missing: "fail_page"` fails the whole page instead. Malformed JSON, unknown or repeated ids after the retry always fail the
+  page, which then writes no labels. `u` (doubt) = confidence 0.5.
 * **Routing (`routing`):** `disagreement` (default) sends the units on which the `layers` voters disagree or abstain, plus a
   deterministic 15% control sample of the unanimous ones, and the whole page when there is no voter, a voter's alignment was
   discarded or abstains on more than 30%, or `readerable` is false; units a human layer already settled are never sent.
