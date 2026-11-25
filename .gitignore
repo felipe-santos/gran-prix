@@ -34,3 +34,6 @@ gran-prix-wasm/pkg-node/
 
 # Local Claude Code settings (personal)
 .claude/settings.json
+
+# Agent git worktrees (created by Claude Code)
+.claude/worktrees/
