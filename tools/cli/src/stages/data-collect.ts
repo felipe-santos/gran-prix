@@ -42,7 +42,7 @@ export const collect = defineStage(
           additionalProperties: false,
         },
         nav_timeout_ms: { type: "integer", minimum: 1, description: "Timeout of the navigation (load event), default 30000." },
-        base_dir: { type: "string", description: "Directory that relative file paths of the UrlList resolve against; default = the run root (the working directory)." },
+        base_dir: { type: "string", description: "Directory that relative file paths of the UrlList resolve against; default = the run root (`ctx.root`: `gp run --root`, else the working directory); a relative value is resolved against it." },
         captured_at: { type: "string", description: "RFC 3339 timestamp to store instead of the clock (reproducible set ids)." },
         private_suffixes: { type: "boolean", description: "Treat private public-suffix entries (github.io, blogspot.com) as suffixes when computing group_key; default true." },
         fail_on_error: { type: "boolean", description: "Fail the stage when any page could not be snapshotted; default false (failures are listed in the manifest and logged)." },
@@ -129,9 +129,9 @@ function readParams(ctx: StageContext): Params {
   const settle = (raw["settle"] ?? {}) as Record<string, unknown>;
   const num = (v: unknown, d: number): number => (typeof v === "number" ? v : d);
   const vp = raw["viewport"] as number[];
-  // `StageContext` has no run root yet (proposed: `ctx.root`); until then relative paths resolve against the
-  // working directory, which is the run root unless `gp run --root` points elsewhere (then set `base_dir`).
-  const root = (ctx as StageContext & { readonly root?: string }).root ?? process.cwd();
+  // Relative file paths of the UrlList resolve against the run root (`gp run --root`, default the working
+  // directory); `base_dir`, when given, is resolved against that root.
+  const root = ctx.root;
   const capturedAt = raw["captured_at"];
   if (typeof capturedAt === "string" && Number.isNaN(Date.parse(capturedAt))) throw new Error(`collect: captured_at ${JSON.stringify(capturedAt)} is not an RFC 3339 timestamp`);
   return {

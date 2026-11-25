@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import {
@@ -14,7 +14,7 @@ import {
   type Sha256,
 } from "@gran-prix/contracts";
 import { wasmSha256 } from "@gran-prix/model";
-import { readJsonFile, writeJsonAtomic } from "./fsutil.js";
+import { readJsonFile, readTreeFiles, writeJsonAtomic } from "./fsutil.js";
 import { dependenciesOf, select, topologicalOrder } from "./graph.js";
 import { Ledger } from "./ledger.js";
 import { dataPaths } from "./paths.js";
@@ -40,7 +40,7 @@ export interface RunOptions {
   /** Hard cap of the ledger in USD (default 0: nothing paid runs). */
   budgetUSD?: number;
   runId?: string;
-  /** Base directory of relative `externals[].path` (default: the current directory). */
+  /** Base directory of relative `externals[].path`, also handed to stages as `ctx.root` (default: the current directory). */
   root?: string;
   /** sha256 of the WASM binary for `node+wasm` stages (default: the one `@gran-prix/model` loads). */
   wasmSha?: () => Sha256;
@@ -90,6 +90,7 @@ class Run {
   private readonly paths: ReturnType<typeof dataPaths>;
   private readonly runId: string;
   private readonly runDir: string;
+  private readonly root: string;
   private readonly specId: Sha256;
   private readonly outputs = new Map<string, PortIds>();
   private readonly results = new Map<string, StageResult>();
@@ -109,6 +110,7 @@ class Run {
     this.ledger = new Ledger(this.paths.ledger, opts.budgetUSD ?? 0, this.now);
     this.runId = opts.runId ?? `run-${this.now().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
     this.runDir = join(this.paths.runs, this.runId);
+    this.root = resolve(opts.root ?? process.cwd());
     this.specId = contractId("pipeline-spec", this.spec as unknown as Record<string, unknown>);
   }
 
@@ -319,12 +321,20 @@ class Run {
     if (!ext) throw new Error(`external "${name}" is not declared`);
     let id: Sha256 | undefined;
     if (ext.path !== undefined) {
-      const file = isAbsolute(ext.path) ? ext.path : resolve(this.opts.root ?? process.cwd(), ext.path);
+      const file = isAbsolute(ext.path) ? ext.path : resolve(this.root, ext.path);
       if (!existsSync(file)) throw new Error(`external "${name}": file ${file} does not exist`);
-      const bytes = new Uint8Array(readFileSync(file));
-      id = file.endsWith(".json")
-        ? this.store.putJson(ext.type, JSON.parse(new TextDecoder().decode(bytes)))
-        : this.store.putFiles(ext.type, { [basename(file)]: bytes });
+      if (statSync(file).isDirectory()) {
+        // A directory-shaped artifact (Dataset, ModelPackage, Bundle, ...): every file under it, keyed by its path
+        // relative to the directory, becomes one file-set artifact. Its id is what `externals[].id` pins.
+        const files = readTreeFiles(file);
+        if (Object.keys(files).length === 0) throw new Error(`external "${name}": directory ${file} holds no file`);
+        id = this.store.putFiles(ext.type, files);
+      } else {
+        const bytes = new Uint8Array(readFileSync(file));
+        id = file.endsWith(".json")
+          ? this.store.putJson(ext.type, JSON.parse(new TextDecoder().decode(bytes)))
+          : this.store.putFiles(ext.type, { [basename(file)]: bytes });
+      }
       if (ext.id !== undefined && ext.id !== id) throw new Error(`external "${name}": ${ext.path} hashes to ${id}, the spec pins ${ext.id}`);
     } else if (ext.id !== undefined) {
       if (!this.store.has(ext.id)) throw new Error(`external "${name}": artifact ${ext.id} is not in the store`);
@@ -370,6 +380,7 @@ class Run {
       inputs,
       ledger,
       dataDir: this.opts.dataDir,
+      root: this.root,
       log: (m) => this.opts.log?.(stage.id, m),
     };
   }

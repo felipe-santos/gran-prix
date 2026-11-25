@@ -16,11 +16,10 @@ afterAll(cleanupTmp);
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const PIPELINE = JSON.parse(readFileSync(join(ROOT, "tools/cli/test/pipelines/mini-collect-extract.pipeline.json"), "utf8")) as PipelineSpec;
 
-/** The pipeline file resolves paths against the repo root; vitest runs from tools/cli, so pin `base_dir`. */
+/** The pipeline file resolves paths against the repo root through `ctx.root` (`opts.root`): vitest runs from tools/cli and no `base_dir` is pinned. */
 function spec(over: { captured_at?: string | null } = {}): PipelineSpec {
   const s = structuredClone(PIPELINE);
   const params = (s.stages[0] as { params: Record<string, unknown> }).params;
-  params["base_dir"] = ROOT;
   if (over.captured_at === null) delete params["captured_at"];
   else if (over.captured_at !== undefined) params["captured_at"] = over.captured_at;
   return s;

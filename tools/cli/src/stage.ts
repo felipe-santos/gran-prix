@@ -25,6 +25,12 @@ export interface StageContext {
   readonly inputs: Readonly<Record<string, ArtifactHandle | ArtifactHandle[]>>;
   readonly ledger: StageLedger;
   readonly dataDir: string;
+  /**
+   * Absolute base directory of the run: `RunOptions.root` / `gp run --root`, the working directory by default.
+   * The directory `externals[].path` resolves against; stages that read relative paths named in their inputs
+   * or params (collect's local files) resolve them against it too. It is not part of any cache key.
+   */
+  readonly root: string;
   log(message: string): void;
 }
 
