@@ -1,0 +1,29 @@
+{
+  "format": "gran-prix.pipeline-spec",
+  "format_version": "1.0.0",
+  "name": "mini-collect-extract",
+  "description": "Collects 3 synthetic fixture pages and extracts FeatureSchema v0 features. Run from the repo root: gp run tools/cli/test/pipelines/mini-collect-extract.pipeline.json --data-dir /tmp/gp-mini",
+  "externals": {
+    "urls": { "type": "UrlList", "path": "tools/cli/test/pipelines/mini-urls.json" },
+    "schema": { "type": "FeatureSchema", "path": "packages/features/src/schema/feature-schema.v0.json" }
+  },
+  "stages": [
+    {
+      "id": "collect",
+      "kind": "collect",
+      "impl": "ts:collect.playwright@1.0.0",
+      "params": { "viewport": [1280, 900], "captured_at": "2026-01-01T00:00:00Z" },
+      "inputs": { "urls": { "external": "urls" } }
+    },
+    {
+      "id": "extract",
+      "kind": "extract",
+      "impl": "ts:extract.dom-node@1.0.0",
+      "params": {},
+      "inputs": {
+        "snapshots": { "stage": "collect", "output": "snapshots" },
+        "schema": { "external": "schema" }
+      }
+    }
+  ]
+}

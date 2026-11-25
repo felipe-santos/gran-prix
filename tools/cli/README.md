@@ -2,8 +2,9 @@
 
 Runs a `PipelineSpec` (ADR-004: pipeline as code) incrementally over a **content-addressed artifact
 store**, with a receipt per stage, lineage, and a hard-capped spending ledger. This is the runner
-core (E1.7, wave 2): demo stages (`ts:demo.*`) and the `evaluate` stage ship; the other real stages
-(collect, extract, label, dataset, train, package) plug into the same interface in wave 3.
+core (E1.7) plus real stages: `collect` and `extract` (E1.5) and `evaluate`, all documented below.
+Demo stages (`ts:demo.*`) exercise the runner; label, dataset, train and package plug into the same
+interface.
 
 ```
 gp run <pipeline.json> [--from <stage>] [--to <stage>] [--force] [--data-dir data]
@@ -136,10 +137,92 @@ gp run eval.pipeline.json --data-dir data     # params: seed (required), split, 
 gp report data/artifacts/sha256-<report>/content.json --extras data/artifacts/sha256-<extras>/content.json -o report.html
 ```
 
+## Data stages: `collect` and `extract` (E1.5)
+
+```
+UrlList --collect--> SnapshotSet --extract--> NodeFeaturesSet          FeatureSchema --^
+```
+
+Run from the repo root (relative paths resolve against the working directory):
+
+```
+pnpm --filter "@gran-prix/cli..." build        # also builds @gran-prix/features (the in-page bundle)
+node tools/cli/dist/bin.js run tools/cli/test/pipelines/mini-collect-extract.pipeline.json --data-dir /tmp/gp-mini
+```
+
+**`ts:collect.playwright@1.0.0`** (`node+playwright`, `external`): input `urls: UrlList`, output `snapshots: SnapshotSet`.
+Needs a cached Chromium (`GP_CHROMIUM` or `~/.cache/ms-playwright/chromium-*`). One fresh browser context per page,
+captured sequentially: load, best-effort networkidle (capped), DOM-quiet settle, stamp `data-gp-id`, probe
+(`@gran-prix/features`), flattened html, contract-valid PageSnapshot.
+
+| param | default | meaning |
+|---|---|---|
+| `viewport` (required) | | `[width, height]` |
+| `settle` | `{quiet_ms: 600, max_ms: 8000, network_idle_cap_ms: 3000}` | settle caps |
+| `max_nodes` | none | pages with more elements go to `manifest.failures` (`max_nodes`) |
+| `nav_timeout_ms` | 30000 | navigation timeout |
+| `base_dir` | working directory | base of relative file paths in the UrlList (`StageContext` has no run root yet, so `gp run --root` does not move it) |
+| `captured_at` | the clock | pin `capture.captured_at` so a re-collect of an unchanged page gives the same SnapshotSet id |
+| `private_suffixes` | true | `alice.github.io` is its own group (false: `github.io`) |
+| `fail_on_error` | false | any page that cannot be snapshotted fails the stage |
+| `wait` | | free text appended to `capture.wait_strategy` |
+
+**UrlList** (an external, `.json` or any other file): JSON `[{url, stratum, group_key?}]` or `{"urls": [...]}`, or CSV with the
+header `url,stratum[,group_key]`. `url` is `http(s)://...`, `file:///abs/p.html`, or a path relative to `base_dir`. A local file
+inside `base_dir` is recorded as `file:///<relative path>` (`page.url`, `final_url`, `url_key`), so snapshot ids do not depend on
+the checkout location. `stratum` becomes `page.category`. **`group_key`** = the entry's explicit value, else the registrable
+domain (eTLD+1, via `tldts` and the Public Suffix List) of the FINAL host, else (local files) the file stem; IPs and `localhost`
+keep the host. Pages that fail never disappear silently: navigation errors, `max_nodes`, malformed URLs are listed in
+`manifest.failures` and logged; zero snapshots fails the stage.
+
+**Flags** (`capture.flags`, `manifest.entries[].flags`; heuristics over the visible text, outside the snapshot id, never a reason to
+drop a page): `http-error` (status >= 400), `error-page`, `captcha`, `paywall`, `tiny-dom` (< 60 elements and < 800 characters).
+
+**`SnapshotSet`** is a file-set artifact:
+
+```
+manifest.json            { format: "gran-prix.snapshot-set", entries: [{snapshot_id, url, final_url, stratum, group_key, http_status, flags, node_count, snapshot, html}], failures: [...] }
+snapshots/<hex>.json     contract-valid PageSnapshot (extensions: top-level text_units and probe; capture.flags, capture.settle)
+html/<hex>.html.gz       flattened rendered html, gzip
+```
+
+**Flattened html** (for the label stage, which parses it in jsdom): the live DOM after stamping, serialized from a clone. Every OPEN
+shadow root is inlined (its children are prepended to the host, the composed pre-order the ids use); every `data-gp-id="n<idx>"`
+attribute is kept, so `[data-gp-id="n<k>"]` exists for every `nodes[k]` and is unique; every `<script>` is emptied (no source, no
+attributes but its id, no text) but kept, because the probe numbers it. Not inlined (and without ids): closed shadow roots, iframe
+documents, `<template>` content. `snapshot.html` is `{path, sha256, bytes, media_type: "text/html", content_encoding: "gzip"}` where
+`sha256` and `bytes` describe the DECODED html (gzip bytes vary between zlib builds and must not enter `snapshot_id`).
+`SnapshotSetReader` (`src/stages/collect-stages.ts`) reads all of it: `entries()`, `snapshot(entry)`, `html(entry)`.
+
+**Determinism.** The volatile capture data is kept out of the id: `captured_at`, timings, mutation counts and the networkidle outcome
+are in the log or in `capture`, never in `snapshot_id`; the stored `capture.settle` keeps only `reason`, `shadow_roots`,
+`tracked_from_start`, `late_unstamped`. A forced re-collect of the fixtures gives the same snapshot ids, and with `captured_at`
+pinned the same SnapshotSet id (tested).
+
+**`ts:extract.dom-node@1.0.0`** (`node`, `pure`): inputs `snapshots: SnapshotSet` + `schema: FeatureSchema`, output
+`features: NodeFeaturesSet`. Applies the pure `vectorize` of `@gran-prix/features` to every snapshot and validates each NodeFeatures
+against the contract. `NodeFeaturesSet` is a file-set artifact: `manifest.json` (`feature_schema_id`, entries with `snapshot_id`,
+`features_id`, `group_key`, `stratum`, `flags`, `n_rows`, `features`) plus `features/<hex>.json` (one NodeFeatures per snapshot,
+`<hex>` = its snapshot id).
+
+**Where the FeatureSchema comes from.** It is an *external* of the pipeline; no helper stage is needed:
+
+```json
+"externals": {
+  "urls":   { "type": "UrlList",       "path": "tools/cli/test/pipelines/mini-urls.json" },
+  "schema": { "type": "FeatureSchema", "path": "packages/features/src/schema/feature-schema.v0.json" }
+}
+```
+
+A `.json` external is stored as a JSON artifact (`--root` moves the base of `path`); pin it with `"id"` if the pipeline must refuse any other
+schema. See `tools/cli/test/pipelines/mini-collect-extract.pipeline.json`.
+
 ## Tests
 
 ```
 node scripts/build-wasm.mjs --target both --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 pnpm --filter @gran-prix/cli test        # runs against the sibling sources; needs only the WASM build
 pnpm --filter @gran-prix/cli... build    # contracts, infer-ts, model, report, cli (typecheck needs the first four built)
+pnpm --filter @gran-prix/cli test        # runs against the sibling sources; needs the WASM build and a cached Chromium (the collect tests)
+pnpm --filter @gran-prix/cli... build    # contracts, infer-ts, model, features, cli (typecheck needs the first four built)
 ```

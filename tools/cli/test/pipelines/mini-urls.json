@@ -1,0 +1,5 @@
+[
+  { "url": "fixtures/pages/article-1.html", "stratum": "article" },
+  { "url": "fixtures/pages/product-2.html", "stratum": "product" },
+  { "url": "fixtures/pages/spa-1.html", "stratum": "spa" }
+]
