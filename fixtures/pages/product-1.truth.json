@@ -14,6 +14,7 @@
     { "selector": ".add", "label": "noise" },
     { "selector": ".wish", "label": "noise" },
     { "selector": ".trust", "label": "noise" },
+    { "selector": ".trust li:nth-child(-n+2)", "label": "support" },
     { "selector": ".promo-bar", "label": "noise" },
     { "selector": ".site-header", "label": "noise" },
     { "selector": ".related-products", "label": "noise" },
