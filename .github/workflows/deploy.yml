@@ -14,6 +14,9 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # deploy-pages looks up the uploaded "github-pages" artifact through the Actions API
+  # (listWorkflowRunArtifacts), which needs actions: read on the GITHUB_TOKEN.
+  actions: read
 
 # Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
 # However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
