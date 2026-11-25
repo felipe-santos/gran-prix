@@ -14,6 +14,7 @@
     { "selector": ".tags", "label": "support" },
     { "selector": ".author-bio", "label": "support" },
     { "selector": ".comments", "label": "support" },
+    { "selector": ".comments button", "label": "noise" },
     { "selector": "#cookie-banner", "label": "noise" },
     { "selector": ".site-header", "label": "noise" },
     { "selector": ".ad", "label": "noise" },
