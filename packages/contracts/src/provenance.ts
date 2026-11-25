@@ -33,6 +33,12 @@ const ProvenanceBody = Type.Object(
     created_at: Iso8601,
     host: Type.Optional(Type.String()),
     duration_ms: NonNegInt,
+    placeholder: Type.Optional(
+      Type.Boolean({
+        description:
+          "v1.1: true = this embedded provenance is a deterministic stand-in (e.g. run_id 'deterministic', zeroed pipeline_spec_id) written by a stage that cannot know its run; the authoritative provenance is the runner receipt of the artifact id. Provenance is outside every content id, so the swap never changes an id.",
+      }),
+    ),
   },
   { description: "Where an artifact came from. Outside every content id." },
 );

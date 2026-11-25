@@ -90,11 +90,14 @@ export function buildInvalidCasesV11(u: Universe): InvalidCase[] {
     add("eval-report", "token-iqr-inverted", ev((d) => (d["intrinsic"].token_reduction.d2.iqr_ratio = [0.5, 0.3])), "invariant", "intrinsic.token_reduction.d2.iqr_ratio");
     add("eval-report", "aggregate-unknown-stratum", ev((d) => (d["intrinsic"].aggregates[0].strata = ["forum"])), "invariant", "intrinsic.aggregates[0].strata[0]");
     add("eval-report", "by-tag-counts-dont-add-up", ev((d) => (d["intrinsic"].by_tag["lang:en"].n += 1)), "invariant", "intrinsic.by_tag.lang:en", "tp+fp+tn+fn");
-    add("eval-report", "bootstrap-unknown-cluster", ev((d) => (d["bootstrap"].cluster_by = "domain")), "schema", "bootstrap.cluster_by");
-    add("eval-report", "bootstrap-without-resamples", ev((d) => delete d["bootstrap"].resamples), "schema", "bootstrap.resamples", "required");
+    add("eval-report", "bootstrap-unknown-cluster", ev((d) => (d["intrinsic"].bootstrap.cluster_by = "domain")), "schema", "intrinsic.bootstrap.cluster_by");
+    add("eval-report", "bootstrap-without-resamples", ev((d) => delete d["intrinsic"].bootstrap.resamples), "schema", "intrinsic.bootstrap.resamples", "required");
     add("eval-report", "system-unknown-kind", ev((d) => (d["system"].kind = "mlp")), "schema", "system.kind");
-    add("eval-report", "unknown-weighting", ev((d) => (d["intrinsic"].weighting = "pixels")), "schema", "intrinsic.weighting");
+    add("eval-report", "unknown-weighting", ev((d) => (d["intrinsic"].weighting.unit = "pixels")), "schema", "intrinsic.weighting.unit");
     add("eval-report", "runtime-without-p95", ev((d) => delete d["intrinsic"].runtime.p95_ms), "schema", "intrinsic.runtime.p95_ms", "required");
+    add("eval-report", "aggregate-micro-counts", ev((d) => (d["intrinsic"].aggregates[0].micro.n += 1)), "invariant", "intrinsic.aggregates[0].micro", "tp+fp+tn+fn");
+    add("eval-report", "comparison-unknown-aggregation", ev((d) => (d["intrinsic"].comparison[0].aggregation = "median")), "schema", "intrinsic.comparison[0].aggregation");
+    add("eval-report", "baseline-coverage-over-one", ev((d) => (d["intrinsic"].baselines.readability.coverage = 1.2)), "schema", "intrinsic.baselines.readability.coverage");
     add("eval-report", "note-unknown-kind", ev((d) => (d["notes"][0].kind = "warning")), "schema", "notes[0].kind");
     add("eval-report", "evidence-retention-over-one", ev((d) => (d["downstream"].arms.pruned_model.evidence_retention.mean = 1.2), u.downstreamReport), "schema", "downstream.arms.pruned_model.evidence_retention.mean");
     add("eval-report", "evidence-retention-ci-inverted", ev((d) => (d["downstream"].arms.pruned_model.evidence_retention.ci95 = [1, 0.8]), u.downstreamReport), "invariant", "downstream.arms.pruned_model.evidence_retention.ci95");

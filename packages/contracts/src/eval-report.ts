@@ -3,7 +3,6 @@ import { NonNegInt, PosInt, Sha256, Unit01, contractObject, defineContract } fro
 import { SplitName } from "./dataset.js";
 import { Provenance, ProvenanceDef } from "./provenance.js";
 import {
-  Aggregate,
   EvalNames,
   EvalSystem,
   EvidenceRetention,
@@ -46,10 +45,22 @@ const Arm = Type.Object({
   evidence_retention: Type.Optional(EvidenceRetention),
 });
 
+/** C3: a named group of strata ('hard') with its micro and macro views. */
+const Aggregate = Type.Object({
+  name: Type.String({ minLength: 1 }),
+  strata: Type.Array(Type.String(), { minItems: 1 }),
+  micro: Type.Optional(Prf),
+  macro_page_f1: Type.Optional(Unit01),
+  macro_stratum_f1: Type.Optional(Unit01),
+  ci95: Type.Optional(Ci95),
+});
+
+export const AGGREGATIONS = ["micro", "macro_page", "macro_stratum"] as const;
 export const COMPARISON_METRICS = ["f1", "precision", "recall", "token_f1", "qa_accuracy"] as const;
 
 const Intrinsic = Type.Object({
   weighting: Type.Optional(Weighting),
+  bootstrap: Type.Optional(BootstrapBody),
   overall: Type.Intersect([
     Prf,
     Type.Object({
@@ -66,6 +77,7 @@ const Intrinsic = Type.Object({
   baselines: Type.Record(
     Type.String(),
     Type.Object({
+      coverage: Type.Optional(Unit01),
       overall: Prf,
       by_stratum: Type.Record(Type.String(), Type.Intersect([Prf, Type.Object({ n_groups: Type.Optional(NonNegInt) })])),
     }),
@@ -82,6 +94,9 @@ const Intrinsic = Type.Object({
       delta: Type.Number(),
       ci95: Ci95,
       n_groups: NonNegInt,
+      aggregation: Type.Optional(
+        Type.Union(AGGREGATIONS.map((a) => Type.Literal(a)), { description: "How the per-page / per-stratum values were combined into model / baseline_value." }),
+      ),
     }),
   ),
   by_tag: Type.Optional(
@@ -128,6 +143,7 @@ const Intrinsic = Type.Object({
 
 const Downstream = Type.Object({
   task_set_id: Sha256,
+  bootstrap: Type.Optional(BootstrapBody),
   llm: Type.Object({ model: Type.String(), prompt_sha256: Sha256 }),
   judge: Type.Object({
     kind: Type.Union([Type.Literal("llm"), Type.Literal("exact"), Type.Literal("human")]),
@@ -170,7 +186,6 @@ export const EvalReportContract = defineContract(
       gates: Type.Optional(Type.Array(Gate)),
       system: Type.Optional(EvalSystem),
       names: Type.Optional(EvalNames),
-      bootstrap: Type.Optional(BootstrapBody),
       notes: Type.Optional(Type.Array(NoteBody)),
       provenance: Provenance,
     },

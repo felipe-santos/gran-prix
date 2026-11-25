@@ -19,8 +19,12 @@ export type EvalSystem = Static<typeof EvalSystem>;
 
 export const EvalNames = Type.Object({ model: Type.Optional(Type.String()), dataset: Type.Optional(Type.String()) });
 
-/** Which unit `n`, `tp`, `fp`, `tn`, `fn` count (C1). v1.0 left it implicit. */
-export const Weighting = Type.Union([Type.Literal("chars"), Type.Literal("elements"), Type.Literal("tokens")]);
+/** What `n`, `tp`, `fp`, `tn`, `fn` count (C1). v1.0 left it implicit. */
+export const Weighting = Type.Object({
+  unit: Type.Union([Type.Literal("chars"), Type.Literal("elements"), Type.Literal("tokens")], { description: "What one count is." }),
+  positive_class: Type.Optional(Type.String({ description: "What 'positive' means, e.g. 'keep (main + support)' or 'main'." })),
+  weight_source: Type.Optional(Type.String({ description: "Where the weights come from, e.g. 'dataset-row.w (own-text chars)'." })),
+});
 
 export const PrPoint = Type.Object({ threshold: Unit01, precision: Unit01, recall: Unit01 });
 export const PrCurve = Type.Object({
@@ -73,15 +77,6 @@ export const RuntimeBlock = Type.Object({
   repetitions: Type.Optional(PosInt),
   environment: Type.Optional(Type.String({ description: "e.g. 'chromium-headless 130, 4x CPU throttle'." })),
   page_elements: Type.Optional(Type.Tuple([NonNegInt, NonNegInt], { description: "[min, max] elements of the measured pages." })),
-});
-
-/** C3: a named group of strata ('hard') with its micro and macro views. */
-export const Aggregate = Type.Object({
-  name: Type.String({ minLength: 1 }),
-  strata: Type.Array(Type.String(), { minItems: 1 }),
-  macro_page_f1: Type.Optional(Unit01),
-  macro_stratum_f1: Type.Optional(Unit01),
-  ci95: Type.Optional(Ci95),
 });
 
 /** QA: share of questions whose evidence survives in an arm's output (M6). */

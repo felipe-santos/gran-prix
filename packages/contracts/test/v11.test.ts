@@ -104,6 +104,32 @@ describe("StageKind demo and the tool hash of the stage cache key", () => {
   });
 });
 
+describe("inputs of the evaluate lane", () => {
+  it("evaluate registry entry: seeded, optional many `baselines` port, extra `extras` and `details` outputs", () => {
+    const k = u.stageKinds.find((x) => x.kind === "evaluate");
+    expect(k?.determinism).toBe("seeded");
+    expect(k?.inputs.find((p) => p.name === "baselines")).toEqual({ name: "baselines", type: "Bundle", many: true, optional: true });
+    expect(k?.outputs.map((p) => p.name)).toEqual(["report", "extras", "details"]);
+    expect(k?.params_schema).toMatchObject({ required: ["seed"] });
+  });
+
+  it("embedded provenance may be a placeholder (the runner receipt is authoritative) and stays outside report_id", () => {
+    const r = u.downstreamReport;
+    expect(r.provenance.placeholder).toBe(true);
+    const swapped = { ...r, provenance: { ...r.provenance, placeholder: undefined, produced_by: { ...r.provenance.produced_by, run_id: "run-77" } } };
+    expect(contractId("eval-report", swapped as never)).toBe(r.report_id);
+  });
+
+  it("weighting, bootstrap and baseline coverage live under intrinsic; comparison and gates carry the aggregation", () => {
+    const i = u.evalReport.intrinsic!;
+    expect(i.weighting).toMatchObject({ unit: "chars", positive_class: expect.any(String), weight_source: expect.any(String) });
+    expect(i.bootstrap?.cluster_by).toBe("group_key");
+    expect(i.baselines["readability"]?.coverage).toBe(0.97);
+    expect(i.comparison[0]?.aggregation).toBe("macro_page");
+    expect(u.evalReport.gates?.[0]).toMatchObject({ metric: "f1", baseline: "readability", aggregation: "macro_page" });
+  });
+});
+
 describe("structured gates", () => {
   const cases: Array<[Comparator, number, number, boolean]> = [
     [">=", 2, 2, true], [">=", 1.99, 2, false], [">", 2, 2, false], [">", 2.01, 2, true],

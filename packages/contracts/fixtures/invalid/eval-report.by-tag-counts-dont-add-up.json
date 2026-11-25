@@ -1,7 +1,7 @@
 {
   "format": "gran-prix.eval-report",
   "format_version": "1.1.0",
-  "report_id": "sha256:bbcf9fee70f14ab63407ade16c7d58df87bf12a6de9418d4bda31b4433c7dba5",
+  "report_id": "sha256:6cc0468951ffb6a21366c4edd14ddbcd91e53346080151977e3ea63cf8140efc",
   "mode": "intrinsic",
   "model_id": "sha256:0f9d02f522026bc2243030c833f8a8f218b3eb0fbc2a74bf53bff4087d69cec6",
   "dataset_id": "sha256:62727e07e55ccdd7005e466f0d2c6f6bef1d2f9e7a2d0ff42add0a7cf5096653",
@@ -17,15 +17,19 @@
     "model": "gp-mlp-fixture (synthetic)",
     "dataset": "fixture dataset (synthetic)"
   },
-  "bootstrap": {
-    "resamples": 10000,
-    "seed": 20261125,
-    "cluster_by": "group_key",
-    "method": "percentile",
-    "stratified": true
-  },
   "intrinsic": {
-    "weighting": "chars",
+    "bootstrap": {
+      "resamples": 10000,
+      "seed": 20261125,
+      "cluster_by": "group_key",
+      "method": "percentile",
+      "stratified": true
+    },
+    "weighting": {
+      "unit": "chars",
+      "positive_class": "keep (main + support)",
+      "weight_source": "dataset-row.w (own-text chars)"
+    },
     "overall": {
       "n": 20,
       "tp": 8,
@@ -108,6 +112,7 @@
     },
     "baselines": {
       "readability": {
+        "coverage": 0.97,
         "overall": {
           "n": 20,
           "tp": 7,
@@ -153,6 +158,17 @@
         "strata": [
           "docs"
         ],
+        "micro": {
+          "n": 9,
+          "tp": 3,
+          "fp": 1,
+          "tn": 4,
+          "fn": 1,
+          "precision": 0.75,
+          "recall": 0.75,
+          "f1": 0.75,
+          "accuracy": 0.7777777777777778
+        },
         "macro_page_f1": 0.72,
         "macro_stratum_f1": 0.75,
         "ci95": [
@@ -173,7 +189,8 @@
           0.08181818181818187,
           0.28181818181818186
         ],
-        "n_groups": 3
+        "n_groups": 3,
+        "aggregation": "macro_page"
       },
       {
         "stratum": "article",
@@ -411,7 +428,10 @@
         0.08181818181818187,
         0.28181818181818186
       ],
-      "use_ci_lower": true
+      "use_ci_lower": true,
+      "metric": "f1",
+      "baseline": "readability",
+      "aggregation": "macro_page"
     },
     {
       "id": "g4_token_reduction_d2",

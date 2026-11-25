@@ -112,6 +112,7 @@
       "kind": "evaluate",
       "impl": "ts:evaluate.intrinsic@1.0.0",
       "params": {
+        "seed": "${vars.seed}",
         "split": "test",
         "baselines": [
           "readability"

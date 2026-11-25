@@ -60,6 +60,21 @@
           "type": "number"
         },
         "ci95": { "$ref": "#/$defs/Ci95" },
+        "metric": {
+          "description": "What `value` measures: f1, recall, token_f1, qa_accuracy, kappa, token_reduction_d2, p95_ms, ...",
+          "type": "string"
+        },
+        "baseline": {
+          "description": "Baseline the gate compares against, when it is a difference.",
+          "type": "string"
+        },
+        "aggregation": {
+          "anyOf": [
+            { "const": "micro", "type": "string" },
+            { "const": "macro_page", "type": "string" },
+            { "const": "macro_stratum", "type": "string" }
+          ]
+        },
         "use_ci_lower": {
           "description": "true: the gate is decided on the CI bound facing the threshold (ci95[0] for >= and >, ci95[1] for <= and <), and `value` equals that bound.",
           "type": "boolean"
@@ -139,7 +154,11 @@
         },
         "created_at": { "$ref": "#/$defs/Iso8601" },
         "host": { "type": "string" },
-        "duration_ms": { "minimum": 0, "type": "integer" }
+        "duration_ms": { "minimum": 0, "type": "integer" },
+        "placeholder": {
+          "description": "v1.1: true = this embedded provenance is a deterministic stand-in (e.g. run_id 'deterministic', zeroed pipeline_spec_id) written by a stage that cannot know its run; the authoritative provenance is the runner receipt of the artifact id. Provenance is outside every content id, so the swap never changes an id.",
+          "type": "boolean"
+        }
       }
     },
     "SemVer": {
@@ -201,11 +220,46 @@
       "required": ["overall", "by_stratum", "by_label_source", "baselines", "comparison", "per_group"],
       "properties": {
         "weighting": {
-          "anyOf": [
-            { "const": "chars", "type": "string" },
-            { "const": "elements", "type": "string" },
-            { "const": "tokens", "type": "string" }
-          ]
+          "type": "object",
+          "required": ["unit"],
+          "properties": {
+            "unit": {
+              "description": "What one count is.",
+              "anyOf": [
+                { "const": "chars", "type": "string" },
+                { "const": "elements", "type": "string" },
+                { "const": "tokens", "type": "string" }
+              ]
+            },
+            "positive_class": {
+              "description": "What 'positive' means, e.g. 'keep (main + support)' or 'main'.",
+              "type": "string"
+            },
+            "weight_source": {
+              "description": "Where the weights come from, e.g. 'dataset-row.w (own-text chars)'.",
+              "type": "string"
+            }
+          }
+        },
+        "bootstrap": {
+          "type": "object",
+          "required": ["resamples", "seed", "cluster_by", "method", "stratified"],
+          "properties": {
+            "resamples": { "minimum": 1, "type": "integer" },
+            "seed": { "minimum": 0, "type": "integer" },
+            "cluster_by": {
+              "description": "What is resampled: group_key (registrable domain, default of the protocol) or group_id (a page).",
+              "anyOf": [
+                { "const": "group_key", "type": "string" },
+                { "const": "group_id", "type": "string" }
+              ]
+            },
+            "method": { "const": "percentile", "type": "string" },
+            "stratified": {
+              "description": "true: resampling is done inside each stratum.",
+              "type": "boolean"
+            }
+          }
         },
         "overall": {
           "allOf": [
@@ -253,6 +307,7 @@
               "type": "object",
               "required": ["overall", "by_stratum"],
               "properties": {
+                "coverage": { "minimum": 0, "maximum": 1, "type": "number" },
                 "overall": { "$ref": "#/$defs/Prf" },
                 "by_stratum": {
                   "type": "object",
@@ -296,7 +351,15 @@
               "baseline_value": { "type": "number" },
               "delta": { "type": "number" },
               "ci95": { "$ref": "#/$defs/Ci95" },
-              "n_groups": { "minimum": 0, "type": "integer" }
+              "n_groups": { "minimum": 0, "type": "integer" },
+              "aggregation": {
+                "description": "How the per-page / per-stratum values were combined into model / baseline_value.",
+                "anyOf": [
+                  { "const": "micro", "type": "string" },
+                  { "const": "macro_page", "type": "string" },
+                  { "const": "macro_stratum", "type": "string" }
+                ]
+              }
             }
           }
         },
@@ -330,6 +393,7 @@
                 "type": "array",
                 "items": { "type": "string" }
               },
+              "micro": { "$ref": "#/$defs/Prf" },
               "macro_page_f1": { "minimum": 0, "maximum": 1, "type": "number" },
               "macro_stratum_f1": { "minimum": 0, "maximum": 1, "type": "number" },
               "ci95": { "$ref": "#/$defs/Ci95" }
@@ -611,6 +675,26 @@
       "required": ["task_set_id", "llm", "judge", "arms", "paired_deltas"],
       "properties": {
         "task_set_id": { "$ref": "#/$defs/Sha256" },
+        "bootstrap": {
+          "type": "object",
+          "required": ["resamples", "seed", "cluster_by", "method", "stratified"],
+          "properties": {
+            "resamples": { "minimum": 1, "type": "integer" },
+            "seed": { "minimum": 0, "type": "integer" },
+            "cluster_by": {
+              "description": "What is resampled: group_key (registrable domain, default of the protocol) or group_id (a page).",
+              "anyOf": [
+                { "const": "group_key", "type": "string" },
+                { "const": "group_id", "type": "string" }
+              ]
+            },
+            "method": { "const": "percentile", "type": "string" },
+            "stratified": {
+              "description": "true: resampling is done inside each stratum.",
+              "type": "boolean"
+            }
+          }
+        },
         "llm": {
           "type": "object",
           "required": ["model", "prompt_sha256"],
@@ -719,26 +803,6 @@
       "properties": {
         "model": { "type": "string" },
         "dataset": { "type": "string" }
-      }
-    },
-    "bootstrap": {
-      "type": "object",
-      "required": ["resamples", "seed", "cluster_by", "method", "stratified"],
-      "properties": {
-        "resamples": { "minimum": 1, "type": "integer" },
-        "seed": { "minimum": 0, "type": "integer" },
-        "cluster_by": {
-          "description": "What is resampled: group_key (registrable domain, default of the protocol) or group_id (a page).",
-          "anyOf": [
-            { "const": "group_key", "type": "string" },
-            { "const": "group_id", "type": "string" }
-          ]
-        },
-        "method": { "const": "percentile", "type": "string" },
-        "stratified": {
-          "description": "true: resampling is done inside each stratum.",
-          "type": "boolean"
-        }
       }
     },
     "notes": {

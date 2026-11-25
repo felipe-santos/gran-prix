@@ -84,6 +84,7 @@ export function evalReportInvariants(r: EvalReport): Issues {
 /** Rules for the optional v1.1 blocks of `intrinsic`. Every rule applies to a field v1.0 did not have. */
 function intrinsicV11(r: EvalReport, i: Intrinsic, out: Issues, prf: (p: Counts, at: string) => void): void {
   for (const [k, v] of Object.entries(i.by_tag ?? {})) prf(v, `intrinsic.by_tag.${k}`);
+  (i.aggregates ?? []).forEach((a, j) => a.micro && prf(a.micro, `intrinsic.aggregates[${j}].micro`));
 
   const aggNames = (i.aggregates ?? []).map((a) => a.name);
   (i.aggregates ?? []).forEach((a, j) => {

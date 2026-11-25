@@ -33,6 +33,9 @@ export const GateBody = Type.Object({
   stratum: Type.Optional(Type.String({ description: "Stratum or aggregate name the gate is evaluated on (e.g. 'hard'); absent = overall." })),
   observed: Type.Optional(Type.Number({ description: "Point estimate in `unit` (the number the reader sees)." })),
   ci95: Type.Optional(Ci95),
+  metric: Type.Optional(Type.String({ description: "What `value` measures: f1, recall, token_f1, qa_accuracy, kappa, token_reduction_d2, p95_ms, ..." })),
+  baseline: Type.Optional(Type.String({ description: "Baseline the gate compares against, when it is a difference." })),
+  aggregation: Type.Optional(Type.Union([Type.Literal("micro"), Type.Literal("macro_page"), Type.Literal("macro_stratum")])),
   use_ci_lower: Type.Optional(
     Type.Boolean({
       description: "true: the gate is decided on the CI bound facing the threshold (ci95[0] for >= and >, ci95[1] for <= and <), and `value` equals that bound.",

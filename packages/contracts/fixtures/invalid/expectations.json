@@ -505,12 +505,12 @@
   "eval-report.bootstrap-unknown-cluster.json": {
     "contract": "eval-report",
     "code": "schema",
-    "path": "bootstrap.cluster_by"
+    "path": "intrinsic.bootstrap.cluster_by"
   },
   "eval-report.bootstrap-without-resamples.json": {
     "contract": "eval-report",
     "code": "schema",
-    "path": "bootstrap.resamples",
+    "path": "intrinsic.bootstrap.resamples",
     "message": "required"
   },
   "eval-report.system-unknown-kind.json": {
@@ -521,13 +521,29 @@
   "eval-report.unknown-weighting.json": {
     "contract": "eval-report",
     "code": "schema",
-    "path": "intrinsic.weighting"
+    "path": "intrinsic.weighting.unit"
   },
   "eval-report.runtime-without-p95.json": {
     "contract": "eval-report",
     "code": "schema",
     "path": "intrinsic.runtime.p95_ms",
     "message": "required"
+  },
+  "eval-report.aggregate-micro-counts.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.aggregates[0].micro",
+    "message": "tp+fp+tn+fn"
+  },
+  "eval-report.comparison-unknown-aggregation.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.comparison[0].aggregation"
+  },
+  "eval-report.baseline-coverage-over-one.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.baselines.readability.coverage"
   },
   "eval-report.note-unknown-kind.json": {
     "contract": "eval-report",

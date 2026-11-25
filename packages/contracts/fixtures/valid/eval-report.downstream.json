@@ -1,7 +1,7 @@
 {
   "format": "gran-prix.eval-report",
   "format_version": "1.1.0",
-  "report_id": "sha256:c25653d43c7a88bb57947c69f2eb1be3497734942750d2c73cb1cbadba385fa9",
+  "report_id": "sha256:7e638bb6a736366b0bdf738f4350f6fa08a94864bb88853610ee55c9e13d7293",
   "mode": "downstream",
   "model_id": "sha256:0f9d02f522026bc2243030c833f8a8f218b3eb0fbc2a74bf53bff4087d69cec6",
   "dataset_id": "sha256:62727e07e55ccdd7005e466f0d2c6f6bef1d2f9e7a2d0ff42add0a7cf5096653",
@@ -13,14 +13,14 @@
     "name": "gp-mlp-fixture",
     "version": "0.1.0"
   },
-  "bootstrap": {
-    "resamples": 10000,
-    "seed": 20261125,
-    "cluster_by": "group_key",
-    "method": "percentile",
-    "stratified": false
-  },
   "downstream": {
+    "bootstrap": {
+      "resamples": 10000,
+      "seed": 20261125,
+      "cluster_by": "group_key",
+      "method": "percentile",
+      "stratified": false
+    },
     "task_set_id": "sha256:aa600ec47ff28bb2e012b54ddfddcec7cc52f0a0193a8e73fe43ee6d711520da",
     "llm": {
       "model": "respondent-r1",
@@ -132,7 +132,7 @@
   ],
   "provenance": {
     "produced_by": {
-      "run_id": "run-0001",
+      "run_id": "deterministic",
       "stage_id": "qa",
       "kind": "evaluate",
       "impl": "ts:evaluate.downstream@1.0.0",
@@ -145,13 +145,14 @@
         "artifact_id": "sha256:73012280d08122f0b49688994ac67c1dd284287c5c952dde88c9f38506d629c8"
       }
     ],
-    "pipeline_spec_id": "sha256:ae450a2ee9a8d118d5a2137fa52fd78536551e81d8a6107ac05862b079195843",
+    "pipeline_spec_id": "sha256:bbe727a704addc13f08f1eeae05db40ad4aecfc6fdeee27666c3e7bc469e157d",
     "tool_versions": {
       "gp_cli": "0.1.0",
       "node": "v24.13.1",
       "wasm_sha256": "sha256:50ac2f3c4e70c05dc50b06ba827c46cf3ee513432661ba323c468ffcf4d5e94b"
     },
     "created_at": "2026-11-25T12:00:00Z",
-    "duration_ms": 1234
+    "duration_ms": 1234,
+    "placeholder": true
   }
 }

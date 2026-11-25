@@ -158,22 +158,23 @@ export function buildEvalReport(model: ModelPackage, datasetId: Sha256): EvalRep
     threshold: 0.5,
     system: { kind: "model", family: "mlp", name: "gp-mlp-fixture", version: "0.1.0" },
     names: { model: "gp-mlp-fixture (synthetic)", dataset: "fixture dataset (synthetic)" },
-    bootstrap: { resamples: 10000, seed: 20261125, cluster_by: "group_key", method: "percentile", stratified: true },
     intrinsic: {
-      weighting: "chars",
+      bootstrap: { resamples: 10000, seed: 20261125, cluster_by: "group_key", method: "percentile", stratified: true },
+      weighting: { unit: "chars", positive_class: "keep (main + support)", weight_source: "dataset-row.w (own-text chars)" },
       overall: { ...overall, auc_roc: 0.93, pr_auc: 0.9, logloss: 0.31, brier: 0.09 },
       by_stratum: { article: { ...article, n_groups: 3 }, docs: { ...docs, n_groups: 2 } },
       by_label_source: { human: prf(8, 2, 9, 1) },
       by_tag: { "lang:en": { ...prf(5, 1, 5, 0), n_groups: 3 }, logged_in: { ...prf(3, 1, 4, 1), n_groups: 2 } },
       baselines: {
         readability: {
+          coverage: 0.97,
           overall: readability,
           by_stratum: { article: { ...baseArticle, n_groups: 3 }, docs: { ...baseDocs, n_groups: 2 } },
         },
       },
-      aggregates: [{ name: "hard", strata: ["docs"], macro_page_f1: 0.72, macro_stratum_f1: 0.75, ci95: [0.55, 0.88] }],
+      aggregates: [{ name: "hard", strata: ["docs"], micro: prf(3, 1, 4, 1), macro_page_f1: 0.72, macro_stratum_f1: 0.75, ci95: [0.55, 0.88] }],
       comparison: [
-        { stratum: "article", metric: "f1", model: article.f1, baseline: "readability", baseline_value: baseArticle.f1, delta, ci95: ciDelta, n_groups: 3 },
+        { stratum: "article", metric: "f1", model: article.f1, baseline: "readability", baseline_value: baseArticle.f1, delta, ci95: ciDelta, n_groups: 3, aggregation: "macro_page" },
         { stratum: "article", metric: "recall", model: article.recall, baseline: "readability", baseline_value: baseArticle.recall, delta: article.recall - baseArticle.recall, ci95: [0.0, 0.4], n_groups: 3 },
         { stratum: "hard", metric: "token_f1", model: hardF1, baseline: "readability", baseline_value: hardBase, delta: hardF1 - hardBase, ci95: [-0.05, 0.25], n_groups: 2 },
       ],
@@ -237,7 +238,7 @@ export function buildEvalReport(model: ModelPackage, datasetId: Sha256): EvalRep
     gates: [
       {
         id: "g1a_f1_article", name: "G1a F1 gain over the best baseline", rule: "F1(model) - F1(readability) > 0 on article, decided on the CI lower bound",
-        value: ciDelta[0], passed: ciDelta[0] > 0, comparator: ">", threshold: 0, unit: "f1", stratum: "article", observed: delta, ci95: ciDelta, use_ci_lower: true,
+        value: ciDelta[0], passed: ciDelta[0] > 0, comparator: ">", threshold: 0, unit: "f1", stratum: "article", observed: delta, ci95: ciDelta, use_ci_lower: true, metric: "f1", baseline: "readability", aggregation: "macro_page",
       },
       {
         id: "g4_token_reduction_d2", name: "G4 token reduction vs full-page markdown", rule: "median per-page tok(D2)/tok(output) >= 2x",
@@ -270,8 +271,8 @@ export function buildDownstreamReport(model: ModelPackage, datasetId: Sha256, ta
     split: "test",
     threshold: 0.5,
     system: { kind: "model", family: "mlp", name: "gp-mlp-fixture", version: "0.1.0" },
-    bootstrap: { resamples: 10000, seed: 20261125, cluster_by: "group_key", method: "percentile", stratified: false },
     downstream: {
+      bootstrap: { resamples: 10000, seed: 20261125, cluster_by: "group_key", method: "percentile", stratified: false },
       task_set_id: taskSetId,
       llm: { model: "respondent-r1", prompt_sha256: sha("qa-prompt") },
       judge: { kind: "llm", model: "judge-mid", rubric_sha256: sha("rubric"), human_agreement: 0.93 },
@@ -292,7 +293,12 @@ export function buildDownstreamReport(model: ModelPackage, datasetId: Sha256, ta
       },
       { id: "g3_evidence_retention", name: "G3 evidence retention", rule: "retention >= 95%", value: 0.96, passed: true, comparator: ">=", threshold: 0.95, unit: "ratio", observed: 0.96 },
     ],
-    provenance: buildProvenance("qa", "evaluate", "ts:evaluate.downstream@1.0.0"),
+    // A stage inside a pipeline cannot know its run: the embedded provenance is a deterministic stand-in and the
+    // runner receipt (keyed by report_id) is authoritative.
+    provenance: (() => {
+      const p = buildProvenance("qa", "evaluate", "ts:evaluate.downstream@1.0.0");
+      return { ...p, produced_by: { ...p.produced_by, run_id: "deterministic" }, pipeline_spec_id: sha("zero"), placeholder: true };
+    })(),
   };
   return { ...doc, report_id: contractId("eval-report", doc) };
 }

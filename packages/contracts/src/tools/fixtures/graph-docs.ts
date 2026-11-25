@@ -85,9 +85,13 @@ export function buildStageKinds(): StageKindSpec[] {
     }),
     kind({
       kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0",
-      inputs: [port("model", "ModelPackage"), port("dataset", "Dataset")], outputs: [port("report", "EvalReport")],
-      params_schema: { type: "object", properties: { split: { enum: ["train", "val", "test", "all"] }, baselines: { type: "array", items: { type: "string" } } } },
-      runtime: "node+wasm", determinism: "pure",
+      inputs: [port("model", "ModelPackage"), port("dataset", "Dataset"), port("baselines", "Bundle", { many: true, optional: true })],
+      outputs: [port("report", "EvalReport"), port("extras", "Bundle"), port("details", "Bundle")],
+      params_schema: {
+        type: "object", required: ["seed"],
+        properties: { seed: { type: "integer", minimum: 0 }, split: { enum: ["train", "val", "test", "all"] }, baselines: { type: "array", items: { type: "string" } } },
+      },
+      runtime: "node+wasm", determinism: "seeded",
       gates: [{ id: "f1_vs_baseline", description: "Macro F1 delta against the baseline is >= 0." }],
     }),
   ];
@@ -118,7 +122,7 @@ export function buildPipeline(): PipelineSpec {
       },
       { id: "train", kind: "train", impl: "ts:train.wasm-trainer@1.0.0", params: { seed: "${vars.seed}", epochs: 30 }, inputs: { dataset: out("dataset", "dataset") } },
       {
-        id: "eval", kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0", params: { split: "test", baselines: ["readability"] },
+        id: "eval", kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0", params: { seed: "${vars.seed}", split: "test", baselines: ["readability"] },
         inputs: { model: out("train", "model"), dataset: out("dataset", "dataset") }, gate: true,
       },
     ],

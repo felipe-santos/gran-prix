@@ -70,8 +70,12 @@ Normative details not visible in the schemas (those marked v1.1 are normative fr
   at the parent / previous / next non-prefiltered sibling; `default` when there is none.
 * (v1.1) **Gates.** `value <comparator> threshold` is the passing condition; with `use_ci_lower`, `value` is the CI bound facing the threshold
   (`ci95[0]` for `>=` / `>`, `ci95[1]` for `<=` / `<`). The validator recomputes `passed`. v1.0 gates (`id`, `rule`, `value`, `passed`) stay valid.
+* (v1.1) **Embedded provenance.** A stage inside a pipeline cannot know its run, so an embedded `provenance` may be a deterministic stand-in
+  (`placeholder: true`, e.g. `run_id: "deterministic"`); the runner receipt keyed by the artifact id is authoritative. Provenance is outside
+  every content id, so replacing the placeholder never changes an id. `provenance` stays required (making it optional would break v1.0 readers).
 * (v1.1) **Weights.** `Dataset.row_weight = "own_text_chars"` means every row carries `w`, the unit's own-text length in Unicode code points
-  (NFC, whitespace collapsed): the weight of the char-weighted metrics. `EvalReport.intrinsic.weighting` says what `n / tp / fp / tn / fn` count.
+  (NFC, whitespace collapsed): the weight of the char-weighted metrics. `EvalReport.intrinsic.weighting` = `{ unit, positive_class?, weight_source? }` says what `n / tp / fp / tn / fn` count; `intrinsic.bootstrap`
+  (resamples, seed, cluster_by, method, stratified) is the resampling behind every CI; `comparison[].aggregation` / `gates[].aggregation` say micro vs macro_page vs macro_stratum.
 * Floats in JSON artifacts are float32 values (`Math.fround`) printed with their exact double expansion; readers must not re-interpret them.
 
 ## Validation
