@@ -3,8 +3,10 @@
 Runs a `PipelineSpec` (ADR-004: pipeline as code) incrementally over a **content-addressed artifact
 store**, with a receipt per stage, lineage, and a hard-capped spending ledger. This is the runner
 core (E1.7) plus the real stages: `collect` and `extract` (E1.5), `train` (gp-train) and `package`
-(deployable bundle), and `evaluate`, all documented below. Demo stages (`ts:demo.*`) exercise the runner;
-label and dataset plug into the same interface.
+(deployable bundle), `evaluate`, and the label and dataset stages (`label.truth`, `label.heuristic`, `label.merge`,
+`dataset.jsonl`; they read the SnapshotSet and NodeFeaturesSet through the same readers collect and extract write with,
+shared from `@gran-prix/labels`). Demo stages (`ts:demo.*`) exercise the runner. The whole chain runs as
+`pipelines/dom-v0.json`; see "How to run the E1 gate".
 
 ```
 gp run <pipeline.json> [--from <stage>] [--to <stage>] [--force] [--data-dir data]
@@ -63,8 +65,18 @@ exit status is 1. Failures are never cached.
   params hash, cache key, input ids, pipeline spec id, tool versions). Outside every id.
 
 Writes are atomic and idempotent, so ids and bytes are stable across runs, data dirs and `--force`.
-`gp lineage` walks the sidecars up to the external inputs. Externals (`externals[].path`) are loaded
-into the store (`.json` as JSON artifacts, anything else as a one-file set) and enter cache keys by id.
+`gp lineage` walks the sidecars up to the external inputs. Externals (`externals[].path`, relative to
+`--root`, which is also `StageContext.root`) are loaded into the store and enter cache keys by id:
+
+* a `.json` file is a JSON artifact;
+* any other file is a one-file set;
+* **a directory is a file-set artifact of every file below it** (relative paths, sorted, links not
+  followed, an empty directory is an error). This is how a real `gp run` starts from an existing
+  `Dataset`, `ModelPackage` or `Bundle`: `{ "type": "ModelPackage", "path": "runs/m1/model" }`. `"id"` pins it.
+
+Why directory externals and not a `gp import <type> <dir>` command: the pipeline file stays the single
+description of a run (what it reads, by which id), the same code path serves files and directories, and there
+is no second step to forget; an import command would only have to write the same artifact into the store.
 
 ## Ledger and budget
 
@@ -166,7 +178,7 @@ gp report data/artifacts/sha256-<report>/content.json -o report.html     # --ext
 UrlList --collect--> SnapshotSet --extract--> NodeFeaturesSet          FeatureSchema --^
 ```
 
-Run from the repo root (relative paths resolve against the working directory):
+Run from the repo root, or pass `--root <repo>` from anywhere (relative paths of the UrlList and of the externals resolve against the run root):
 
 ```
 pnpm --filter "@gran-prix/cli..." build        # also builds @gran-prix/features (the in-page bundle)
@@ -184,7 +196,7 @@ captured sequentially: load, best-effort networkidle (capped), DOM-quiet settle,
 | `settle` | `{quiet_ms: 600, max_ms: 8000, network_idle_cap_ms: 3000}` | settle caps |
 | `max_nodes` | none | pages with more elements go to `manifest.failures` (`max_nodes`) |
 | `nav_timeout_ms` | 30000 | navigation timeout |
-| `base_dir` | working directory | base of relative file paths in the UrlList (`StageContext` has no run root yet, so `gp run --root` does not move it) |
+| `base_dir` | `ctx.root` | base of relative file paths in the UrlList; optional, a relative value is resolved against the run root (`gp run --root`, else the working directory) |
 | `captured_at` | the clock | pin `capture.captured_at` so a re-collect of an unchanged page gives the same SnapshotSet id |
 | `private_suffixes` | true | `alice.github.io` is its own group (false: `github.io`) |
 | `fail_on_error` | false | any page that cannot be snapshotted fails the stage |
@@ -237,8 +249,7 @@ against the contract. `NodeFeaturesSet` is a file-set artifact: `manifest.json` 
 }
 ```
 
-A `.json` external is stored as a JSON artifact (`--root` moves the base of `path`); pin it with `"id"` if the pipeline must refuse any other
-schema. See `tools/cli/test/pipelines/mini-collect-extract.pipeline.json`.
+A `.json` external is stored as a JSON artifact; pin it with `"id"` if the pipeline must refuse any other schema. See `tools/cli/test/pipelines/mini-collect-extract.pipeline.json`.
 ## Engine stages (L1)
 
 | impl | ports | notes |
@@ -266,8 +277,48 @@ stage fails if golden.json is not reproduced; the same file ships in the bundle:
 `cd <bundle> && node selftest.mjs`. The generator's output for a fixed tiny network is part of the
 cache key, so a new `infer-ts` re-packages.
 
-The runner only loads single files as externals, so a Dataset must come from a stage;
-`test/stages-engine.test.ts` shows a three-stage pipeline over the contracts' dataset fixture.
+A `Dataset` or `ModelPackage` can come from a stage or from an existing directory (a directory external, see "Artifact store");
+`test/stages-engine.test.ts` shows a three-stage pipeline over the contracts' dataset fixture and
+`test/externals-root.test.ts` starts a `package` stage from a model directory.
+
+## How to run the E1 gate
+
+The gate (`scripts/gate-e1.mjs`) proves that `gp run pipelines/dom-v0.json` is reproducible and that the model it
+produces has runtime parity. The pipeline runs the 12 synthetic pages of `fixtures/pages/` through
+`collect -> extract -> label.truth (human) + label.heuristic (Readability) -> label.merge -> dataset -> train
+(gp-train, a 16-8 MLP) -> package -> evaluate`; it is a pipeline test, not a quality claim.
+
+```
+node scripts/gate-e1.mjs            # ~1.5 min; builds what is missing or stale, then runs everything
+node scripts/gate-e1.mjs --no-build # only check; fails with the command to run when something is missing
+node scripts/gate-e1.mjs --keep     # keep the two data dirs (the path is printed)
+```
+
+Needs a Rust toolchain and wasm-pack (the WASM and `gp-train` builds), pnpm with `pnpm install` done, and a cached
+Chromium (`GP_CHROMIUM`, or `~/.cache/ms-playwright/chromium-*`). Set `CARGO_TARGET_DIR` to share a target dir; the
+trainer binary is copied once at the start so a concurrent `cargo build` cannot change it mid-gate. What it asserts:
+
+1. `gp validate pipelines/dom-v0.json`;
+2. `gp run` twice into two fresh data dirs, with run ids `gate-a` and `gate-b`: **every output artifact id and every
+   cache key of every stage is identical** (the table at the end prints them, `==` per line);
+3. a second run in the same data dir is a **100% cache hit**;
+   (the dataset must declare `row_weight: own_text_chars`: rows carry `w`, the characters of their own text, and evaluate
+   weighs by it exactly; the report must hold the Readability baseline, wired from `label_heuristic` to `label_baselines`);
+4. parity of the produced model: `gp model check` 9/9 with `--runtime ts` and with `--runtime wasm`; the self-test of
+   the package bundle (`node selftest.mjs`, the generated TypeScript runtime) passes; and the Rust runtime
+   (`gp-train eval --with-scores`, which loads the package and verifies digests and `model_id`) reproduces every case of
+   `golden.json` on the real dataset rows;
+5. `gp report` renders the evaluate output to HTML. The report is a post-step, not a stage: the pipeline has no `report`
+   kind, `gp report <evaluate.report> [--extras <evaluate.extras>]` is the command.
+
+It prints a PASS/FAIL table and exits 1 on FAIL (2 on a setup problem). `tools/cli/test/dom-v0.test.ts` checks the
+pipeline file and the contracts example against the real stages without running them.
+
+**The split.** With 12 pages and `group = file stem` every group is a single page, and a hash split of 12 groups can leave a
+split empty. The pipeline therefore fixes the split with `split.overrides`: train = the six `*-1` pages + `landing-2`
+(7), val = `article-2`, `docs-2` (2), test = `forum-2`, `product-2`, `spa-2` (3, three strata). Every page carries human
+truth, so the test split (human labels only, ADR-006) keeps all its rows. `split.seed` is still required: it is the salt
+of the hash bucket for any group without an override.
 
 ## Tests
 

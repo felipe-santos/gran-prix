@@ -22,12 +22,18 @@
   "params_schema": {
     "type": "object",
     "properties": {
+      "labeler": {
+        "enum": [
+          "readability"
+        ]
+      },
       "confidence": {
         "type": "number",
         "minimum": 0,
         "maximum": 1
       }
-    }
+    },
+    "additionalProperties": false
   },
   "runtime": "node",
   "determinism": "pure",

@@ -1,5 +1,5 @@
-import { LABEL_SOURCES, type FeatureSchema, type LabelSource, type NodeFeatures, type NodeLabels, type PageSnapshot, type SplitName, type SplitRanges } from "@gran-prix/contracts";
-import { buildDataset, indexBySnapshot, readSetDocs, type DatasetSource } from "@gran-prix/labels";
+import { LABEL_SOURCES, type FeatureSchema, type LabelSource, type NodeLabels, type PageSnapshot, type SplitName, type SplitRanges } from "@gran-prix/contracts";
+import { NodeFeaturesSetReader, SnapshotSetReader, buildDataset, indexBySnapshot, ownTextWeights, readSetDocs, type DatasetSource } from "@gran-prix/labels";
 import { defineStage, type StagePlugin } from "../stage.js";
 import type { ArtifactHandle } from "../store.js";
 
@@ -12,7 +12,8 @@ import type { ArtifactHandle } from "../store.js";
  * Split: `hash-bucket-v1` over `group_key` with `params.split.seed` as the salt; no PRNG, so adding
  * pages never moves an existing domain. The test split only takes `test_allowed_sources` (human by
  * default, ADR-006). Pages flagged at capture (http-error, error-page, captcha, paywall, tiny-dom) are
- * excluded by default and listed in `excluded_pages` of the manifest. Projection to binary: `keep_classes` (default main + support), written to the manifest.
+ * excluded by default and listed in `excluded_pages` of the manifest. Every row carries `w`, the characters of the unit's own
+ * text (`ownTextWeights`), and the manifest declares `row_weight: own_text_chars`, so evaluate weighs exactly. Projection to binary: `keep_classes` (default main + support), written to the manifest.
  */
 
 const SPLIT_NAMES = ["train", "val", "test"] as const satisfies readonly SplitName[];
@@ -78,27 +79,31 @@ export const datasetJsonl: StagePlugin = defineStage(
       group_by?: "group_key" | "group";
     };
     const schema = (ctx.inputs["schema"] as ArtifactHandle).json() as FeatureSchema;
-    const features = indexBySnapshot(readSetDocs<NodeFeatures>(ctx.inputs["features"] as ArtifactHandle, "gran-prix.node-features"), "NodeFeatures");
+    const featuresReader = new NodeFeaturesSetReader(ctx.inputs["features"] as ArtifactHandle);
+    const features = new Map(featuresReader.entries().map((e) => [e.snapshot_id, e]));
     const labels = indexBySnapshot(readSetDocs<NodeLabels>(ctx.inputs["labels"] as ArtifactHandle, "gran-prix.node-labels"), "NodeLabels");
     const snapsInput = ctx.inputs["snapshots"] as ArtifactHandle | undefined;
     if (!snapsInput) {
       throw new Error('dataset needs each page\'s group_key and category to split by domain: connect the "snapshots" input');
     }
-    const snapshots = indexBySnapshot(readSetDocs<PageSnapshot>(snapsInput, "gran-prix.page-snapshot"), "PageSnapshot");
+    const snapsReader = new SnapshotSetReader(snapsInput);
+    const snapshots = new Map(snapsReader.entries().map((e) => [e.snapshot_id, e]));
 
     const sources: DatasetSource[] = [];
     for (const [id, f] of features) {
       const l = labels.get(id);
-      const s = snapshots.get(id);
+      const se = snapshots.get(id);
       if (!l) {
         ctx.log(`snapshot ${id}: features without labels, left out of the dataset`);
         continue;
       }
-      if (!s) throw new Error(`features ${f.doc.features_id} refer to snapshot ${id}, which is not in the snapshot set`);
+      if (!se) throw new Error(`features ${f.features_id} refer to snapshot ${id}, which is not in the snapshot set`);
+      const s = snapsReader.snapshot(se);
       sources.push({
-        page: { snapshot_id: s.doc.snapshot_id, group_key: s.doc.page.group_key, category: s.doc.page.category, flags: captureFlags(s.doc) },
-        features: f.doc,
+        page: { snapshot_id: s.snapshot_id, group_key: s.page.group_key, category: s.page.category, flags: captureFlags(s) },
+        features: featuresReader.features(f),
         labels: l.doc,
+        weights: ownTextWeights(s),
       });
     }
     for (const id of labels.keys()) if (!features.has(id)) ctx.log(`snapshot ${id}: labels without features, left out of the dataset`);
