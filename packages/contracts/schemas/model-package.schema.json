@@ -4,7 +4,7 @@
   "x-gran-prix": {
     "contract": "model-package",
     "format": "gran-prix.model-package",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "$defs": {
     "Iso8601": {
@@ -51,6 +51,7 @@
             "git_dirty": { "type": "boolean" },
             "node": { "type": "string" },
             "wasm_sha256": { "$ref": "#/$defs/Sha256" },
+            "tool_sha256": { "$ref": "#/$defs/Sha256" },
             "extractor": {
               "type": "object",
               "required": ["name", "version", "bundle_sha256"],

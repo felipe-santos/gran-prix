@@ -4,7 +4,7 @@
   "x-gran-prix": {
     "contract": "page-snapshot",
     "format": "gran-prix.page-snapshot",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "$defs": {
     "FileRef": {
@@ -38,7 +38,7 @@
     }
   },
   "title": "page-snapshot",
-  "description": "Immutable record of a rendered page: flat pre-order node table + rendered HTML reference.",
+  "description": "Immutable record of a rendered page: composed-tree pre-order node table + text units + flattened HTML reference. v1.1 makes the id scheme, text units, disclosure flag and settle record part of the contract.",
   "type": "object",
   "required": ["format", "format_version", "snapshot_id", "page", "doc", "nodes", "html", "capture"],
   "properties": {
@@ -67,7 +67,16 @@
           "type": "string"
         },
         "title": { "type": "string" },
-        "lang": { "type": "string" }
+        "lang": { "type": "string" },
+        "og_type": {
+          "description": "v1.1: <meta property=og:type> of the light DOM, verbatim.",
+          "type": "string"
+        },
+        "jsonld_types": {
+          "description": "v1.1: distinct JSON-LD @type values (document order, capped by the probe).",
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
     "doc": {
@@ -81,7 +90,7 @@
       }
     },
     "nodes": {
-      "description": "Pre-order element table; nodes[i].idx === i.",
+      "description": "Composed-tree pre-order element table (see the module header); nodes[i].idx === i.",
       "type": "array",
       "items": {
         "type": "object",
@@ -100,14 +109,29 @@
             "type": "string"
           },
           "attrs": {
-            "description": "Whitelisted attributes only (whitelist is fixed per collector_version).",
+            "description": "Whitelisted attributes only (whitelist is fixed per probe version). Absent = missing or empty.",
             "type": "object",
             "properties": {
-              "id": { "type": "string" },
-              "class": { "type": "string" },
-              "role": { "type": "string" },
-              "href": { "type": "string" },
-              "type": { "type": "string" },
+              "id": {
+                "description": "id attribute, verbatim (probe cap: 128 UTF-16 units).",
+                "type": "string"
+              },
+              "class": {
+                "description": "class attribute, verbatim (probe cap 512).",
+                "type": "string"
+              },
+              "role": {
+                "description": "ARIA role attribute, verbatim (probe cap 64); NOT the implicit role.",
+                "type": "string"
+              },
+              "href": {
+                "description": "href attribute as written (not resolved against the base URL; probe cap 512).",
+                "type": "string"
+              },
+              "type": {
+                "description": "type attribute; for input/button/select/textarea the effective property, i.e. the implicit default ('text', 'submit', ...) when the attribute is absent (probe cap 32).",
+                "type": "string"
+              },
               "aria-label": { "type": "string" },
               "itemprop": { "type": "string" },
               "alt": { "type": "string" },
@@ -116,7 +140,7 @@
             }
           },
           "own_text": {
-            "description": "Direct text children, whitespace collapsed, truncated.",
+            "description": "Direct text children, whitespace collapsed, truncated to probe.own_text_cap UTF-16 units.",
             "type": "string"
           },
           "own_text_len": { "minimum": 0, "type": "integer" },
@@ -157,10 +181,47 @@
             "required": ["in_shadow", "iframe_depth"],
             "properties": {
               "in_shadow": { "type": "boolean" },
-              "iframe_depth": { "minimum": 0, "type": "integer" }
+              "iframe_depth": { "minimum": 0, "type": "integer" },
+              "disclosure": {
+                "description": "v1.1 (C12): the element sits inside a COLLAPSED disclosure (closed <details>, aria-expanded=false region, inactive role=tabpanel). Not rendered, but part of the labelable universe U. Absent = false.",
+                "type": "boolean"
+              }
             }
           }
         }
+      }
+    },
+    "text_units": {
+      "description": "v1.1: every non-blank light-DOM text node (script/style/noscript/template text excluded), interleaved in composed document order. Per owner, the child index strictly increases.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "owner", "t"],
+        "properties": {
+          "id": {
+            "pattern": "^n[0-9]+#t[0-9]+$",
+            "description": "e.g. n9#t2: the 3rd child node of element n9.",
+            "type": "string"
+          },
+          "owner": { "minimum": 0, "type": "integer" },
+          "t": {
+            "description": "Raw node value (not collapsed), well-formed UTF-16.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "required": ["id_scheme", "version", "own_text_cap"],
+      "properties": {
+        "id_scheme": {
+          "description": "Traversal and id format; see the header of this module.",
+          "const": "gp-composed-preorder/1",
+          "type": "string"
+        },
+        "version": { "$ref": "#/$defs/SemVer" },
+        "own_text_cap": { "minimum": 1, "type": "integer" }
       }
     },
     "html": { "$ref": "#/$defs/FileRef" },
@@ -184,7 +245,33 @@
         "wait_strategy": { "type": "string" },
         "scrolled_to_bottom": { "type": "boolean" },
         "truncated": { "type": "boolean" },
-        "auth": { "const": "none", "type": "string" }
+        "auth": { "const": "none", "type": "string" },
+        "settle": {
+          "type": "object",
+          "required": ["reason", "waited_ms", "mutations", "shadow_roots", "tracked_from_start"],
+          "properties": {
+            "reason": {
+              "anyOf": [
+                { "const": "quiet", "type": "string" },
+                { "const": "max", "type": "string" },
+                { "const": "skipped", "type": "string" }
+              ]
+            },
+            "waited_ms": { "minimum": 0, "type": "number" },
+            "mutations": { "minimum": 0, "type": "integer" },
+            "shadow_roots": { "minimum": 0, "type": "integer" },
+            "tracked_from_start": { "type": "boolean" },
+            "late_unstamped": { "minimum": 0, "type": "integer" }
+          }
+        },
+        "network": {
+          "description": "v1.1: outcome of the best-effort networkidle wait (idle = reached, timeout = capped, skipped = not attempted).",
+          "anyOf": [
+            { "const": "idle", "type": "string" },
+            { "const": "timeout", "type": "string" },
+            { "const": "skipped", "type": "string" }
+          ]
+        }
       }
     }
   }

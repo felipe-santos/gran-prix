@@ -4,7 +4,7 @@
   "x-gran-prix": {
     "contract": "feature-schema",
     "format": "gran-prix.feature-schema",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "$defs": {
     "SemVer": {
@@ -83,7 +83,11 @@
                 "required": ["op", "scale"],
                 "properties": {
                   "op": { "const": "log1p", "type": "string" },
-                  "scale": { "exclusiveMinimum": 0, "type": "number" }
+                  "scale": {
+                    "exclusiveMinimum": 0,
+                    "description": "log1p(x) / log1p(scale).",
+                    "type": "number"
+                  }
                 }
               },
               {
@@ -135,6 +139,21 @@
             "properties": {
               "fn": { "const": "fnv1a32", "type": "string" },
               "buckets": { "minimum": 1, "type": "integer" }
+            }
+          },
+          "context": {
+            "description": "v1.1: a context feature copies the FINISHED value (after transform and sanitize) of feature `source` at a related node: the parent, the previous or the next non-prefiltered sibling. Value = `default` when that node does not exist. `source` must be a non-context feature of the same schema.",
+            "type": "object",
+            "required": ["rel", "source"],
+            "properties": {
+              "rel": {
+                "anyOf": [
+                  { "const": "parent", "type": "string" },
+                  { "const": "prev", "type": "string" },
+                  { "const": "next", "type": "string" }
+                ]
+              },
+              "source": { "pattern": "^[a-z][a-z0-9_]*$", "type": "string" }
             }
           }
         }

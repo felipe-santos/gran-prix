@@ -27,25 +27,51 @@ pnpm fixtures:regen   # only when a contract changes: rewrites fixtures/ (review
 
 | Contract (`format`) | What it is |
 |---|---|
-| `page-snapshot` | Immutable record of a rendered page: pre-order element table (style, rect, text lengths) + `rendered.html.gz` ref. `capture` metadata is outside the id. DOM-specific. |
-| `feature-schema` | Hash-identified, immutable list of named features with stable indices, static transforms, ranges (= OOD clip bounds), prefilter rules. Fitted normalization is NOT here (it lives in the model). |
+| `page-snapshot` | Immutable record of a rendered page: composed-tree pre-order element table (style, rect, text lengths, attrs, `disclosure`), `text_units`, `probe` (id scheme), page `og_type` / `jsonld_types`, flattened `rendered.html.gz` ref. `capture` (incl. `settle`, `network`) is outside the id. DOM-specific. |
+| `feature-schema` | Hash-identified, immutable list of named features with stable indices, static transforms, optional `context` features (parent / prev / next), ranges (= OOD clip bounds), prefilter rules. Fitted normalization is NOT here (it lives in the model). |
 | `node-features` | Feature matrix of one snapshot under one schema; every value is a float32. DOM-specific. |
 | `node-labels` | Labels of one snapshot from one labeler or a `merge`: `label_source`, `confidence` (= P(label correct)), 3-class space (main / support / noise, ADR-006). `projectToBinary` collapses to keep/drop. |
-| `dataset-manifest` + `dataset-row` | `manifest.json` + `train/val/test.jsonl`. Split = hash bucket of `group_key` (domain, ADR-006), never a PRNG; overrides are recorded. A JSONL line is a `dataset-row`. |
+| `dataset-manifest` + `dataset-row` | `manifest.json` + `train/val/test.jsonl`. Split = hash bucket of `group_key` (domain, ADR-006), never a PRNG; overrides are recorded; groups carry `tags` (v1.1: `logged_in`, `lang:pt`, ...) and `stats.by_tag`. A JSONL line is a `dataset-row` (v1.1: optional `w` = own-text chars, the evaluation weight). |
 | `network-def` | The Rust core's `NetworkDef` JSON, mirrored strictly (`additionalProperties: false`, because serde ignores unknown fields silently). |
 | `train-config` | Recipe: mandatory `seed`, network (def or MLP template), loss, Adam lr, data policy, normalization, early stopping, threshold strategy, engine (`wasm-node` / `gp-train`). |
 | `model-package` | `model.json` of ADR-003: `feature_spec`, `output_spec` (activation, labels, calibration), `thresholds` (accept / escalate / margin), `digest`, `requires`, `metrics`, `provenance`. Sits beside `network_def.json`, `weights.f32le`, `golden.json`. |
 | `golden` | `golden.json`: input / raw / score triples, tolerance, bound to the weights hash. Parity tests for TS, WASM and Rust. |
-| `eval-report` | Per-stratum P/R/F1, baselines, by-label-source, group-bootstrap CIs, downstream arms, gates. |
+| `eval-report` | Per-stratum P/R/F1 (+ CI95), baselines, by-label-source, group-bootstrap CIs and `bootstrap` metadata, PR curve + operating threshold, D1/D2 token reduction (median / IQR, per stratum), G5 `runtime`, QA arms with evidence retention, structured gates (`comparator`, `threshold`, `unit`, `ci95`, `use_ci_lower`), `system.kind`, names, notes / threats. |
+| `label-agreement` | (v1.1, C0) Cohen's kappa audit between labelers: pairs x strata x {binary, 3-class} x {elements, chars}, confusion matrices (kappa is recomputed from them), bootstrap CIs, test-retest, gates. |
+| `qa-task-set` | (v1.1, C10) The frozen questions of the downstream QA study: question, short answer + variants, evidence units + literal quote (never `noise`), kind, validation, rejection rate. |
 | `content-tree` | Pruned document: block tree with inline runs and `src` back-references to snapshot units. DOM-specific. |
-| `stage-kind-spec` | Registry entry of a stage implementation: typed ports (artifact types map to contracts), `params_schema`, runtime, determinism, gates. |
+| `stage-kind-spec` | Registry entry of a stage implementation: typed ports (artifact types map to contracts), `params_schema`, runtime, determinism, gates. v1.1 adds the `demo` stage kind (runner demos stop borrowing real kinds). |
 | `pipeline-spec` | Declarative DAG: stages, `{stage, output}` / `{external}` refs, variables, editor `layout` (outside the id). |
 
-Normative details not visible in the schemas:
+Normative details not visible in the schemas (those marked v1.1 are normative from contracts v1.1, ADR-009):
 
 * `thresholds`: `score >= accept` accepts; `escalate <= score < accept` (or a top-1/top-2 gap below `margin`) escalates to a stronger judge; `score < escalate` rejects. `escalate <= accept` is enforced.
 * z-score: `x' = (x - mean) / (std + eps)`, applied to the extractor output before the network. `golden.input` is the extractor output (before normalization), so a golden run covers normalization too.
 * `output_spec.activation = "sigmoid"` means one logit, `labels = [negative, positive]`; calibration (`platt`) acts on the logit.
+* (v1.1) **PageSnapshot ids and traversal.** The element table is the **composed-tree pre-order**:
+  `visit(el) -> children of el's OPEN shadow root, in order -> el's light-DOM children, in order`. Element id = pre-order index `k`
+  (`nodes[k].idx === k`, DOM attribute `data-gp-id="n<k>"`); the parent of a node in a shadow root is the shadow host. Not entered:
+  iframe documents (the `<iframe>` itself is a node), closed shadow roots, `<template>` content, text nodes directly in a shadow root.
+  Ids are valid for ONE snapshot. `probe.id_scheme = "gp-composed-preorder/1"` names this rule and is part of the snapshot id.
+  A **text unit** is a non-blank light-DOM text node, id `n<owner>#t<child index among the owner's childNodes>` (e.g. `n9#t2`);
+  `text_units` lists them in composed document order, so the child index strictly increases per owner.
+* (v1.1) **The `html` FileRef** of a snapshot is the *flattened* rendered HTML: gzip, open shadow roots inlined, `data-gp-id` attributes kept
+  (the join key to `nodes`), `<script>` removed. Not the HTML the server sent.
+* (v1.1) **Disclosure.** `nodes[i].flags.disclosure = true` marks an element inside a collapsed disclosure (closed `<details>`,
+  `aria-expanded=false` region, inactive `role=tabpanel`): not rendered, but part of the labelable universe U (labeling guide 2.3).
+* (v1.1) **Attributes.** `attrs.id`, `role`, `href`, `type` are the attribute values as written (href is not resolved); `type` of
+  input / button / select / textarea is the effective property (implicit default when absent). `own_text` is cut at `probe.own_text_cap` UTF-16 units.
+* (v1.1) **Static transforms** apply to the raw feature value x: `none` x; `log1p` **log1p(x) / log1p(scale)**; `clip` min(hi, max(lo, x)); `div` x / by;
+  then NaN -> 0, clip to `range` (counted in `sanitized`), float32.
+* (v1.1) **Prefilter.** A `display_none` rule is a **subtree** rule (the node and everything below it is not rendered); `tag`, `visibility_hidden`,
+  `zero_rect` drop only the matching node. A prefiltered node is not a row and not a sibling. `NodeFeatures.unit_ids` are exactly the
+  non-prefiltered nodes (`n_nodes_total - sum(prefiltered)` rows); each prefiltered node is counted once, under the first dropping rule.
+* (v1.1) **Context features** (`FeatureDef.context = { rel: parent | prev | next, source }`) copy the finished value of the non-context feature `source`
+  at the parent / previous / next non-prefiltered sibling; `default` when there is none.
+* (v1.1) **Gates.** `value <comparator> threshold` is the passing condition; with `use_ci_lower`, `value` is the CI bound facing the threshold
+  (`ci95[0]` for `>=` / `>`, `ci95[1]` for `<=` / `<`). The validator recomputes `passed`. v1.0 gates (`id`, `rule`, `value`, `passed`) stay valid.
+* (v1.1) **Weights.** `Dataset.row_weight = "own_text_chars"` means every row carries `w`, the unit's own-text length in Unicode code points
+  (NFC, whitespace collapsed): the weight of the char-weighted metrics. `EvalReport.intrinsic.weighting` says what `n / tp / fp / tn / fn` count.
 * Floats in JSON artifacts are float32 values (`Math.fround`) printed with their exact double expansion; readers must not re-interpret them.
 
 ## Validation
@@ -83,7 +109,7 @@ execution are the ModelPackage loader's job (E1.2), not this package's.
   | feature-schema | `schema_id`, `description`, every `features[].doc` |
   | node-features / node-labels / train-config | own id field |
   | dataset-manifest | `dataset_id`, `provenance` |
-  | eval-report | `report_id`, `provenance` |
+  | eval-report / label-agreement / qa-task-set | own id field, `provenance` |
   | pipeline-spec | `layout` (editor positions) |
 
   `format` and `format_version` ARE hashed (no cross-type collisions; writers must emit the
@@ -93,8 +119,9 @@ execution are the ModelPackage loader's job (E1.2), not this package's.
   Not in the id: `name`, `description`, `metrics`, `provenance`, `digest.golden`, file paths and sizes,
   `format_version`. `digest.network_def` is the hash of the canonical JSON of the parsed
   `network_def.json` (whitespace-proof); `digest.weights` / `digest.golden` hash raw file bytes.
-* **`stageCacheKey({ impl, params, inputIds, wasmSha?, kind?, nodeMajor? })`** =
-  `sha256(canonical({ v, kind?, impl, params, inputs, env: { wasm_sha256?, node_major? } }))`.
+* **`stageCacheKey({ impl, params, inputIds, wasmSha?, toolSha?, kind?, nodeMajor? })`** =
+  `sha256(canonical({ v, kind?, impl, params, inputs, env: { wasm_sha256?, node_major?, tool_sha256? } }))`.
+  `toolSha` (v1.1) is the hash of the native binary of a `runtime: "rust"` stage (e.g. `gp-train`); recorded as `tool_versions.tool_sha256` in provenance.
   Depends on the exact impl version, resolved params, input artifact **ids** (a many-port's order
   matters) and, only when given, the wasm binary. Independent of run id, clock, host, port order,
   editor layout. `llmCacheKey` does the same for cached LLM labeling calls.
@@ -118,6 +145,12 @@ the semver is the language.
 | Any change to a `FeatureDef` (value, transform, order, add, remove) | new `schema_id` (models bind to the exact id; there is no "compatible schema") |
 | New `LayerDef` variant in the core | MINOR of model-package (`requires.layer_types`); new field on an existing variant is MAJOR or forbidden |
 
+Clarifications made by contracts v1.1 (ADR-009): (a) a **new value of a closed enum** (`StageKind` `demo`, `comparison.metric`) is a MINOR when the
+writer declares the new `format_version` for every document that uses it: an older reader then *refuses* the document at that field
+(never misreads it), which is the intended failure; (b) **new invariants apply only to new fields** (an invariant that rejects a document
+the previous version accepted is a MAJOR change in disguise); (c) every contract of a release is listed in `CONTRACT_SET_VERSION`
+(`1.1.0` today) while each keeps its own `format_version`.
+
 Reader rules: unknown **MAJOR** -> refuse (`code: "version"`); newer MINOR / PATCH of a known MAJOR
 -> accept and ignore unknown fields, except those listed in `model-package.requires.extensions`
 (unknown there -> refuse). Schemas are therefore open (`additionalProperties` allowed), except
@@ -131,7 +164,10 @@ keep the old ones next to the new ones), update this README, commit schemas + fi
 
 `fixtures/valid/` holds one valid example per contract (plus a complete model package and dataset
 directory whose digests are real); `fixtures/invalid/` holds one document per defect, with the
-expected `{code, path, message}` in `expectations.json`. Everything is synthetic (no real page text).
+expected `{code, path, message}` in `expectations.json`. Everything is synthetic (no real page text). `fixtures/v1.0/` is a byte-for-byte copy of the v1.0 `valid/`, `invalid/` and `schemas/`:
+frozen, never regenerated, read by `test/compat-v1.0.test.ts` (every v1.0 document still validates, every v1.0 invalid one still fails, the
+current schemas are a structural superset of the frozen ones, and the v1.1 documents validate against the frozen v1.0 schemas except at
+the documented enum widenings). Valid fixtures declare the smallest `format_version` that describes them (`pipeline-spec.json` stays 1.0.0).
 The tests check that each valid fixture passes, each invalid one fails with its expected path, and
 that the committed files equal the builders in `src/tools/fixtures/`.
 

@@ -4,7 +4,7 @@
   "x-gran-prix": {
     "contract": "pipeline-spec",
     "format": "gran-prix.pipeline-spec",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "$defs": {
     "SemVer": {
@@ -60,7 +60,9 @@
                 { "const": "ModelPackage", "type": "string" },
                 { "const": "EvalReport", "type": "string" },
                 { "const": "Bundle", "type": "string" },
-                { "const": "ContentTree", "type": "string" }
+                { "const": "ContentTree", "type": "string" },
+                { "const": "LabelAgreement", "type": "string" },
+                { "const": "QaTaskSet", "type": "string" }
               ]
             },
             "path": { "type": "string" },
@@ -90,7 +92,8 @@
               { "const": "train", "type": "string" },
               { "const": "evaluate", "type": "string" },
               { "const": "package", "type": "string" },
-              { "const": "infer", "type": "string" }
+              { "const": "infer", "type": "string" },
+              { "const": "demo", "type": "string" }
             ]
           },
           "impl": {

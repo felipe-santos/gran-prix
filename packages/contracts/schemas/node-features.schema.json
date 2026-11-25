@@ -4,7 +4,7 @@
   "x-gran-prix": {
     "contract": "node-features",
     "format": "gran-prix.node-features",
-    "version": "1.0.0"
+    "version": "1.0.1"
   },
   "$defs": {
     "SemVer": {
@@ -38,7 +38,7 @@
     },
     "n_nodes_total": { "minimum": 0, "type": "integer" },
     "prefiltered": {
-      "description": "Count of nodes dropped per prefilter rule id.",
+      "description": "Count of nodes dropped per prefilter rule id; a node is counted once, under the first rule (schema order) that drops it.",
       "type": "object",
       "patternProperties": {
         "^(.*)$": { "minimum": 0, "type": "integer" }
@@ -53,7 +53,7 @@
       }
     },
     "unit_ids": {
-      "description": "Snapshot node idx per row, strictly increasing.",
+      "description": "Snapshot node idx per row, strictly increasing. NORMATIVE (v1.0.1 clarification): exactly the nodes that survived the schema's prefilter, i.e. n_nodes_total - sum(prefiltered) rows. A node without a row was prefiltered.",
       "type": "array",
       "items": { "minimum": 0, "type": "integer" }
     },
