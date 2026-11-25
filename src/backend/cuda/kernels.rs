@@ -382,16 +382,41 @@ extern "C" __global__ void gp_matmul(
     int trans_a,
     int trans_b
 ) {
+    __shared__ float a_tile[16][16];
+    __shared__ float b_tile[16][16];
+
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < m && col < n) {
-        float sum = 0.0f;
-        for (int i = 0; i < k; ++i) {
-            float av = trans_a ? a[i * a_cols + row] : a[row * a_cols + i];
-            float bv = trans_b ? b[col * b_cols + i] : b[i * b_cols + col];
-            sum += av * bv;
+    float sum = 0.0f;
+    for (int tile_start = 0; tile_start < k; tile_start += 16) {
+        int a_k = tile_start + tx;
+        int b_k = tile_start + ty;
+
+        if (row < m && a_k < k) {
+            a_tile[ty][tx] = trans_a ? a[a_k * a_cols + row] : a[row * a_cols + a_k];
+        } else {
+            a_tile[ty][tx] = 0.0f;
         }
+
+        if (b_k < k && col < n) {
+            b_tile[ty][tx] = trans_b ? b[col * b_cols + b_k] : b[b_k * b_cols + col];
+        } else {
+            b_tile[ty][tx] = 0.0f;
+        }
+
+        __syncthreads();
+
+        for (int i = 0; i < 16; ++i) {
+            sum += a_tile[ty][i] * b_tile[i][tx];
+        }
+
+        __syncthreads();
+    }
+
+    if (row < m && col < n) {
         out[row * n + col] = sum;
     }
 }

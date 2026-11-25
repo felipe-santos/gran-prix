@@ -315,12 +315,20 @@ impl CUDABackend {
             weight_shape[2],
             weight_shape[3],
         );
-        if ci != weight_ci || stride == 0 || h + 2 * padding < kh || w + 2 * padding < kw {
+        let padded_h = padding
+            .checked_mul(2)
+            .and_then(|p| h.checked_add(p))
+            .ok_or_else(|| Self::shape_error(&[n, ci, h, w], weight_shape))?;
+        let padded_w = padding
+            .checked_mul(2)
+            .and_then(|p| w.checked_add(p))
+            .ok_or_else(|| Self::shape_error(&[n, ci, h, w], weight_shape))?;
+        if ci != weight_ci || stride == 0 || padded_h < kh || padded_w < kw {
             return Err(Self::shape_error(&[0, ci, kh, kw], weight_shape));
         }
 
-        let oh = (h + 2 * padding - kh) / stride + 1;
-        let ow = (w + 2 * padding - kw) / stride + 1;
+        let oh = (padded_h - kh) / stride + 1;
+        let ow = (padded_w - kw) / stride + 1;
         Ok((n, ci, h, w, co, kh, kw, oh, ow))
     }
 

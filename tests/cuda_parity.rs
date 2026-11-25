@@ -24,6 +24,29 @@ mod cuda_tests {
         let cuda_a = a.to_cuda(cuda_backend.device())?;
         let cuda_b = b.to_cuda(cuda_backend.device())?;
 
+        assert!(
+            (a.mean()? - cuda_a.mean()?).abs() < 1e-6,
+            "CUDA tensor mean should match CPU tensor mean"
+        );
+        assert_parity(
+            &a.try_add(&b)?,
+            &cuda_a.try_add(&cuda_b)?,
+            "Tensor try_add convenience",
+            1e-6,
+        );
+        assert_parity(
+            &a.try_mapv(|v| v * 2.0 + 1.0)?,
+            &cuda_a.try_mapv(|v| v * 2.0 + 1.0)?,
+            "Tensor try_mapv convenience",
+            1e-6,
+        );
+        assert_parity(
+            &(&a + &b),
+            &(&cuda_a + &cuda_b),
+            "Tensor add operator host convenience",
+            1e-6,
+        );
+
         assert_parity(
             &cpu_backend.add(&a, &b)?,
             &cuda_backend.add(&cuda_a, &cuda_b)?.to_host()?,
@@ -126,6 +149,53 @@ mod cuda_tests {
                 .to_host()?,
             "MatMul",
             1e-5,
+        );
+        let mm_rect_a = Tensor::from_shape_vec(
+            &[17, 19],
+            (0..17 * 19)
+                .map(|i| (i as f32 % 13.0) * 0.1 - 0.3)
+                .collect(),
+        )?;
+        let mm_rect_b = Tensor::from_shape_vec(
+            &[19, 18],
+            (0..19 * 18)
+                .map(|i| (i as f32 % 11.0) * 0.07 - 0.2)
+                .collect(),
+        )?;
+        assert_parity(
+            &cpu_backend.matmul(&mm_rect_a, &mm_rect_b)?,
+            &cuda_backend
+                .matmul(
+                    &mm_rect_a.to_cuda(cuda_backend.device())?,
+                    &mm_rect_b.to_cuda(cuda_backend.device())?,
+                )?
+                .to_host()?,
+            "MatMul tiled non-multiple",
+            1e-4,
+        );
+
+        let mm_t_a = Tensor::from_shape_vec(
+            &[19, 17],
+            (0..19 * 17).map(|i| (i as f32 % 7.0) * 0.2 - 0.4).collect(),
+        )?;
+        let mm_t_b = Tensor::from_shape_vec(
+            &[18, 19],
+            (0..18 * 19)
+                .map(|i| (i as f32 % 5.0) * 0.15 - 0.1)
+                .collect(),
+        )?;
+        assert_parity(
+            &cpu_backend.matmul_t(&mm_t_a, &mm_t_b, true, true)?,
+            &cuda_backend
+                .matmul_t(
+                    &mm_t_a.to_cuda(cuda_backend.device())?,
+                    &mm_t_b.to_cuda(cuda_backend.device())?,
+                    true,
+                    true,
+                )?
+                .to_host()?,
+            "MatMul tiled transposed",
+            1e-4,
         );
         assert_parity(
             &cpu_backend.reduce_sum(&a, &[0], false)?,
