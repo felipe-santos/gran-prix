@@ -307,7 +307,47 @@ optimizer.step_graph(&mut graph)?;
 graph.clear_gradients();
 ```
 
-Batch loops usually accumulate gradients across samples, scale by batch size, and step the optimizer once.
+### Gradient semantics and batch loops
+
+- **Per-node gradients are per `backward` call.** Each call starts clean, so the
+  gradients of intermediate and input nodes never leak into the next call.
+  `graph.get_gradient(node)` on a non-parameter node returns the values of the
+  *last* call.
+- **Parameter gradients accumulate in the `ParamStore`** across `backward` calls
+  until `graph.clear_gradients()` (or `ParamStore::clear_gradients`).
+
+So a batch loop clears **once per batch**, then runs forward + backward for each
+sample, which sums the per-sample parameter gradients. Scale each sample's loss
+gradient by `1 / batch_size` for a mean-batch gradient, and step the optimizer
+once:
+
+```rust
+graph.clear_gradients();                       // once per batch, not per sample
+for (x, y) in batch {
+    set_input(&mut graph, x);
+    let pred = graph.execute(output_node)?;
+    let mut grad = loss.gradient(&pred, &y)?;
+    grad.map_inplace(|v| *v /= batch_size as f32)?;
+    graph.backward(output_node, grad)?;        // accumulates parameter gradients
+}
+optimizer.step_graph(&mut graph)?;
+```
+
+The WASM `Trainer` (`train_batch`, `train_batch_multi_class`) follows exactly
+this loop. Before this contract was enforced (the stale node gradients of
+sample *i* were added into sample *i+1*), the Trainer learned the inverse of a
+separable task; `tests/batch_gradient_accumulation.rs` pins the fix.
+
+### Training mode
+
+`ExecutionEngine` defaults to inference mode, where `Dropout` is the identity.
+The WASM `Trainer` switches the graph to training mode only inside
+`train_batch` / `train_batch_multi_class` and restores eval mode afterwards;
+every `predict*` method forces eval mode. Native callers must call
+`graph.set_training(true)` before training and `set_training(false)` before
+inference. `BatchNorm` has no running statistics yet (known gap): it
+uses the statistics of the current batch (a single-sample input falls back to an
+affine transform).
 
 ---
 

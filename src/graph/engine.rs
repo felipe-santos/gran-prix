@@ -278,8 +278,17 @@ impl ExecutionEngine {
 
     /// Computes gradients via reverse-mode automatic differentiation.
     ///
-    /// After backward, parameter gradients are automatically forwarded
-    /// to the [`ParamStore`].
+    /// # Gradient semantics
+    ///
+    /// - **Per-node gradients are per call.** Every `backward` starts from a
+    ///   clean slate, so the gradients of intermediate and input nodes never
+    ///   leak from one call into the next. [`get_node_gradient`](Self::get_node_gradient)
+    ///   returns the values of the *last* call.
+    /// - **Parameter gradients accumulate.** After the pass, the gradient of each
+    ///   `Param` node is *added* to the [`ParamStore`] and stays there across
+    ///   calls until `ParamStore::clear_gradients` (or `Graph::clear_gradients`)
+    ///   is called. Per-sample forward+backward loops therefore sum the
+    ///   per-sample parameter gradients; clear once per batch, not per sample.
     pub fn backward(
         &mut self,
         arch: &Architecture,
@@ -289,6 +298,10 @@ impl ExecutionEngine {
     ) -> GPResult<()> {
         let order = arch.topological_sort(target)?;
         self.ensure_cache_size(arch.node_count());
+        // Node gradients are per call. Stale values from a previous backward
+        // (intermediate/input nodes survive `sync_param_gradients`) would be
+        // added to this pass and corrupt the parameter gradients.
+        self.clear_node_gradients();
         let backend = self.backend.as_ref();
 
         // Initialize/Accumulate target gradient
