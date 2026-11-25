@@ -188,7 +188,7 @@ jobs:
       # which is where `playwright-core install` puts the revision pinned by the locked
       # playwright-core version. The cache is keyed on the lockfile, so a version bump reinstalls.
       - name: Cache Chromium
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -205,7 +205,7 @@ jobs:
           python-version: "3.12"
       - name: Cache baseline Python packages
         id: pylibs
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: tools/baselines/.pylibs
           key: pylibs-${{ runner.os }}-py3.12-${{ hashFiles('tools/baselines/requirements.lock.txt') }}
