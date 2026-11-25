@@ -124,6 +124,28 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.5)(jiti@2.6.1)(lightningcss@1.30.2)
 
+  packages/model:
+    dependencies:
+      '@gran-prix/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@gran-prix/infer-ts':
+        specifier: workspace:*
+        version: link:../infer-ts
+      '@gran-prix/wasm':
+        specifier: workspace:*
+        version: link:../wasm
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@24.19.2)(vite@7.3.2(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.30.2))
+
   packages/report:
     dependencies:
       '@gran-prix/contracts':
@@ -141,6 +163,25 @@ importers:
         version: 5.1.1(@types/node@24.19.2)(vite@7.3.2(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.30.2))
 
   packages/wasm: {}
+
+  tools/cli:
+    dependencies:
+      '@gran-prix/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@gran-prix/model':
+        specifier: workspace:*
+        version: link:../../packages/model
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@24.19.2)(vite@7.3.2(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.30.2))
 
 packages:
 
