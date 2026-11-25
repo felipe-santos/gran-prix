@@ -59,6 +59,9 @@ enum Command {
         /// Provenance: created_at (RFC 3339 UTC). Default: now, or SOURCE_DATE_EPOCH when set.
         #[arg(long)]
         created_at: Option<String>,
+        /// Provenance: duration_ms. Default: the measured wall time. Fix it (e.g. 0) for a byte-reproducible package.
+        #[arg(long)]
+        duration_ms: Option<u64>,
     },
     /// Score a split of a dataset with a ModelPackage and write metrics.
     Eval {
@@ -85,7 +88,7 @@ fn created_at_default() -> Option<String> {
 
 fn main() -> Result<()> {
     match Cli::parse().command {
-        Command::Train { dataset, config, out, seed, feature_schema, name, task_name, run_id, stage_id, cache_key, pipeline_spec_id, created_at } => {
+        Command::Train { dataset, config, out, seed, feature_schema, name, task_name, run_id, stage_id, cache_key, pipeline_spec_id, created_at, duration_ms } => {
             let opts = PackageOpts {
                 name,
                 task_name,
@@ -94,7 +97,7 @@ fn main() -> Result<()> {
                 cache_key,
                 pipeline_spec_id,
                 created_at: created_at.or_else(created_at_default),
-                duration_ms: 0,
+                duration_ms,
             };
             let args = TrainArgs { dataset, config, out: out.clone(), seed, feature_schema, opts };
             let (summary, outcome) = run_train(&args).context("train failed")?;
