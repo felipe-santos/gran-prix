@@ -1,10 +1,13 @@
 {
   "name": "gran-prix-workspace",
   "private": true,
-  "description": "pnpm workspace root of gran-prix: convenience scripts only, no runtime code.",
+  "description": "pnpm workspace root of gran-prix: convenience scripts only, no runtime code. The one devDependency, @gran-prix/stats, is the workspace link that scripts/decide-dom-v0.mjs imports.",
   "packageManager": "pnpm@11.9.0",
   "engines": {
     "node": ">=22.13"
+  },
+  "devDependencies": {
+    "@gran-prix/stats": "workspace:*"
   },
   "scripts": {
     "build:wasm": "pnpm --filter @gran-prix/wasm build",
