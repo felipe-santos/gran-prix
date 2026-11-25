@@ -1,5 +1,5 @@
 import type { EvalReport, Prf } from "@gran-prix/contracts";
-import { esc, num, shortId, signed } from "./format.js";
+import { esc, num, shortId, signed, unitValue } from "./format.js";
 import { absent, codeId, kv, noteLine, numCell, section, statusBadge, tableWrap, th, type Ctx, type Section } from "./ui.js";
 
 function direction(delta: number): string {
@@ -61,7 +61,7 @@ export function comparisonSection(c: Ctx, other: EvalReport): Section {
   const ids = [...new Set([...(a.gates ?? []).map((g) => g.id), ...(other.gates ?? []).map((g) => g.id)])];
   const gateCell = (r: EvalReport, id: string): string => {
     const g = r.gates?.find((x) => x.id === id);
-    return g ? `${statusBadge(g.passed)} <span class="muted">${num(g.value)}</span>` : '<span class="muted">not in report</span>';
+    return g ? `${statusBadge(g.passed)} <span class="muted">${g.unit ? unitValue(g.value, g.unit) : num(g.value)}</span>` : '<span class="muted">not in report</span>';
   };
   const gates = ids.length
     ? `<h3>Gates</h3>${tableWrap(`<table><thead><tr>${th("Gate")}${th("This report")}${th("Other report")}</tr></thead><tbody>${ids.map((id) => `<tr><th scope="row"><code>${esc(id)}</code></th><td>${gateCell(a, id)}</td><td>${gateCell(other, id)}</td></tr>`).join("")}</tbody></table>`)}`

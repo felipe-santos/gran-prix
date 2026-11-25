@@ -10,7 +10,8 @@ const USAGE = `usage: gp-report <eval-report.json> [-o out.html] [--compare othe
   <eval-report.json>   an EvalReport (gran-prix.eval-report), validated before rendering
   -o, --out FILE       output file (default: <input name>.report.html in the current directory)
   --compare FILE       a second EvalReport; deltas are shown only if both use the same dataset_id
-  --extras FILE        sidecar with CIs, PR-curve points, D1/D2 tokens, gate details, notes (see README)
+  --extras FILE        sidecar for a v1.0 report only (CIs, PR points, D1/D2, gate details, notes); a v1.1 report carries
+                       these itself and wins over the sidecar (see README)
   -h, --help           this text
 
 exit codes: 0 ok, 1 invalid input, 2 usage error`;
