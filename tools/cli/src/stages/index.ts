@@ -6,7 +6,9 @@
  */
 import type { StagePlugin } from "../stage.js";
 import { DEMO_STAGES } from "./demo.js";
+import { LABELING_STAGES } from "./labeling.js";
 
 export const ALL_STAGES: StagePlugin[] = [
   ...DEMO_STAGES,
+  ...LABELING_STAGES,
 ];

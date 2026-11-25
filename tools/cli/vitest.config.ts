@@ -1,20 +1,27 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-const src = (dir: string): string => fileURLToPath(new URL(`../../${dir}/src/index.ts`, import.meta.url));
+const src = (dir: string, file = "index.ts"): string => fileURLToPath(new URL(`../../${dir}/src/${file}`, import.meta.url));
 
 export default defineConfig({
   resolve: {
     // Tests run against the sibling sources, so only the WASM build is a prerequisite.
-    alias: {
-      "@gran-prix/contracts": src("packages/contracts"),
-      "@gran-prix/infer-ts": src("packages/infer-ts"),
-      "@gran-prix/model": src("packages/model"),
-    },
+    // Exact patterns: `@gran-prix/labels/testing` must not be caught by the `@gran-prix/labels` alias.
+    alias: [
+      { find: /^@gran-prix\/contracts$/, replacement: src("packages/contracts") },
+      { find: /^@gran-prix\/infer-ts$/, replacement: src("packages/infer-ts") },
+      { find: /^@gran-prix\/model$/, replacement: src("packages/model") },
+      { find: /^@gran-prix\/features$/, replacement: src("packages/features") },
+      { find: /^@gran-prix\/labels$/, replacement: src("packages/labels") },
+      { find: /^@gran-prix\/labels\/testing$/, replacement: src("packages/labels", "testing/index.ts") },
+    ],
   },
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
+    // Builds the in-page features bundle and a 6-page corpus (Chromium) for the label/dataset stage tests.
+    globalSetup: ["test/global-setup.ts"],
     testTimeout: 30_000,
+    hookTimeout: 120_000,
   },
 });
