@@ -2,8 +2,8 @@
 
 Runs a `PipelineSpec` (ADR-004: pipeline as code) incrementally over a **content-addressed artifact
 store**, with a receipt per stage, lineage, and a hard-capped spending ledger. This is the runner
-core (E1.7, wave 2): only demo stages ship now (`ts:demo.*`); the real stages (collect, extract,
-label, dataset, train, evaluate, package) plug into the same interface in wave 3.
+core (E1.7, wave 2): demo stages (`ts:demo.*`) and the `evaluate` stage ship; the other real stages
+(collect, extract, label, dataset, train, package) plug into the same interface in wave 3.
 
 ```
 gp run <pipeline.json> [--from <stage>] [--to <stage>] [--force] [--data-dir data]
@@ -12,6 +12,7 @@ gp validate <pipeline.json>
 gp model check <model-dir> [--runtime ts|wasm] [--json]     # the 9 checks of @gran-prix/model
 gp lineage <artifact-id|prefix> [--data-dir data]
 gp ledger [--data-dir data] [--budget-usd N]
+gp report <eval-report.json> [--extras extras.json] [--compare other.json] [-o out.html]
 ```
 
 Exit status: 0 ok, 1 failed (invalid pipeline, failed stage, failed check), 2 usage error.
@@ -97,10 +98,48 @@ A stage must be a function of its resolved params and input artifacts (plus the 
 the cache key assumes nothing else matters. Demo stages: `emit-json`, `emit-files`, `concat`,
 `fail`, `spend`.
 
+## `gp report`
+
+Renders an `EvalReport` (and the optional extras sidecar) as ONE self-contained HTML file by delegating
+to `@gran-prix/report` (`renderReport`). The report is validated with the contracts first (exit 1 with
+the failing paths), the extras by `parseExtras` (exit 1), a missing argument is exit 2. `-o` defaults to
+`<input name>.report.html` in the current directory; `--compare` takes a second report. The artifacts of
+a run are plain files: `<data>/artifacts/sha256-<hex>/content.json` (ids are in the stage receipt).
+
+## The `evaluate` stage (`ts:evaluate.intrinsic@1.0.0`)
+
+Scores one split of a `Dataset` with a `ModelPackage` and writes an `EvalReport` v1.0 (intrinsic). Ports:
+inputs `model: ModelPackage`, `dataset: Dataset` (the registry contract) and an optional `many`
+`baselines: Bundle`; outputs `report: EvalReport`, `extras: Bundle` (the sidecar `gp report` reads) and
+`details: Bundle` (micro and macro-by-page tables with CIs, coverage, bootstrap settings). Deterministic
+given the inputs and `seed` (`determinism: seeded`, `runtime: node+wasm`, so the wasm hash is in the cache key).
+
+* Unit = dataset row (element); positive = keep. Weight = characters of own text, recovered from the
+  feature `log_own_len` (`round(expm1(x * log1p(5000)))`, override with `params.weight`); `"none"` or a
+  model without that feature falls back to weight 1 and says so in the extras notes.
+* `by_stratum`, `overall`, `by_label_source`, `baselines` are MICRO (counts summed over pages) as the
+  contract implies; macro-by-page (mean of per-page F1) is in `details`, and is the default statistic of
+  `comparison[]` and of the gates (`params.aggregation`). Empty output scores P = F1 = 0.
+* CIs: percentile bootstrap over clusters (`group_key`, the domain, by default), seeded, `resamples`
+  (default 1000), redrawn within strata. Differences model - baseline use the same resample (paired) and
+  both systems on the units the baseline covers.
+* Baselines: `Bundle` artifacts, JSON `{ id, threshold?, predictions: [{ g, u, p }] }` or a file set with
+  `predictions.jsonl` (+ `system.json`); `p` is 0/1 or a score (>= threshold, default 0.5).
+* Gates (`params.gates`): `{ id, name?, metric, comparator, threshold, stratum?, baseline?, aggregation?,
+  use_ci_lower? }` become `gates[]` (`value` is the CI bound when `use_ci_lower`) and `extras.gate_details`.
+  Thresholds are always params; the stage has none of its own.
+* The embedded `provenance` is deterministic on purpose (no run id or clock) so artifact ids are stable;
+  the real run provenance is in the receipt and `meta.json`.
+
+```
+gp run eval.pipeline.json --data-dir data     # params: seed (required), split, resamples, threshold, weight, gates, ...
+gp report data/artifacts/sha256-<report>/content.json --extras data/artifacts/sha256-<extras>/content.json -o report.html
+```
+
 ## Tests
 
 ```
 node scripts/build-wasm.mjs --target both --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 pnpm --filter @gran-prix/cli test        # runs against the sibling sources; needs only the WASM build
-pnpm --filter @gran-prix/cli... build    # contracts, infer-ts, model, cli (typecheck needs the first three built)
+pnpm --filter @gran-prix/cli... build    # contracts, infer-ts, model, report, cli (typecheck needs the first four built)
 ```

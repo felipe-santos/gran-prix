@@ -1,8 +1,9 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { basename, extname, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { ContractError, type ContractIssue } from "@gran-prix/contracts";
+import { ContractError, validate, type ContractIssue, type EvalReport } from "@gran-prix/contracts";
 import { CHECKS, ModelPackageError, loadModelPackage, type Runtime } from "@gran-prix/model";
+import { ExtrasError, parseExtras, renderReport } from "@gran-prix/report";
 import { Ledger } from "./ledger.js";
 import { lineageOf, type LineageNode } from "./lineage.js";
 import { dataPaths, shortId } from "./paths.js";
@@ -36,6 +37,7 @@ usage:
   gp model check <model-dir> [--runtime ts|wasm] [--json]
   gp lineage <artifact-id|prefix> [--data-dir data]
   gp ledger [--data-dir data] [--budget-usd N]
+  gp report <eval-report.json> [--extras extras.json] [--compare other.json] [-o out.html]
 
 exit status: 0 ok, 1 failed (validation, stage or check), 2 usage error`;
 
@@ -50,6 +52,9 @@ const OPTIONS = {
   "run-id": { type: "string" },
   root: { type: "string" },
   runtime: { type: "string" },
+  extras: { type: "string" },
+  compare: { type: "string" },
+  out: { type: "string", short: "o" },
   json: { type: "boolean" },
   help: { type: "boolean", short: "h" },
 } as const;
@@ -64,6 +69,9 @@ interface Parsed {
     "run-id"?: string;
     root?: string;
     runtime?: string;
+    extras?: string;
+    compare?: string;
+    out?: string;
     json?: boolean;
     help?: boolean;
   };
@@ -129,6 +137,8 @@ export async function main(argv: string[], io: Io = processIo()): Promise<number
         return lineageCommand(rest, io);
       case "ledger":
         return ledgerCommand(rest, io);
+      case "report":
+        return reportCommand(rest, io);
       default:
         throw new UsageError(`unknown command "${cmd}"`);
     }
@@ -269,5 +279,37 @@ function ledgerCommand(p: Parsed, io: Io): number {
   for (const [stage, usd] of byStage) io.out(`  ${stage.padEnd(16)} $${usd.toFixed(4)} committed`);
   const rejected = entries.filter((e) => e.event === "reject").length;
   if (rejected > 0) io.out(`  ${rejected} reservation(s) rejected by the cap`);
+  return 0;
+}
+
+// --------------------------------------------------------------- report
+
+function validReport(path: string, what: string, io: Io): EvalReport | undefined {
+  const r = validate("eval-report", readSpec(path, io));
+  if (r.ok) return r.value;
+  io.err(`gp: ${what} ${path} is not a valid EvalReport (${r.issues.length} issue(s))`);
+  printIssues(io, r.issues.slice(0, 20));
+  return undefined;
+}
+
+/** `gp report`: one self-contained HTML file from an EvalReport (and the optional extras sidecar). Rendering lives in @gran-prix/report. */
+function reportCommand(p: Parsed, io: Io): number {
+  const input = positional(p, 0, "eval-report.json");
+  const report = validReport(input, "input", io);
+  const compare = p.values.compare === undefined ? undefined : validReport(p.values.compare, "--compare file", io);
+  if (report === undefined || (p.values.compare !== undefined && compare === undefined)) return 1;
+  const rawExtras = p.values.extras === undefined ? undefined : readSpec(p.values.extras, io);
+  let html: string;
+  try {
+    html = renderReport(report, { ...(rawExtras !== undefined ? { extras: parseExtras(rawExtras) } : {}), ...(compare ? { compare } : {}) });
+  } catch (e) {
+    if (!(e instanceof ExtrasError)) throw e;
+    io.err(`gp: --extras file ${p.values.extras ?? ""} is not valid`);
+    for (const i of e.issues) io.err(`  ${i}`);
+    return 1;
+  }
+  const out = resolve(io.cwd, p.values.out ?? `${basename(input, extname(input))}.report.html`);
+  writeFileSync(out, html);
+  io.out(out);
   return 0;
 }
