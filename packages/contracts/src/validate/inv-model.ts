@@ -1,6 +1,5 @@
-import type { EvalReport } from "../eval-report.js";
 import type { Golden } from "../golden.js";
-import { contractId, modelId } from "../identity/contract-ids.js";
+import { modelId } from "../identity/contract-ids.js";
 import type { ModelPackage } from "../model-package.js";
 import { Issues } from "./result.js";
 
@@ -66,42 +65,5 @@ export function goldenInvariants(g: Golden): Issues {
     out.check(c.raw.length === outDim, `cases[${i}].raw`, `has ${c.raw.length} values, expected ${outDim}`);
     out.check(c.score.length === outDim, `cases[${i}].score`, `has ${c.score.length} values, expected ${outDim}`);
   });
-  return out;
-}
-
-export function evalReportInvariants(r: EvalReport): Issues {
-  const out = new Issues("eval-report");
-  out.check(r.mode !== "intrinsic" || r.intrinsic !== undefined, "intrinsic", 'mode "intrinsic" requires the intrinsic section');
-  out.check(r.mode !== "downstream" || r.downstream !== undefined, "downstream", 'mode "downstream" requires the downstream section');
-  if (typeof r.split === "object") out.check(r.split.kfold.fold < r.split.kfold.k, "split.kfold.fold", "fold must be < k");
-
-  const prf = (p: { n: number; tp: number; fp: number; tn: number; fn: number }, at: string): void =>
-    out.check(p.tp + p.fp + p.tn + p.fn === p.n, at, `tp+fp+tn+fn (${p.tp + p.fp + p.tn + p.fn}) must equal n (${p.n})`);
-  const i = r.intrinsic;
-  if (i) {
-    prf(i.overall, "intrinsic.overall");
-    for (const [k, v] of Object.entries(i.by_stratum)) prf(v, `intrinsic.by_stratum.${k}`);
-    for (const [k, v] of Object.entries(i.by_label_source)) prf(v, `intrinsic.by_label_source.${k}`);
-    for (const [k, b] of Object.entries(i.baselines)) prf(b.overall, `intrinsic.baselines.${k}.overall`);
-    i.comparison.forEach((c, j) => {
-      const at = `intrinsic.comparison[${j}]`;
-      out.check(c.ci95[0] <= c.ci95[1], `${at}.ci95`, "ci95 must be [lo, hi] with lo <= hi");
-      out.check(Math.abs(c.model - c.baseline_value - c.delta) < 1e-9, `${at}.delta`, "delta must equal model - baseline_value");
-      out.check(c.baseline in i.baselines, `${at}.baseline`, `baseline "${c.baseline}" is not in intrinsic.baselines`);
-      out.check(c.stratum in i.by_stratum, `${at}.stratum`, `stratum "${c.stratum}" is not in intrinsic.by_stratum`);
-    });
-  }
-  const d = r.downstream;
-  if (d) {
-    d.paired_deltas.forEach((p, j) => {
-      out.check(p.ci95[0] <= p.ci95[1], `downstream.paired_deltas[${j}].ci95`, "ci95 must be [lo, hi] with lo <= hi");
-      out.check(p.a in d.arms, `downstream.paired_deltas[${j}].a`, `arm "${p.a}" is not in downstream.arms`);
-      out.check(p.b in d.arms, `downstream.paired_deltas[${j}].b`, `arm "${p.b}" is not in downstream.arms`);
-    });
-    for (const [k, arm] of Object.entries(d.arms)) out.check(arm.score_ci95[0] <= arm.score_ci95[1], `downstream.arms.${k}.score_ci95`, "ci95 must be [lo, hi] with lo <= hi");
-  }
-  const gateIds = (r.gates ?? []).map((g) => g.id);
-  gateIds.forEach((id, j) => out.check(gateIds.indexOf(id) === j, `gates[${j}].id`, `duplicate gate id "${id}"`));
-  out.idCheck(r.report_id === contractId("eval-report", r), "report_id", "does not match the hash of the report (excluding report_id and provenance)");
   return out;
 }
