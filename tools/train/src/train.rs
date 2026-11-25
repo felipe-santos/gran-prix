@@ -1,6 +1,10 @@
 //! The training procedure: normalization fitted on train, seeded init, seeded shuffle per
-//! epoch, mini-batches, Adam, BCE-with-logits (+ `pos_weight`), early stopping with
-//! best-weights restore, and threshold selection on validation.
+//! epoch, mini-batches, Adam, BCE-with-logits (+ `pos_weight`, + the per-row `sample_weight`),
+//! early stopping with best-weights restore, and threshold selection on validation.
+//!
+//! `sample_weight: "row"` weights the loss (training and validation loss) by the dataset's `w`
+//! column; the validation F1 and the `max_f1_on_val` threshold stay unweighted (a pipeline that
+//! wants a character-weighted operating point, like `train.cv`, chooses it outside the trainer).
 
 use crate::config::{LrSchedule, ThresholdCfg, TrainConfig};
 use crate::dataset::Rows;
@@ -41,6 +45,8 @@ pub struct TrainOutcome {
     pub stopped_early: bool,
     pub n_train: usize,
     pub n_train_pos: usize,
+    /// `sample_weight: "row"` was used (the loss, and the validation loss, are weighted by `w`).
+    pub row_weight: bool,
     /// Validation metrics at `thresholds.accept` (None when there is no validation split).
     pub val_metrics: Option<Metrics>,
 }
@@ -92,6 +98,14 @@ pub fn train(train: &Rows, val: &Rows, cfg: &TrainConfig, seed: u64) -> Result<T
     let xt = normalizer.apply_matrix(&train.x, dim);
     let xv = normalizer.apply_matrix(&val.x, dim);
 
+    let row_weight = cfg.uses_row_weight();
+    if row_weight && !train.has_weights() {
+        return Err(invalid!("sample_weight \"row\" needs the row weight w, but the dataset has none (its manifest has no row_weight)"));
+    }
+    if row_weight && !val.is_empty() && !val.has_weights() {
+        return Err(invalid!("sample_weight \"row\" needs w in the validation rows too"));
+    }
+
     let pos_weight = resolve_pos_weight(cfg, train)?;
     let loss = WeightedBce::new(pos_weight);
     let mut net = Net::new(&net_def, Some(seed))?;
@@ -112,10 +126,25 @@ pub fn train(train: &Rows, val: &Rows, cfg: &TrainConfig, seed: u64) -> Result<T
         let mut idx = epoch_indices(&train.y, &cfg.data.class_balance, &mut rng);
         shuffle(&mut idx, &mut rng);
         let mut total = 0f64;
+        let mut total_weight = 0f64;
         for batch in idx.chunks(cfg.batch_size) {
-            total += f64::from(net.train_batch(&xt, &train.y, batch, &loss, &mut opt)?);
+            if row_weight {
+                let b = net.train_batch_weighted(&xt, &train.y, &train.w, batch, &loss, &mut opt)?;
+                total += f64::from(b.loss_sum);
+                total_weight += b.weight_sum;
+            } else {
+                total += f64::from(net.train_batch(&xt, &train.y, batch, &loss, &mut opt)?);
+            }
         }
-        let train_loss = total / idx.len().max(1) as f64;
+        let train_loss = if row_weight {
+            if total_weight > 0.0 {
+                total / total_weight
+            } else {
+                0.0
+            }
+        } else {
+            total / idx.len().max(1) as f64
+        };
         if !train_loss.is_finite() {
             return Err(invalid!("training diverged at epoch {epoch}: non-finite loss (lower optimizer.lr)"));
         }
@@ -124,7 +153,8 @@ pub fn train(train: &Rows, val: &Rows, cfg: &TrainConfig, seed: u64) -> Result<T
         if !val.is_empty() {
             let logits = net.logits(&xv, val.len())?;
             let scores: Vec<f32> = logits.iter().map(|z| sigmoid_f32(*z)).collect();
-            val_loss = Some(f64::from(loss.mean_loss(&logits, &val.y)));
+            // Under `sample_weight: "row"` the validation loss is the same weighted mean as the training one.
+            val_loss = Some(f64::from(if row_weight { loss.mean_loss_weighted(&logits, &val.y, &val.w) } else { loss.mean_loss(&logits, &val.y) }));
             val_f1 = Some(match &cfg.threshold {
                 ThresholdCfg::Fixed { value } => Confusion::at(&scores, &val.y, *value as f32).f1(),
                 ThresholdCfg::MaxF1OnVal => best_f1_threshold(&scores, &val.y).map_or(0.0, |(_, f1)| f1),
@@ -188,6 +218,7 @@ pub fn train(train: &Rows, val: &Rows, cfg: &TrainConfig, seed: u64) -> Result<T
         stopped_early,
         n_train: train.len(),
         n_train_pos: train.n_pos(),
+        row_weight,
         val_metrics,
     })
 }
@@ -229,6 +260,97 @@ mod tests {
             r.unit.push(i as u64);
         }
         r
+    }
+
+    fn weighted(mut r: Rows, f: impl Fn(usize, &Rows) -> f32) -> Rows {
+        r.w = (0..r.len()).map(|i| f(i, &r)).collect();
+        r
+    }
+
+    fn row_cfg() -> TrainConfig {
+        cfg(r#","sample_weight":"row""#)
+    }
+
+    #[test]
+    fn row_weight_of_one_is_bit_identical_to_no_weight() {
+        let (tr, va) = (blobs(200, 3, 1), blobs(80, 3, 2));
+        let (wtr, wva) = (weighted(tr.clone(), |_, _| 1.0), weighted(va.clone(), |_, _| 1.0));
+        let plain = train(&tr, &va, &cfg(""), 5).expect("trains");
+        let row = train(&wtr, &wva, &row_cfg(), 5).expect("trains");
+        assert_eq!(plain.weights, row.weights);
+        assert_eq!(plain.thresholds, row.thresholds);
+        assert_eq!(plain.history.len(), row.history.len());
+        for (a, b) in plain.history.iter().zip(&row.history) {
+            assert_eq!((a.train_loss, a.val_loss), (b.train_loss, b.val_loss));
+        }
+        assert!(row.row_weight && !plain.row_weight);
+    }
+
+    #[test]
+    fn row_weight_changes_what_is_learned() {
+        let (tr, va) = (blobs(200, 3, 1), blobs(80, 3, 2));
+        let plain = train(&tr, &va, &cfg(""), 5).expect("trains");
+        let heavy_pos = |r: Rows| weighted(r, |i, rows| if rows.y[i] == 1 { 40.0 } else { 1.0 });
+        let row = train(&heavy_pos(tr), &heavy_pos(va), &row_cfg(), 5).expect("trains");
+        assert_ne!(plain.weights, row.weights);
+        assert!(row.history.iter().all(|h| h.train_loss.is_finite()));
+    }
+
+    /// Two groups with the same features and opposite labels: the weighted fit sides with the
+    /// heavier one, the unweighted fit sits at 50%.
+    #[test]
+    fn the_heavier_rows_win_when_the_labels_conflict() {
+        let mut r = Rows { dim: 3, ..Rows::default() };
+        for i in 0..200 {
+            let y = u8::from(i % 2 == 0);
+            r.x.extend_from_slice(&[0.5, -0.5, ((i % 5) as f32) * 0.01]);
+            r.y.push(y);
+            r.conf.push(1.0);
+            r.source.push("human".into());
+            r.group.push(format!("g{}", i % 7));
+            r.unit.push(i as u64);
+        }
+        let empty = Rows { dim: 3, ..Rows::default() };
+        let mut c = cfg("");
+        c.threshold = ThresholdCfg::Fixed { value: 0.5 };
+        c.epochs = 60;
+        c.normalization.kind = "none".into();
+        let score = |out: &TrainOutcome| {
+            let mut net = Net::new(&out.net_def, Some(0)).expect("net");
+            net.load_weights(&out.weights).expect("weights");
+            sigmoid_f32(net.logits(&[0.5, -0.5, 0.02], 1).expect("logits")[0])
+        };
+        let plain = score(&train(&r, &empty, &c, 3).expect("trains"));
+        assert!((plain - 0.5).abs() < 0.05, "unweighted score {plain}");
+        let mut rc = row_cfg();
+        rc.threshold = ThresholdCfg::Fixed { value: 0.5 };
+        rc.epochs = 60;
+        rc.normalization.kind = "none".into();
+        let w = weighted(r.clone(), |i, rows| if rows.y[i] == 1 { 9.0 } else { 1.0 });
+        let row = score(&train(&w, &empty, &rc, 3).expect("trains"));
+        assert!((row - 0.9).abs() < 0.06, "weighted score {row} should be near 9/10");
+    }
+
+    #[test]
+    fn row_weight_without_weights_fails_loudly() {
+        let (tr, va) = (blobs(50, 3, 1), blobs(20, 3, 2));
+        let err = train(&tr, &va, &row_cfg(), 1).expect_err("no w").to_string();
+        assert!(err.contains("sample_weight") && err.contains("row_weight"), "{err}");
+        let only_train = weighted(tr, |_, _| 1.0);
+        let err = train(&only_train, &va, &row_cfg(), 1).expect_err("val has no w").to_string();
+        assert!(err.contains("validation"), "{err}");
+    }
+
+    #[test]
+    fn all_zero_weights_do_not_train_and_report_zero_loss() {
+        let (tr, va) = (blobs(60, 3, 1), blobs(30, 3, 2));
+        let (wtr, wva) = (weighted(tr, |_, _| 0.0), weighted(va, |_, _| 0.0));
+        let mut c = row_cfg();
+        c.epochs = 3;
+        let out = train(&wtr, &wva, &c, 4).expect("a zero-weight dataset trains nothing but does not fail");
+        assert!(out.history.iter().all(|h| h.train_loss == 0.0 && h.val_loss == Some(0.0)));
+        let init = Net::new(&out.net_def, Some(4)).expect("net").weights().expect("weights");
+        assert_eq!(out.weights, init, "no batch took an optimizer step");
     }
 
     #[test]

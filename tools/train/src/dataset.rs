@@ -76,6 +76,9 @@ pub struct Manifest {
     pub dataset_id: String,
     pub feature_schema_id: String,
     pub dim: usize,
+    /// v1.1: when present, every row carries `w` (the unit's own-text length in characters).
+    #[serde(default)]
+    pub row_weight: Option<String>,
     pub label_space: LabelSpace,
     pub filters: Filters,
     pub files: Files,
@@ -115,6 +118,11 @@ impl Manifest {
         if m.dim == 0 {
             return Err(invalid!("manifest dim must be >= 1"));
         }
+        if let Some(rw) = &m.row_weight {
+            if rw != "own_text_chars" {
+                return Err(invalid!("manifest row_weight \"{rw}\" is not supported (only \"own_text_chars\")"));
+            }
+        }
         Ok(m)
     }
 }
@@ -129,9 +137,17 @@ pub struct Rows {
     pub source: Vec<String>,
     pub group: Vec<String>,
     pub unit: Vec<u64>,
+    /// Per-row weight `w` of the dataset (own-text characters). EMPTY when the dataset has no
+    /// row weights (manifest without `row_weight`); otherwise one value per row.
+    pub w: Vec<f32>,
 }
 
 impl Rows {
+    /// Whether every row carries a weight (`sample_weight: "row"` needs it).
+    pub fn has_weights(&self) -> bool {
+        self.w.len() == self.y.len()
+    }
+
     pub fn len(&self) -> usize {
         self.y.len()
     }
@@ -152,6 +168,7 @@ impl Rows {
     /// in `allowed` (`None` = any source). Order is preserved.
     pub fn filtered(&self, min_confidence: f64, allowed: Option<&[String]>) -> Rows {
         let mut out = Rows { dim: self.dim, ..Rows::default() };
+        let weighted = !self.w.is_empty() && self.has_weights();
         for i in 0..self.len() {
             let ok_source = allowed.is_none_or(|a| a.iter().any(|s| *s == self.source[i]));
             if self.conf[i] >= min_confidence && ok_source {
@@ -161,6 +178,9 @@ impl Rows {
                 out.source.push(self.source[i].clone());
                 out.group.push(self.group[i].clone());
                 out.unit.push(self.unit[i]);
+                if weighted {
+                    out.w.push(self.w[i]);
+                }
             }
         }
         out
@@ -175,10 +195,13 @@ struct RawRow {
     y: u64,
     c: f64,
     s: String,
+    #[serde(default)]
+    w: Option<u64>,
 }
 
 /// Loads one split: checks the file hash and row count against the manifest, then every
-/// row against the manifest (`x.len() == dim`, finite, `y in {0, 1}`, `c in [0, 1]`).
+/// row against the manifest (`x.len() == dim`, finite, `y in {0, 1}`, `c in [0, 1]`, and `w`
+/// present when the manifest declares `row_weight`). Without `row_weight`, `w` is ignored.
 pub fn load_split(dir: &Path, manifest: &Manifest, split: Split) -> Result<Rows> {
     let entry = manifest.file(split);
     if entry.path.contains("..") || entry.path.starts_with('/') {
@@ -219,6 +242,10 @@ pub fn load_split(dir: &Path, manifest: &Manifest, split: Split) -> Result<Rows>
         rows.source.push(r.s);
         rows.group.push(r.g);
         rows.unit.push(r.u);
+        if manifest.row_weight.is_some() {
+            let w = r.w.ok_or_else(|| invalid!("{at}: the manifest declares row_weight but the row has no w"))?;
+            rows.w.push(w as f32);
+        }
     }
     if rows.len() != entry.rows {
         return Err(invalid!("{}: {} rows but the manifest declares {}", entry.path, rows.len(), entry.rows));
@@ -239,6 +266,7 @@ mod tests {
             source: vec!["human".into(), "llm".into(), "heuristic".into()],
             group: vec!["a".into(), "a".into(), "b".into()],
             unit: vec![0, 1, 2],
+            w: vec![10.0, 20.0, 30.0],
         }
     }
 
@@ -249,6 +277,9 @@ mod tests {
         assert_eq!(f.len(), 2);
         assert_eq!(f.row(1), &[5.0, 6.0]);
         assert_eq!(f.unit, vec![0, 2]);
+        assert_eq!(f.w, vec![10.0, 30.0], "weights follow their rows");
+        assert!(f.has_weights());
+        assert!(!Rows { w: Vec::new(), ..rows() }.has_weights());
         assert_eq!(r.filtered(0.0, None).len(), 3);
         assert_eq!(r.filtered(0.5, None).len(), 2);
         assert_eq!(r.n_pos(), 2);

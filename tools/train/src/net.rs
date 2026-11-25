@@ -19,6 +19,13 @@ pub struct Net {
     dim: usize,
 }
 
+/// What a weighted batch adds to the epoch loss: `loss_sum = sum(w_i * l_i)`, `weight_sum = sum(w_i)`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WeightedBatch {
+    pub loss_sum: f32,
+    pub weight_sum: f64,
+}
+
 /// One parameter tensor of the package, in `export_flat` order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParamInfo {
@@ -116,6 +123,39 @@ impl Net {
             let logit = self.forward(Tensor::from_shape_vec(&[1, self.dim], row.to_vec())?)?.as_slice()?[0];
             total += loss.loss(logit, y[i]);
             let grad = Tensor::from_shape_vec(&[1, 1], vec![loss.grad(logit, y[i]) / batch])?;
+            self.compiled.graph.backward(self.compiled.output_node, grad)?;
+        }
+        Ok(total)
+    }
+
+    /// `train_batch` with a weight per row (`w`, indexed like `y`): the batch loss is
+    /// `sum(w_i * l_i) / sum(w_i)` over `idx`, so each sample's logit gradient is
+    /// `w_i * dl/dz / sum(w)`. Rows with `w = 0` are skipped; a batch whose weights sum to 0
+    /// does nothing at all (no forward, no optimizer step) and reports `(0, 0)`.
+    pub fn train_batch_weighted(&mut self, x: &[f32], y: &[u8], w: &[f32], idx: &[usize], loss: &WeightedBce, opt: &mut Adam) -> Result<WeightedBatch> {
+        let weight_sum: f64 = idx.iter().map(|&i| f64::from(w[i])).sum();
+        if idx.is_empty() || !(weight_sum > 0.0) {
+            return Ok(WeightedBatch { loss_sum: 0.0, weight_sum: 0.0 });
+        }
+        self.compiled.graph.clear_gradients();
+        self.compiled.graph.set_training(true);
+        let result = self.accumulate_weighted(x, y, w, idx, loss, weight_sum as f32);
+        self.compiled.graph.set_training(false);
+        let loss_sum = result?;
+        opt.step(self.compiled.graph.params_mut())?;
+        Ok(WeightedBatch { loss_sum, weight_sum })
+    }
+
+    fn accumulate_weighted(&mut self, x: &[f32], y: &[u8], w: &[f32], idx: &[usize], loss: &WeightedBce, denom: f32) -> Result<f32> {
+        let mut total = 0.0f32;
+        for &i in idx {
+            if w[i] <= 0.0 {
+                continue;
+            }
+            let row = &x[i * self.dim..(i + 1) * self.dim];
+            let logit = self.forward(Tensor::from_shape_vec(&[1, self.dim], row.to_vec())?)?.as_slice()?[0];
+            total += w[i] * loss.loss(logit, y[i]);
+            let grad = Tensor::from_shape_vec(&[1, 1], vec![w[i] * loss.grad(logit, y[i]) / denom])?;
             self.compiled.graph.backward(self.compiled.output_node, grad)?;
         }
         Ok(total)
@@ -220,6 +260,65 @@ mod tests {
         let (_, _, w2) = run();
         assert!(a1 < b1 * 0.5, "loss {b1} -> {a1}");
         assert_eq!(w1, w2);
+    }
+
+    const WX: [f32; 9] = [1.0, 0.5, -0.3, -1.0, -0.5, 0.3, 0.8, 0.1, -0.2];
+    const WY: [u8; 3] = [1, 0, 1];
+
+    fn one_step(idx: &[usize], w: Option<&[f32]>, x: &[f32], y: &[u8]) -> (Vec<f32>, Option<WeightedBatch>) {
+        let mut net = Net::new(&def(), Some(9)).expect("compiles");
+        let mut opt = Adam::new(0.05);
+        let loss = WeightedBce::new(1.5);
+        let r = match w {
+            Some(w) => Some(net.train_batch_weighted(x, y, w, idx, &loss, &mut opt).expect("step")),
+            None => {
+                net.train_batch(x, y, idx, &loss, &mut opt).expect("step");
+                None
+            }
+        };
+        (net.weights().expect("w"), r)
+    }
+
+    /// With every weight 1 the weighted step is the plain step, bit for bit.
+    #[test]
+    fn unit_weights_give_the_plain_step_bitwise() {
+        let (plain, _) = one_step(&[0, 1, 2], None, &WX, &WY);
+        let (weighted, r) = one_step(&[0, 1, 2], Some(&[1.0, 1.0, 1.0]), &WX, &WY);
+        assert_eq!(plain, weighted);
+        assert_eq!(r.map(|b| b.weight_sum), Some(3.0));
+    }
+
+    /// A row of weight 2 is two copies of the row (same loss, same gradient): the step on
+    /// batch [a, b] with w = [2, 1] equals the step on batch [a, a, b] without weights.
+    #[test]
+    fn a_weight_of_k_is_k_copies_of_the_row() {
+        let x: Vec<f32> = [&WX[0..3], &WX[0..3], &WX[3..6]].concat();
+        let (copies, _) = one_step(&[0, 1, 2], None, &x, &[1, 1, 0]);
+        let (weighted, r) = one_step(&[0, 1], Some(&[2.0, 1.0]), &WX[0..6], &WY[0..2]);
+        assert_eq!(copies.len(), weighted.len());
+        for (a, b) in copies.iter().zip(&weighted) {
+            assert!((a - b).abs() < 1e-6, "{a} vs {b}");
+        }
+        assert_eq!(r.map(|b| b.weight_sum), Some(3.0));
+    }
+
+    /// A zero-weight row is absent: same bytes as the batch without it.
+    #[test]
+    fn a_zero_weight_row_is_absent_from_the_step() {
+        let (without, _) = one_step(&[0, 1], Some(&[3.0, 5.0]), &WX[0..6], &WY[0..2]);
+        let (with_zero, _) = one_step(&[0, 1, 2], Some(&[3.0, 5.0, 0.0]), &WX, &WY);
+        assert_eq!(without, with_zero);
+    }
+
+    /// `sum(w) = 0` in a batch: nothing happens (no step, no loss), and the weights stay as initialized.
+    #[test]
+    fn a_batch_of_zero_total_weight_is_a_no_op() {
+        let init = Net::new(&def(), Some(9)).expect("compiles").weights().expect("w");
+        let (after, r) = one_step(&[0, 1, 2], Some(&[0.0, 0.0, 0.0]), &WX, &WY);
+        assert_eq!(init, after);
+        assert_eq!(r, Some(WeightedBatch { loss_sum: 0.0, weight_sum: 0.0 }));
+        let (after_empty, r) = one_step(&[], Some(&[0.0, 0.0, 0.0]), &WX, &WY);
+        assert_eq!((init, r), (after_empty, Some(WeightedBatch { loss_sum: 0.0, weight_sum: 0.0 })));
     }
 
     #[test]
