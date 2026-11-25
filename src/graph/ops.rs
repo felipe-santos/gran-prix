@@ -5,9 +5,9 @@
 //!
 //! [`Operation`] is a trait for user-defined custom operations.
 
-use serde::{Serialize, Deserialize};
 use crate::backend::Backend;
 use crate::{GPError, GPResult, Tensor};
+use serde::{Deserialize, Serialize};
 
 /// Enumeration of all built-in computation graph operations.
 ///
@@ -16,8 +16,14 @@ use crate::{GPError, GPResult, Tensor};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum OpType {
     MatMul,
-    Conv2D { stride: usize, padding: usize },
-    MaxPool2D { kernel_size: usize, stride: usize },
+    Conv2D {
+        stride: usize,
+        padding: usize,
+    },
+    MaxPool2D {
+        kernel_size: usize,
+        stride: usize,
+    },
     Add,
     Mul,
     ReLU,
@@ -26,14 +32,20 @@ pub enum OpType {
     /// Row-wise softmax: `softmax(x_i) = exp(x_i) / sum(exp(x_j))` per row.
     /// Numerically stable via max subtraction.
     Softmax,
-    Reshape { target_shape: Vec<usize> },
+    Reshape {
+        target_shape: Vec<usize>,
+    },
     /// Fused Add + ReLU for reduced memory bandwidth.
     AddReLU,
     /// Dropout: identity during inference, random zeroing during training.
-    Dropout { rate: f32 },
+    Dropout {
+        rate: f32,
+    },
     /// Batch Normalization: normalizes per-feature, then applies gamma*x_norm+beta.
     /// Takes 3 inputs: [input, gamma, beta]. Epsilon stored in variant.
-    BatchNorm { epsilon: f32 },
+    BatchNorm {
+        epsilon: f32,
+    },
     /// User-defined operation via the [`Operation`] trait.
     Custom(Box<dyn Operation>),
 }
@@ -65,11 +77,22 @@ impl OpType {
     /// * `training` — when true, Dropout applies random masking (scaled by 1/(1-p)).
     ///   When false, Dropout is identity.
     /// * `rng_seed` — deterministic seed for Dropout mask generation.
-    pub fn forward(&self, inputs: &[&Tensor], backend: &dyn Backend, training: bool, rng_seed: u64) -> GPResult<Tensor> {
+    pub fn forward(
+        &self,
+        inputs: &[&Tensor],
+        backend: &dyn Backend,
+        training: bool,
+        rng_seed: u64,
+    ) -> GPResult<Tensor> {
         match self {
             OpType::MatMul => backend.matmul_t(inputs[0], inputs[1], false, false),
-            OpType::Conv2D { stride, padding } => backend.conv2d(inputs[0], inputs[1], *stride, *padding),
-            OpType::MaxPool2D { kernel_size, stride } => backend.max_pool2d(inputs[0], *kernel_size, *stride),
+            OpType::Conv2D { stride, padding } => {
+                backend.conv2d(inputs[0], inputs[1], *stride, *padding)
+            }
+            OpType::MaxPool2D {
+                kernel_size,
+                stride,
+            } => backend.max_pool2d(inputs[0], *kernel_size, *stride),
             OpType::Add => backend.add(inputs[0], inputs[1]),
             OpType::Mul => backend.mul(inputs[0], inputs[1]),
             OpType::ReLU => backend.relu(inputs[0]),
@@ -81,7 +104,9 @@ impl OpType {
                 Ok(t.into_shape(target_shape.as_slice())?.into_dyn())
             }
             OpType::AddReLU => backend.add_relu(inputs[0], inputs[1]),
-            OpType::BatchNorm { epsilon } => batchnorm_forward(inputs[0], inputs[1], inputs[2], *epsilon),
+            OpType::BatchNorm { epsilon } => {
+                batchnorm_forward(inputs[0], inputs[1], inputs[2], *epsilon)
+            }
             OpType::Dropout { rate } => {
                 validate_dropout_rate(*rate)?;
                 if !training || *rate == 0.0 {
@@ -100,7 +125,9 @@ impl OpType {
                 let mut state: u64 = rng_seed
                     .wrapping_mul(2862933555777941757)
                     .wrapping_add(3037000493);
-                if state == 0 { state = 0xDEADBEEFCAFEBABE; }
+                if state == 0 {
+                    state = 0xDEADBEEFCAFEBABE;
+                }
 
                 for &val in slice {
                     // xorshift64 step
@@ -123,7 +150,14 @@ impl OpType {
     }
 
     /// In-place forward pass. Falls back to allocating version for complex ops.
-    pub fn forward_inplace(&self, inputs: &[&Tensor], out: &mut Tensor, backend: &dyn Backend, training: bool, rng_seed: u64) -> GPResult<()> {
+    pub fn forward_inplace(
+        &self,
+        inputs: &[&Tensor],
+        out: &mut Tensor,
+        backend: &dyn Backend,
+        training: bool,
+        rng_seed: u64,
+    ) -> GPResult<()> {
         match self {
             OpType::MatMul => backend.matmul_into(inputs[0], inputs[1], false, false, out),
             OpType::Add => backend.add_into(inputs[0], inputs[1], out),
@@ -151,7 +185,13 @@ impl OpType {
     /// * `output` — cached forward-pass output of THIS node (needed by Dropout
     ///   to reconstruct the mask without storing extra state).
     /// * `grad_output` — gradient flowing back from downstream.
-    pub fn backward(&self, inputs: &[&Tensor], output: Option<&Tensor>, grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>> {
+    pub fn backward(
+        &self,
+        inputs: &[&Tensor],
+        output: Option<&Tensor>,
+        grad_output: &Tensor,
+        backend: &dyn Backend,
+    ) -> GPResult<Vec<Tensor>> {
         match self {
             OpType::MatMul => {
                 let grad_a = backend.matmul_t(grad_output, inputs[1], false, true)?;
@@ -159,12 +199,24 @@ impl OpType {
                 Ok(vec![grad_a, grad_b])
             }
             OpType::Conv2D { stride, padding } => {
-                let (gi, gw) = backend.conv2d_backward(inputs[0], inputs[1], grad_output, *stride, *padding)?;
+                let (gi, gw) = backend.conv2d_backward(
+                    inputs[0],
+                    inputs[1],
+                    grad_output,
+                    *stride,
+                    *padding,
+                )?;
                 Ok(vec![gi, gw])
             }
-            OpType::MaxPool2D { kernel_size, stride } => {
-                Ok(vec![backend.max_pool2d_backward(inputs[0], grad_output, *kernel_size, *stride)?])
-            }
+            OpType::MaxPool2D {
+                kernel_size,
+                stride,
+            } => Ok(vec![backend.max_pool2d_backward(
+                inputs[0],
+                grad_output,
+                *kernel_size,
+                *stride,
+            )?]),
             OpType::Add => Ok(vec![
                 resolve_grad(inputs[0].shape(), grad_output, backend)?,
                 resolve_grad(inputs[1].shape(), grad_output, backend)?,
@@ -187,17 +239,23 @@ impl OpType {
             }
             OpType::Softmax => softmax_backward(inputs[0], grad_output),
             OpType::Reshape { .. } => {
-                let grad = grad_output.clone().into_shape(inputs[0].shape())?.into_dyn();
+                let grad = grad_output
+                    .clone()
+                    .into_shape(inputs[0].shape())?
+                    .into_dyn();
                 Ok(vec![grad])
             }
             OpType::AddReLU => {
-                let relu_grad = backend.relu_backward(&backend.add(inputs[0], inputs[1])?, grad_output)?;
+                let relu_grad =
+                    backend.relu_backward(&backend.add(inputs[0], inputs[1])?, grad_output)?;
                 Ok(vec![
                     resolve_grad(inputs[0].shape(), &relu_grad, backend)?,
                     resolve_grad(inputs[1].shape(), &relu_grad, backend)?,
                 ])
             }
-            OpType::BatchNorm { epsilon } => batchnorm_backward(inputs[0], inputs[1], grad_output, *epsilon),
+            OpType::BatchNorm { epsilon } => {
+                batchnorm_backward(inputs[0], inputs[1], grad_output, *epsilon)
+            }
             OpType::Dropout { rate } => {
                 validate_dropout_rate(*rate)?;
                 if *rate == 0.0 {
@@ -212,16 +270,19 @@ impl OpType {
                     Some(fwd_out) => {
                         let out_slice = fwd_out.as_slice()?;
                         let go_slice = grad_output.as_slice()?;
-                        let grad_data: Vec<f32> = out_slice.iter().zip(go_slice.iter())
+                        let grad_data: Vec<f32> = out_slice
+                            .iter()
+                            .zip(go_slice.iter())
                             .map(|(&o, &g)| if o == 0.0 { 0.0 } else { g * scale })
                             .collect();
-                        Ok(vec![Tensor::from_shape_vec(grad_output.shape(), grad_data)?])
+                        Ok(vec![Tensor::from_shape_vec(
+                            grad_output.shape(),
+                            grad_data,
+                        )?])
                     }
-                    None => {
-                        Err(GPError::InferenceError(
-                            "Dropout backward requires cached forward output".to_string()
-                        ))
-                    }
+                    None => Err(GPError::InferenceError(
+                        "Dropout backward requires cached forward output".to_string(),
+                    )),
                 }
             }
             OpType::Custom(op) => op.backward(inputs, output, grad_output, backend),
@@ -244,13 +305,100 @@ impl OpType {
                 Ok(vec![input_shapes[0][0], input_shapes[1][1]])
             }
             OpType::Conv2D { stride, padding } => {
-                let (n, _ci, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
-                let (co, _ci_w, kh, kw) = (input_shapes[1][0], input_shapes[1][1], input_shapes[1][2], input_shapes[1][3]);
-                Ok(vec![n, co, (h + 2 * padding - kh) / stride + 1, (w + 2 * padding - kw) / stride + 1])
+                if input_shapes.len() != 2
+                    || input_shapes[0].len() != 4
+                    || input_shapes[1].len() != 4
+                {
+                    return Err(GPError::IncompatibleShapes {
+                        expected: vec![0, 0, 0, 0],
+                        found: input_shapes.first().cloned().unwrap_or_default(),
+                        exp_len: 0,
+                        found_len: input_shapes
+                            .first()
+                            .map(|s| s.iter().product())
+                            .unwrap_or(0),
+                    });
+                }
+                let (n, ci, h, w) = (
+                    input_shapes[0][0],
+                    input_shapes[0][1],
+                    input_shapes[0][2],
+                    input_shapes[0][3],
+                );
+                let (co, ci_w, kh, kw) = (
+                    input_shapes[1][0],
+                    input_shapes[1][1],
+                    input_shapes[1][2],
+                    input_shapes[1][3],
+                );
+                let padded_h = padding
+                    .checked_mul(2)
+                    .and_then(|p| h.checked_add(p))
+                    .ok_or_else(|| GPError::IncompatibleShapes {
+                        expected: vec![n, ci, h, w],
+                        found: input_shapes[1].clone(),
+                        exp_len: n * ci * h * w,
+                        found_len: input_shapes[1].iter().product(),
+                    })?;
+                let padded_w = padding
+                    .checked_mul(2)
+                    .and_then(|p| w.checked_add(p))
+                    .ok_or_else(|| GPError::IncompatibleShapes {
+                        expected: vec![n, ci, h, w],
+                        found: input_shapes[1].clone(),
+                        exp_len: n * ci * h * w,
+                        found_len: input_shapes[1].iter().product(),
+                    })?;
+                if ci != ci_w || *stride == 0 || padded_h < kh || padded_w < kw {
+                    return Err(GPError::IncompatibleShapes {
+                        expected: vec![n, ci, h, w],
+                        found: input_shapes[1].clone(),
+                        exp_len: n * ci * h * w,
+                        found_len: input_shapes[1].iter().product(),
+                    });
+                }
+                Ok(vec![
+                    n,
+                    co,
+                    (padded_h - kh) / stride + 1,
+                    (padded_w - kw) / stride + 1,
+                ])
             }
-            OpType::MaxPool2D { kernel_size, stride } => {
-                let (n, c, h, w) = (input_shapes[0][0], input_shapes[0][1], input_shapes[0][2], input_shapes[0][3]);
-                Ok(vec![n, c, (h - kernel_size) / stride + 1, (w - kernel_size) / stride + 1])
+            OpType::MaxPool2D {
+                kernel_size,
+                stride,
+            } => {
+                if input_shapes.len() != 1 || input_shapes[0].len() != 4 {
+                    return Err(GPError::IncompatibleShapes {
+                        expected: vec![0, 0, *kernel_size, *stride],
+                        found: input_shapes.first().cloned().unwrap_or_default(),
+                        exp_len: 0,
+                        found_len: input_shapes
+                            .first()
+                            .map(|s| s.iter().product())
+                            .unwrap_or(0),
+                    });
+                }
+                let (n, c, h, w) = (
+                    input_shapes[0][0],
+                    input_shapes[0][1],
+                    input_shapes[0][2],
+                    input_shapes[0][3],
+                );
+                if *kernel_size == 0 || *stride == 0 || h < *kernel_size || w < *kernel_size {
+                    return Err(GPError::IncompatibleShapes {
+                        expected: vec![n, c, *kernel_size, *kernel_size],
+                        found: input_shapes[0].clone(),
+                        exp_len: n * c * kernel_size * kernel_size,
+                        found_len: input_shapes[0].iter().product(),
+                    });
+                }
+                Ok(vec![
+                    n,
+                    c,
+                    (h - kernel_size) / stride + 1,
+                    (w - kernel_size) / stride + 1,
+                ])
             }
             OpType::Add | OpType::Mul | OpType::AddReLU => {
                 if input_shapes[0] != input_shapes[1] {
@@ -265,8 +413,12 @@ impl OpType {
                 }
                 Ok(input_shapes[0].clone())
             }
-            OpType::ReLU | OpType::Sigmoid | OpType::Tanh | OpType::Softmax
-            | OpType::Dropout { .. } | OpType::BatchNorm { .. } => {
+            OpType::ReLU
+            | OpType::Sigmoid
+            | OpType::Tanh
+            | OpType::Softmax
+            | OpType::Dropout { .. }
+            | OpType::BatchNorm { .. } => {
                 if let OpType::Dropout { rate } = self {
                     validate_dropout_rate(*rate)?;
                 }
@@ -370,7 +522,12 @@ fn batchnorm_forward(x: &Tensor, gamma: &Tensor, beta: &Tensor, epsilon: f32) ->
 /// BatchNorm backward: computes gradients for x, gamma, and beta.
 ///
 /// Returns [grad_x, grad_gamma, grad_beta].
-fn batchnorm_backward(x: &Tensor, gamma: &Tensor, grad_output: &Tensor, epsilon: f32) -> GPResult<Vec<Tensor>> {
+fn batchnorm_backward(
+    x: &Tensor,
+    gamma: &Tensor,
+    grad_output: &Tensor,
+    epsilon: f32,
+) -> GPResult<Vec<Tensor>> {
     let shape = x.shape();
     let batch = shape[0];
     let features = shape[1];
@@ -405,7 +562,9 @@ fn batchnorm_backward(x: &Tensor, gamma: &Tensor, grad_output: &Tensor, epsilon:
     for f in 0..features {
         // Recompute mean and variance
         let mut mean = 0.0f32;
-        for b_idx in 0..batch { mean += x_slice[b_idx * features + f]; }
+        for b_idx in 0..batch {
+            mean += x_slice[b_idx * features + f];
+        }
         mean /= n;
 
         let mut var = 0.0f32;
@@ -468,7 +627,9 @@ fn softmax_forward(x: &Tensor) -> GPResult<Tensor> {
             sum += e;
         }
         if sum > 0.0 {
-            for c in 0..cols { out[rs + c] /= sum; }
+            for c in 0..cols {
+                out[rs + c] /= sum;
+            }
         }
     }
 
@@ -495,7 +656,9 @@ fn softmax_backward(x: &Tensor, grad_output: &Tensor) -> GPResult<Vec<Tensor>> {
             sum += e;
         }
         if sum > 0.0 {
-            for c in 0..cols { y[rs + c] /= sum; }
+            for c in 0..cols {
+                y[rs + c] /= sum;
+            }
         }
     }
 
@@ -514,7 +677,11 @@ fn softmax_backward(x: &Tensor, grad_output: &Tensor) -> GPResult<Vec<Tensor>> {
 }
 
 /// Resolves gradient shape mismatches via reduction (for broadcasting).
-pub(crate) fn resolve_grad(target_shape: &[usize], grad: &Tensor, backend: &dyn Backend) -> GPResult<Tensor> {
+pub(crate) fn resolve_grad(
+    target_shape: &[usize],
+    grad: &Tensor,
+    backend: &dyn Backend,
+) -> GPResult<Tensor> {
     if target_shape == grad.shape() {
         return Ok(grad.clone());
     }
@@ -538,21 +705,23 @@ pub(crate) fn resolve_grad(target_shape: &[usize], grad: &Tensor, backend: &dyn 
         return Ok(grad.clone());
     }
 
-    backend.reduce_sum(grad, &axes, true)
-        .and_then(|t| {
-            if t.shape().len() != target_shape.len() {
-                let val = t.try_view()?.to_owned().into_shape(target_shape)
-                    .map_err(|_| GPError::IncompatibleShapes {
-                        expected: target_shape.to_vec(),
-                        found: t.shape().to_vec(),
-                        exp_len: target_shape.iter().product(),
-                        found_len: t.len(),
-                    })?;
-                Ok(val.into_dyn().into())
-            } else {
-                Ok(t)
-            }
-        })
+    backend.reduce_sum(grad, &axes, true).and_then(|t| {
+        if t.shape().len() != target_shape.len() {
+            let val = t
+                .try_view()?
+                .to_owned()
+                .into_shape(target_shape)
+                .map_err(|_| GPError::IncompatibleShapes {
+                    expected: target_shape.to_vec(),
+                    found: t.shape().to_vec(),
+                    exp_len: target_shape.iter().product(),
+                    found_len: t.len(),
+                })?;
+            Ok(val.into_dyn().into())
+        } else {
+            Ok(t)
+        }
+    })
 }
 
 // ── Custom Operation Trait ─────────────────────────────────────────────────
@@ -567,11 +736,30 @@ pub(crate) fn resolve_grad(target_shape: &[usize], grad: &Tensor, backend: &dyn 
 #[typetag::serde(tag = "type")]
 pub trait Operation: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &str;
-    fn forward(&self, inputs: &[&Tensor], backend: &dyn Backend, training: bool, rng_seed: u64) -> GPResult<Tensor>;
-    fn backward(&self, inputs: &[&Tensor], output: Option<&Tensor>, grad_output: &Tensor, backend: &dyn Backend) -> GPResult<Vec<Tensor>>;
+    fn forward(
+        &self,
+        inputs: &[&Tensor],
+        backend: &dyn Backend,
+        training: bool,
+        rng_seed: u64,
+    ) -> GPResult<Tensor>;
+    fn backward(
+        &self,
+        inputs: &[&Tensor],
+        output: Option<&Tensor>,
+        grad_output: &Tensor,
+        backend: &dyn Backend,
+    ) -> GPResult<Vec<Tensor>>;
     fn output_shape(&self, input_shapes: &[Vec<usize>]) -> GPResult<Vec<usize>>;
 
-    fn forward_inplace(&self, inputs: &[&Tensor], out: &mut Tensor, backend: &dyn Backend, training: bool, rng_seed: u64) -> GPResult<()> {
+    fn forward_inplace(
+        &self,
+        inputs: &[&Tensor],
+        out: &mut Tensor,
+        backend: &dyn Backend,
+        training: bool,
+        rng_seed: u64,
+    ) -> GPResult<()> {
         let res = self.forward(inputs, backend, training, rng_seed)?;
         out.copy_from(&res)
     }

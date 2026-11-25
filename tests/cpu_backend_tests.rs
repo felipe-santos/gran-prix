@@ -15,6 +15,51 @@ fn test_cpu_matmul() {
 }
 
 #[test]
+fn test_cpu_backend_rejects_invalid_spatial_shapes() {
+    let backend = CPUBackend;
+    let input = Tensor::from_shape_vec(&[1, 1, 2, 2], vec![1.0; 4]).unwrap();
+    let large_weight = Tensor::from_shape_vec(&[1, 1, 3, 3], vec![1.0; 9]).unwrap();
+    let grad_out = Tensor::from_shape_vec(&[1, 1, 1, 1], vec![1.0]).unwrap();
+
+    assert!(backend.conv2d(&input, &large_weight, 1, 0).is_err());
+    assert!(backend.conv2d(&input, &large_weight, 0, 1).is_err());
+    assert!(backend
+        .conv2d(&input, &large_weight, 1, usize::MAX)
+        .is_err());
+    assert!(backend
+        .conv2d_backward(&input, &large_weight, &grad_out, 1, 0)
+        .is_err());
+
+    assert!(backend.max_pool2d(&input, 3, 1).is_err());
+    assert!(backend.max_pool2d(&input, 2, 0).is_err());
+    assert!(backend
+        .max_pool2d_backward(&input, &grad_out, 3, 1)
+        .is_err());
+
+    assert!(OpType::Conv2D {
+        stride: 1,
+        padding: usize::MAX
+    }
+    .output_shape(&[vec![1, 1, 2, 2], vec![1, 1, 3, 3]])
+    .is_err());
+    assert!(OpType::MaxPool2D {
+        kernel_size: 3,
+        stride: 1
+    }
+    .output_shape(&[vec![1, 1, 2, 2]])
+    .is_err());
+}
+
+#[test]
+fn test_cpu_matmul_rejects_invalid_rank_without_panicking() {
+    let backend = CPUBackend;
+    let vector = Tensor::from_shape_vec(&[3], vec![1.0, 2.0, 3.0]).unwrap();
+    let matrix = Tensor::from_shape_vec(&[3, 1], vec![1.0, 2.0, 3.0]).unwrap();
+
+    assert!(backend.matmul_t(&vector, &matrix, false, false).is_err());
+}
+
+#[test]
 fn test_cpu_sigmoid() {
     let backend = CPUBackend;
     let x = Tensor::from_shape_vec(&[1, 2], vec![0.0, 1.0]).unwrap();
