@@ -25,11 +25,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # Two jobs, as in GitHub's official Pages starter workflows: the job boundary guarantees
+  # the "github-pages" artifact is finalized before deploy-pages looks it up. With build and
+  # deploy in ONE job, deploy-pages raced the upload and intermittently failed with
+  # 'No artifacts named "github-pages" were found' (every deploy since 2026-04-24 but one).
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -75,6 +75,14 @@ jobs:
         with:
           # Upload the build output from the demo-web/dist directory
           path: './demo-web/dist'
+
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
