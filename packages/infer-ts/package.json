@@ -1,0 +1,31 @@
+{
+  "name": "@gran-prix/infer-ts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Exports a trained gran-prix MLP (NetworkDef + weights) as a self-contained TypeScript inference module, with parity tests against the WASM Trainer.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "embed": "node scripts/embed-kernels.mjs",
+    "build": "node scripts/embed-kernels.mjs && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "golden": "UPDATE_GOLDEN=1 vitest run test/golden.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
