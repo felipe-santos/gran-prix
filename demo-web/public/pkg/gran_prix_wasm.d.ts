@@ -373,6 +373,16 @@ export class Trainer {
      */
     static fromNetworkDef(json: string): Trainer;
     /**
+     * Like [`Trainer::from_network_def`], but all random weights are derived
+     * deterministically from `seed`: the same `(json, seed)` always produces
+     * bit-identical weights (`get_weights()`), independent of `Math.random`
+     * or the platform RNG.
+     *
+     * The seed is a `u32` so JavaScript callers can pass a plain `number`
+     * (no `BigInt`); it is widened to `u64` internally.
+     */
+    static fromNetworkDefSeeded(json: string, seed: number): Trainer;
+    /**
      * Like [`from_network_def`], but with an explicit `loss_kind`
      * instead of auto-detection from `output_dim`. Use this when the
      * auto-detection rule isn't right — e.g., a network with
@@ -384,6 +394,11 @@ export class Trainer {
      * incompatible with the chosen loss (see `validate_loss_compat`).
      */
     static fromNetworkDefWithLoss(json: string, loss_kind: LossKind): Trainer;
+    /**
+     * Seeded variant of [`Trainer::from_network_def_with_loss`]
+     * (explicit `loss_kind`, deterministic weights from a `u32` `seed`).
+     */
+    static fromNetworkDefWithLossSeeded(json: string, loss_kind: LossKind, seed: number): Trainer;
     get_decision_boundary(resolution: number, feature_map: Function): Float32Array;
     get_gradient_norms(): Float32Array;
     get_weights(): Float32Array;
@@ -590,10 +605,29 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_neuralbrain_free: (a: number, b: number) => void;
+    readonly __wbg_population_free: (a: number, b: number) => void;
     readonly __wbg_trainer_free: (a: number, b: number) => void;
+    readonly init_panic_hook: () => void;
+    readonly neuralbrain_compute: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly neuralbrain_export_weights: (a: number) => [number, number, number, number];
+    readonly neuralbrain_get_graph_snapshot: (a: number) => any;
+    readonly neuralbrain_import_weights: (a: number, b: number, c: number) => [number, number];
+    readonly neuralbrain_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly neuralbrain_reset: (a: number) => void;
+    readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
+    readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly population_count: (a: number) => number;
+    readonly population_evolve: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
+    readonly population_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly population_reset_memories: (a: number) => void;
+    readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
     readonly trainer_freezeByPrefix: (a: number, b: number, c: number) => [number, number];
     readonly trainer_fromNetworkDef: (a: number, b: number) => [number, number, number];
+    readonly trainer_fromNetworkDefSeeded: (a: number, b: number, c: number) => [number, number, number];
     readonly trainer_fromNetworkDefWithLoss: (a: number, b: number, c: number) => [number, number, number];
+    readonly trainer_fromNetworkDefWithLossSeeded: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly trainer_get_decision_boundary: (a: number, b: number, c: any) => [number, number, number, number];
     readonly trainer_get_gradient_norms: (a: number) => [number, number, number, number];
     readonly trainer_get_weights: (a: number) => [number, number, number, number];
@@ -617,24 +651,7 @@ export interface InitOutput {
     readonly trainer_train_batch: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly trainer_train_step: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly trainer_unfreezeByPrefix: (a: number, b: number, c: number) => [number, number];
-    readonly __wbg_neuralbrain_free: (a: number, b: number) => void;
-    readonly neuralbrain_compute: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly neuralbrain_export_weights: (a: number) => [number, number, number, number];
-    readonly neuralbrain_get_graph_snapshot: (a: number) => any;
-    readonly neuralbrain_import_weights: (a: number, b: number, c: number) => [number, number];
-    readonly neuralbrain_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly neuralbrain_reset: (a: number) => void;
     readonly neuralbrain_reset_memory: (a: number) => void;
-    readonly neuralbrain_set_kernel: (a: number, b: number, c: number, d: number) => void;
-    readonly __wbg_population_free: (a: number, b: number) => void;
-    readonly population_compute_all: (a: number, b: number, c: number) => [number, number, number, number];
-    readonly population_count: (a: number) => number;
-    readonly population_evolve: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
-    readonly population_get_best_brain_snapshot: (a: number, b: number, c: number) => any;
-    readonly population_new: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
-    readonly population_reset_memories: (a: number) => void;
-    readonly population_set_global_kernel: (a: number, b: number, c: number, d: number) => void;
-    readonly init_panic_hook: () => void;
     readonly __wbindgen_malloc_command_export: (a: number, b: number) => number;
     readonly __wbindgen_realloc_command_export: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store_command_export: (a: number) => void;

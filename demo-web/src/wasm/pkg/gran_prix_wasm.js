@@ -537,6 +537,27 @@ export class Trainer {
         return Trainer.__wrap(ret[0]);
     }
     /**
+     * Like [`Trainer::from_network_def`], but all random weights are derived
+     * deterministically from `seed`: the same `(json, seed)` always produces
+     * bit-identical weights (`get_weights()`), independent of `Math.random`
+     * or the platform RNG.
+     *
+     * The seed is a `u32` so JavaScript callers can pass a plain `number`
+     * (no `BigInt`); it is widened to `u64` internally.
+     * @param {string} json
+     * @param {number} seed
+     * @returns {Trainer}
+     */
+    static fromNetworkDefSeeded(json, seed) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_fromNetworkDefSeeded(ptr0, len0, seed);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return Trainer.__wrap(ret[0]);
+    }
+    /**
      * Like [`from_network_def`], but with an explicit `loss_kind`
      * instead of auto-detection from `output_dim`. Use this when the
      * auto-detection rule isn't right — e.g., a network with
@@ -554,6 +575,23 @@ export class Trainer {
         const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.trainer_fromNetworkDefWithLoss(ptr0, len0, loss_kind);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return Trainer.__wrap(ret[0]);
+    }
+    /**
+     * Seeded variant of [`Trainer::from_network_def_with_loss`]
+     * (explicit `loss_kind`, deterministic weights from a `u32` `seed`).
+     * @param {string} json
+     * @param {LossKind} loss_kind
+     * @param {number} seed
+     * @returns {Trainer}
+     */
+    static fromNetworkDefWithLossSeeded(json, loss_kind, seed) {
+        const ptr0 = passStringToWasm0(json, wasm.__wbindgen_malloc_command_export, wasm.__wbindgen_realloc_command_export);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.trainer_fromNetworkDefWithLossSeeded(ptr0, len0, loss_kind, seed);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }
