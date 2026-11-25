@@ -22,6 +22,19 @@ describe("gp-report CLI", () => {
     expect(readFileSync(out, "utf8")).toContain("f1_vs_readability");
   });
 
+  it("renders every v1.1 section of the contract fixture without --extras, and --extras cannot override it", () => {
+    const plain = join(dir, "v11.html");
+    expect(run(CONTRACT_FIXTURE, "-o", plain).status).toBe(0);
+    const html = readFileSync(plain, "utf8");
+    for (const id of ["gates", "strata", "confusion", "pr", "calibration", "tokens", "runtime", "notes", "provenance"]) expect(html).toContain(`<section id="${id}"`);
+    expect(html).not.toContain("not in this report");
+    const ex = join(dir, "rival-extras.json");
+    writeFileSync(ex, JSON.stringify({ names: { model: "SIDECAR" }, notes: [{ kind: "note", text: "SIDECAR NOTE" }] }));
+    const both = join(dir, "v11-both.html");
+    expect(run(CONTRACT_FIXTURE, "--extras", ex, "-o", both).status).toBe(0);
+    expect(readFileSync(both, "utf8")).toBe(html);
+  });
+
   it("defaults the output name to <input>.report.html in the current directory", () => {
     const r = run(CONTRACT_FIXTURE);
     expect(r.status).toBe(0);

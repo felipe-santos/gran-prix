@@ -48,3 +48,4 @@ export {
   type SnapshotSetManifest,
 } from "./set-readers.js";
 export { DEFAULT_EXCLUDE_FLAGS, buildDataset, groupIdOf, type BuiltDataset, type DatasetParams, type DatasetSource, type PageMeta } from "./dataset.js";
+export { ownTextChars, ownTextWeights } from "./weights.js";

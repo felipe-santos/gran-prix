@@ -1,12 +1,20 @@
 import type { EvalReport } from "@gran-prix/contracts";
-import type { ReportExtras } from "./extras.js";
 import { esc } from "./format.js";
+import type { Resolved } from "./resolve.js";
 
 /** What every section renderer reads. */
 export interface Ctx {
   r: EvalReport;
-  x: ReportExtras;
+  /** The report merged with the optional sidecar; the report wins. */
+  x: Resolved;
 }
+
+/** A 1.0.x report cannot carry the v1.1 fields, so a gap is explained by the version. */
+export const isV10 = (c: Ctx): boolean => c.r.format_version.startsWith("1.0");
+
+/** "not in this report", plus the reason when the report is a v1.0 document. */
+export const notInReport = (c: Ctx, what: string, why: string): string =>
+  isV10(c) ? `${what} not in this report (EvalReport v1.0.0 ${why}).` : `${what} not in this report.`;
 
 export interface Section {
   id: string;

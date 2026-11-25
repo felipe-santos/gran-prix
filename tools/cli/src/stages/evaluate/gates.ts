@@ -18,7 +18,7 @@ export interface GateParam {
   metric: Metric;
   comparator: Comparator;
   threshold: number;
-  /** One stratum or a list (pooled). Omitted or "overall": all groups. */
+  /** One stratum or a list (pooled); an entry may also name an aggregate (`params.aggregates`). Omitted or "overall": all groups. */
   stratum?: string | string[];
   /** Baseline id: the observed value is the paired difference model - baseline. */
   baseline?: string;
@@ -62,7 +62,8 @@ export interface PlannedGate {
   estimate: Estimator;
 }
 
-const strataOf = (g: GateParam): string[] | undefined => {
+/** Strata (or aggregate names) a gate is restricted to; `undefined` = every group. */
+export const strataOf = (g: GateParam): string[] | undefined => {
   const list = g.stratum === undefined ? [] : Array.isArray(g.stratum) ? g.stratum : [g.stratum];
   const named = list.filter((s) => s !== "overall");
   return named.length > 0 ? named : undefined;
@@ -94,6 +95,15 @@ export interface GateOutcome {
   ci95: Ci | null;
   threshold: string;
   name: string | undefined;
+  /** The machine-readable parts of the gate (EvalReport 1.1 `gates[]`). */
+  comparator: Comparator;
+  thresholdValue: number;
+  metric: Metric;
+  aggregation: Aggregation;
+  baseline: string | undefined;
+  useCiLower: boolean;
+  /** Strata the gate is evaluated on, joined with "+"; `undefined` = overall. */
+  stratum: string | undefined;
 }
 
 const compare = (v: number, cmp: Comparator, t: number): boolean => (cmp === ">=" ? v >= t : cmp === ">" ? v > t : cmp === "<=" ? v <= t : v < t);
@@ -125,5 +135,12 @@ export function judgeGate(p: PlannedGate, nGroups: number, ci: Ci | null): GateO
     ci95: ci,
     threshold: `${p.gate.comparator} ${p.gate.threshold}`,
     name: p.gate.name,
+    comparator: p.gate.comparator,
+    thresholdValue: p.gate.threshold,
+    metric: p.gate.metric,
+    aggregation: p.aggregation,
+    baseline: p.gate.baseline,
+    useCiLower: p.gate.use_ci_lower === true,
+    stratum: p.strata?.join("+"),
   };
 }

@@ -4,16 +4,19 @@ import type { ReportExtras } from "@gran-prix/report";
 import { defineStage, type StageContext } from "../../stage.js";
 import type { ArtifactHandle } from "../../store.js";
 import { GP_VERSION } from "../../version.js";
-import { evaluateCore, type BaselineInput, type CoreOptions, type GroupInfo, type ScoredRow } from "./core.js";
+import { LABEL_BASELINE_SCHEMA, collectBaselines, type LabelBaselineParam } from "./baselines.js";
+import { evaluateCore, type AggregateDef, type BaselineInput, type CoreOptions, type GroupInfo, type ReportWeighting, type ScoredRow } from "./core.js";
 import { GATE_PARAM_SCHEMA, type GateParam } from "./gates.js";
-import { readBaseline, readDataset, readModel, scoreRows, type DataRow, type SplitParam } from "./load.js";
+import { readDataset, readModel, scoreRows, type DataRow, type SplitParam } from "./load.js";
 
 /**
- * `ts:evaluate.intrinsic@1.0.0`: scores a split of a Dataset with a ModelPackage and writes an
- * EvalReport v1.0 (element-level, character-weighted, positive = keep, per stratum and overall),
- * the extras sidecar for `gp report`, and a details document. Ports: `model` + `dataset` are the
- * canonical contract of the registry; `baselines` is an optional `many` Bundle port carrying other
- * systems' predictions for the same units.
+ * `ts:evaluate.intrinsic@1.0.0`: scores a split of a Dataset with a ModelPackage and writes an EvalReport v1.1
+ * (element-level, character-weighted, positive = keep, per stratum and overall, with CIs, PR curve, aggregates,
+ * structured gates, weighting, bootstrap, names and notes), the extras sidecar (kept for older `@gran-prix/report`
+ * builds; redundant with the report since 1.1) and a details document. Ports: `model` + `dataset` are the canonical
+ * contract of the registry; `baselines` is an optional `many` Bundle port carrying other systems' predictions for the
+ * same units (or NodeLabels), and `label_baselines` an optional `many` NodeLabelsSet port for the output of label stages.
+ * Not filled here: `token_reduction` (needs a tokenizer and page text) and `runtime` (G5 latency).
  */
 
 export const EVALUATE_IMPL = "ts:evaluate.intrinsic@1.0.0";
@@ -21,6 +24,11 @@ export const EVALUATE_IMPL = "ts:evaluate.intrinsic@1.0.0";
 interface WeightParam {
   feature?: string;
   log1p_scale?: number;
+}
+
+interface AggregateParam {
+  name: string;
+  strata: string[];
 }
 
 interface Params {
@@ -34,8 +42,11 @@ interface Params {
   runtime?: Runtime;
   positive_label?: string;
   label_sources?: string[];
-  weight?: "none" | WeightParam;
+  weight?: "none" | "row" | WeightParam;
   baselines?: string[];
+  label_baseline?: LabelBaselineParam;
+  aggregates?: AggregateParam[];
+  dataset_name?: string;
   gates?: GateParam[];
   pr_points?: number;
 }
@@ -57,14 +68,27 @@ const PARAMS_SCHEMA = {
     label_sources: { type: "array", items: { type: "string" }, description: "Keep only rows of these label sources (e.g. [human])." },
     weight: {
       anyOf: [
-        { enum: ["none"] },
+        { enum: ["none", "row"] },
         { type: "object", additionalProperties: false, properties: { feature: { type: "string" }, log1p_scale: { type: "number", exclusiveMinimum: 0 } } },
       ],
-      description: 'Unit weight: "none" (1 per element) or the feature that holds log1p(chars)/log1p(scale). Default log_own_len with scale 5000, falling back to 1.',
+      description:
+        'Unit weight: "row" (dataset-row.w, exact own-text characters; needs a dataset with row_weight), "none" (1 per element) or the feature that holds log1p(chars)/log1p(scale). Default: "row" when the dataset has row_weight, else the feature log_own_len with scale 5000 (capped, noted), else 1.',
     },
     baselines: { type: "array", items: { type: "string" }, description: "Ids (and order) of the supplied baseline systems to use; default all." },
+    label_baseline: { ...LABEL_BASELINE_SCHEMA, description: "How NodeLabels given as baselines become predictions (keep classes) and what they are called." },
+    aggregates: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["name", "strata"],
+        additionalProperties: false,
+        properties: { name: { type: "string", minLength: 1 }, strata: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1 } },
+      },
+      description: 'Named sets of strata (e.g. "hard") reported in intrinsic.aggregates[] and comparison[], and usable as a gate stratum.',
+    },
+    dataset_name: { type: "string", minLength: 1, description: "Display name of the dataset (names.dataset)." },
     gates: { type: "array", items: GATE_PARAM_SCHEMA, description: "Gates evaluated into gates[]; thresholds come from here, never from code." },
-    pr_points: { type: "integer", minimum: 2, maximum: 501, description: "Thresholds of the PR curve in the extras (default 51)." },
+    pr_points: { type: "integer", minimum: 2, maximum: 501, description: "Thresholds of the PR curve (default 51)." },
   },
 } as const;
 
@@ -72,15 +96,39 @@ const DEFAULT_WEIGHT = { feature: "log_own_len", log1p_scale: 5000 } as const;
 const ZERO_SHA: Sha256 = `sha256:${"0".repeat(64)}`;
 
 interface WeightPlan {
-  /** Feature index, or -1 for weight 1. */
+  source: "row" | "feature" | "unit";
+  /** Feature index for `source: "feature"`. */
   index: number;
   scale: number;
   note: string;
+  weighting: Pick<ReportWeighting, "unit" | "weight_source">;
 }
 
-/** Character weight of a row = chars of own text, recovered from the static `log1p` transform of a feature. */
-export function planWeight(param: Params["weight"], names: readonly string[]): WeightPlan {
-  if (param === "none") return { index: -1, scale: 0, note: "Unit weight: 1 per element (params.weight = none): counts are ELEMENTS, not characters." };
+/**
+ * Character weight of a row. Preferred: `dataset-row.w`, the exact own-text length written by the dataset stage
+ * (manifest `row_weight`). Fallback for datasets without it: the characters recovered from the static `log1p`
+ * transform of a feature (capped at its scale), with a note. `"none"` is one per element.
+ */
+export function planWeight(param: Params["weight"], names: readonly string[], rowWeight = false): WeightPlan {
+  if (param === "none") {
+    return {
+      source: "unit",
+      index: -1,
+      scale: 0,
+      note: "Unit weight: 1 per element (params.weight = none): counts are ELEMENTS, not characters.",
+      weighting: { unit: "elements", weight_source: "none: 1 per element (params.weight = none)" },
+    };
+  }
+  if (param === "row" || (param === undefined && rowWeight)) {
+    if (!rowWeight) throw new Error('params.weight = "row" needs a dataset whose manifest declares row_weight (rebuild it with the dataset stage)');
+    return {
+      source: "row",
+      index: -1,
+      scale: 0,
+      note: "Unit weight: characters of own text (Unicode code points, NFC, whitespace collapsed), exact, from dataset-row.w (manifest row_weight = own_text_chars).",
+      weighting: { unit: "chars", weight_source: "dataset-row.w (own-text characters, manifest row_weight = own_text_chars)" },
+    };
+  }
   const explicit = param !== undefined;
   const feature = param?.feature ?? DEFAULT_WEIGHT.feature;
   const scale = param?.log1p_scale ?? DEFAULT_WEIGHT.log1p_scale;
@@ -88,20 +136,29 @@ export function planWeight(param: Params["weight"], names: readonly string[]): W
   if (index < 0) {
     if (explicit) throw new Error(`params.weight.feature "${feature}" is not a feature of the model (${names.join(", ")})`);
     return {
+      source: "unit",
       index: -1,
       scale: 0,
-      note: `Unit weight: 1 per element. The model has no feature "${feature}" to recover the characters of own text from, so counts are ELEMENTS, not characters (the experiment protocol weights by characters). Proposed contract change: an optional integer \`w\` (own text characters) in dataset-row.`,
+      note: `Unit weight: 1 per element. The dataset has no row weight (w) and the model has no feature "${feature}" to recover the characters of own text from, so counts are ELEMENTS, not characters (the experiment protocol weights by characters). Rebuild the dataset with the dataset stage to get row_weight.`,
+      weighting: { unit: "elements", weight_source: `none: no dataset-row.w and no feature "${feature}"` },
     };
   }
   return {
+    source: "feature",
     index,
     scale,
-    note: `Unit weight: characters of own text, recovered as round(expm1(${feature} * log1p(${scale}))) from the dataset feature. The extractor clips at its scale, so one element weighs at most ${scale} characters. Proposed contract change: an optional integer \`w\` in dataset-row would make this exact.`,
+    note: `Unit weight: characters of own text, recovered as round(expm1(${feature} * log1p(${scale}))) from the dataset feature (the dataset has no row weight w, or params.weight overrides it). The extractor clips at its scale, so one element weighs at most ${scale} characters; rebuild the dataset with the dataset stage to get the exact dataset-row.w.`,
+    weighting: { unit: "chars", weight_source: `feature ${feature} (log1p, scale ${scale}), recovered and capped at ${scale} characters per element` },
   };
 }
 
-export function weightOf(plan: WeightPlan, x: readonly number[]): number {
-  if (plan.index < 0) return 1;
+/** Weight of one row: its `w` (row source), the recovered feature, or 1. */
+export function weightOf(plan: WeightPlan, x: readonly number[], w?: number): number {
+  if (plan.source === "row") {
+    if (w === undefined) throw new Error("the row has no w");
+    return w;
+  }
+  if (plan.source === "unit") return 1;
   const v = Math.min(1, Math.max(0, x[plan.index] as number));
   return Math.max(0, Math.round(Math.expm1(v * Math.log1p(plan.scale))));
 }
@@ -111,21 +168,6 @@ const single = (ctx: StageContext, port: string): ArtifactHandle => {
   if (h === undefined || Array.isArray(h)) throw new Error(`input "${port}" is missing`);
   return h;
 };
-
-function selectBaselines(ctx: StageContext, wanted: readonly string[] | undefined) {
-  const supplied = ctx.inputs["baselines"];
-  const handles = supplied === undefined ? [] : Array.isArray(supplied) ? supplied : [supplied];
-  const all = handles.map((h, i) => ({ h, sys: readBaseline(h, i) }));
-  const ids = all.map((a) => a.sys.id);
-  const dup = ids.find((id, i) => ids.indexOf(id) !== i);
-  if (dup !== undefined) throw new Error(`two baseline artifacts claim the id "${dup}"`);
-  if (wanted === undefined) return all.map((a) => a.sys);
-  return wanted.map((id) => {
-    const found = all.find((a) => a.sys.id === id);
-    if (!found) throw new Error(`params.baselines lists "${id}", but the supplied baseline systems are: ${ids.join(", ") || "none"}`);
-    return found.sys;
-  });
-}
 
 function provenance(ctx: StageContext): EvalReport["provenance"] {
   const inputIds = Object.fromEntries(
@@ -160,6 +202,7 @@ export const evaluateIntrinsic = defineStage(
       { name: "model", type: "ModelPackage" },
       { name: "dataset", type: "Dataset" },
       { name: "baselines", type: "Bundle", many: true, optional: true },
+      { name: "label_baselines", type: "NodeLabelsSet", many: true, optional: true },
     ],
     outputs: [
       { name: "report", type: "EvalReport" },
@@ -191,17 +234,19 @@ export const evaluateIntrinsic = defineStage(
       const groups: GroupInfo[] = [];
       for (const g of manifest.groups) {
         info.set(g.group_id, groups.length);
-        groups.push({ id: g.group_id, key: g.group_key, stratum: g.stratum });
+        groups.push({ id: g.group_id, key: g.group_key, stratum: g.stratum, ...(g.tags ? { tags: g.tags } : {}) });
       }
-      const plan = planWeight(p.weight, model.manifest.feature_spec.names);
+      const plan = planWeight(p.weight, model.manifest.feature_spec.names, manifest.row_weight !== undefined);
       const scores = scoreRows(handle, rows);
       const scored: ScoredRow[] = rows.map((r, i) => {
         const g = info.get(r.g);
         if (g === undefined) throw new Error(`row of group "${r.g}" is not in the dataset manifest`);
-        return { g, u: r.u, y: r.y as 0 | 1, s: r.s, w: weightOf(plan, r.x), score: scores[i] as number };
+        return { g, u: r.u, y: r.y as 0 | 1, s: r.s, w: weightOf(plan, r.x, r.w), score: scores[i] as number };
       });
-      const threshold = p.threshold === undefined || p.threshold === "accept" ? model.thresholds.accept : p.threshold;
-      const baselines: BaselineInput[] = selectBaselines(ctx, p.baselines).map((b) => ({ id: b.id, keep: b.keep }));
+      const acceptThreshold = p.threshold === undefined || p.threshold === "accept";
+      const threshold = acceptThreshold ? model.thresholds.accept : (p.threshold as number);
+      const baselines: BaselineInput[] = collectBaselines(ctx, manifest, p.baselines, p.label_baseline).map((b) => ({ id: b.id, keep: b.keep, ...(b.origin ? { origin: b.origin } : {}) }));
+      const keepText = manifest.label_projection ? `keep (${manifest.label_projection.keep_classes.join(" + ")})` : positiveLabel;
 
       const core: CoreOptions = {
         threshold,
@@ -212,11 +257,14 @@ export const evaluateIntrinsic = defineStage(
         aggregation: p.aggregation ?? "macro_page",
         gates: p.gates ?? [],
         prGrid: p.pr_points ?? 51,
+        weighting: { ...plan.weighting, positive_class: keepText },
+        aggregates: (p.aggregates ?? []) as readonly AggregateDef[],
+        operatingRule: acceptThreshold ? "the model package's thresholds.accept" : `params.threshold = ${threshold}`,
         notes: [
           { kind: "note", text: plan.note },
           {
             kind: "note",
-            text: `Operating threshold ${threshold}${p.threshold === undefined || p.threshold === "accept" ? " (the package's thresholds.accept)" : " (params.threshold)"}; predicted keep = score >= threshold. Positive class = "${positiveLabel}". ${rows.length} rows of split "${split}"${p.label_sources ? `, label sources ${p.label_sources.join("+")}` : ""}.`,
+            text: `Operating threshold ${threshold}${acceptThreshold ? " (the package's thresholds.accept)" : " (params.threshold)"}; predicted keep = score >= threshold. Positive class = ${keepText}. ${rows.length} rows of split "${split}"${p.label_sources ? `, label sources ${p.label_sources.join("+")}` : ""}.`,
           },
         ],
       };
@@ -225,7 +273,7 @@ export const evaluateIntrinsic = defineStage(
 
       const body = {
         format: "gran-prix.eval-report" as const,
-        format_version: "1.0.0" as const,
+        format_version: "1.1.0" as const,
         mode: "intrinsic" as const,
         model_id: model.modelId,
         dataset_id: manifest.dataset_id,
@@ -233,6 +281,9 @@ export const evaluateIntrinsic = defineStage(
         threshold,
         intrinsic: res.intrinsic,
         ...(res.gates.length > 0 ? { gates: res.gates } : {}),
+        system: { kind: "model" as const, name: model.manifest.name },
+        names: { model: model.manifest.name, ...(p.dataset_name ? { dataset: p.dataset_name } : {}) },
+        notes: res.notes,
         provenance: provenance(ctx),
       };
       const reportId = contractId("eval-report", body as unknown as Record<string, unknown>);

@@ -14,6 +14,9 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # deploy-pages looks up the uploaded "github-pages" artifact through the Actions API
+  # (listWorkflowRunArtifacts), which needs actions: read on the GITHUB_TOKEN.
+  actions: read
 
 # Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
 # However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
@@ -42,8 +45,12 @@ jobs:
           cache: pnpm
       # demo-web depends on the workspace package `@gran-prix/wasm` (packages/wasm/dist/web).
       # Nothing generated is committed, so the WASM is built here (same steps as the CI `wasm` job).
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
+      # rust-toolchain.toml pins the compiler. Install exactly that version (rustup does not
+      # reliably auto-install it) together with the wasm32 target the file lists.
+      - name: Install pinned Rust toolchain
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-unknown-unknown
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -62,12 +69,12 @@ jobs:
       - name: Build
         run: pnpm --filter demo-web build
       - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           # Upload the build output from the demo-web/dist directory
           path: './demo-web/dist'
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

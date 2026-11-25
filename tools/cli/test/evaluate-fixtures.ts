@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertValid, canonicalJson, contractId, groupBucket, sha256Of, type DatasetManifest, type PipelineSpec, type SplitName } from "@gran-prix/contracts";
+import { assertValid, canonicalJson, contractId, groupBucket, sha256Of, type DatasetManifest, type PipelineSpec, type Sha256, type SplitName } from "@gran-prix/contracts";
 import { ArtifactStore, dataPaths } from "../src/index.js";
 import { makeRng } from "../src/stages/evaluate/bootstrap.js";
 import { EVALUATE_IMPL } from "../src/stages/evaluate/stage.js";
@@ -20,6 +20,9 @@ export interface SynthGroup {
   key: string;
   stratum: string;
   split: SplitName;
+  /** Snapshot the page stands for (manifest `sources[].source_id`), so NodeLabels can be matched to it. */
+  snapshot?: Sha256;
+  tags?: string[];
 }
 
 export interface SynthRow {
@@ -28,7 +31,19 @@ export interface SynthRow {
   x: number[];
   y: 0 | 1;
   s: string;
+  /** Own-text characters (Dataset 1.1 `w`). */
+  w?: number;
 }
+
+export interface BuildOptions {
+  /** Write `w` on every row (rows without one get `defaultWeight(row)`) and `row_weight` in the manifest. */
+  rowWeight?: boolean;
+}
+
+/** A deterministic own-text length, unrelated to the features. */
+export const defaultWeight = (r: Pick<SynthRow, "g" | "u">): number => 3 + ((r.u * 37 + r.g.length * 11) % 90);
+
+export const snapshotOf = (i: number): Sha256 => `sha256:${i.toString(16).padStart(64, "0")}`;
 
 /** Four fixture features: log_text_len, link_density, is_heading, depth_norm. The label follows them loosely. */
 export function synthRows(groups: readonly SynthGroup[], perGroup: number, seed: number): SynthRow[] {
@@ -49,15 +64,15 @@ export function synthRows(groups: readonly SynthGroup[], perGroup: number, seed:
 }
 
 /** A VALID Dataset artifact (manifest + three jsonl files) around the given groups and rows; the template is the contract fixture. */
-export function buildDataset(groups: readonly SynthGroup[], rows: readonly SynthRow[]): Record<string, string> {
-  const template = JSON.parse(readFileSync(join(FIXTURES, "dataset", "manifest.json"), "utf8")) as DatasetManifest;
+export function buildDataset(groups: readonly SynthGroup[], rows: readonly SynthRow[], opts: BuildOptions = {}): Record<string, string> {
+  const { row_weight: _rw, ...template } = JSON.parse(readFileSync(join(FIXTURES, "dataset", "manifest.json"), "utf8")) as DatasetManifest; // the fixture declares row_weight; the rows built here only carry w on request
   const sorted = [...groups].sort((a, b) => (a.id < b.id ? -1 : 1));
   const files: Record<string, string> = {};
   const stats: Record<SplitName, { rows: number; pos: number }> = { train: { rows: 0, pos: 0 }, val: { rows: 0, pos: 0 }, test: { rows: 0, pos: 0 } };
   for (const split of ["train", "val", "test"] as const) {
     const ids = new Set(sorted.filter((g) => g.split === split).map((g) => g.id));
     const mine = rows.filter((r) => ids.has(r.g)).sort((a, b) => (a.g === b.g ? a.u - b.u : a.g < b.g ? -1 : 1));
-    files[`${split}.jsonl`] = mine.map((r) => canonicalJson({ g: r.g, u: r.u, x: r.x, y: r.y, c: 0.9, s: r.s })).join("\n") + "\n";
+    files[`${split}.jsonl`] = mine.map((r) => canonicalJson({ g: r.g, u: r.u, x: r.x, y: r.y, c: 0.9, s: r.s, ...(opts.rowWeight ? { w: r.w ?? defaultWeight(r) } : {}) })).join("\n") + "\n";
     stats[split] = { rows: mine.length, pos: mine.filter((r) => r.y === 1).length };
   }
   const fileRef = (split: SplitName) => ({
@@ -70,7 +85,8 @@ export function buildDataset(groups: readonly SynthGroup[], rows: readonly Synth
   const strata = [...new Set(sorted.map((g) => g.stratum))].sort();
   const manifest = {
     ...template,
-    sources: sorted.map((g) => ({ group_id: g.id, features_id: template.sources[0]!.features_id, labels_id: template.sources[0]!.labels_id })),
+    ...(opts.rowWeight ? { row_weight: "own_text_chars" as const } : {}),
+    sources: sorted.map((g) => ({ group_id: g.id, ...(g.snapshot ? { source_id: g.snapshot } : {}), features_id: template.sources[0]!.features_id, labels_id: template.sources[0]!.labels_id })),
     groups: sorted.map((g) => ({
       group_id: g.id,
       group_key: g.key,
@@ -79,6 +95,7 @@ export function buildDataset(groups: readonly SynthGroup[], rows: readonly Synth
       bucket: groupBucket(template.split.salt, g.key),
       n_rows: rows.filter((r) => r.g === g.id).length,
       n_pos: rows.filter((r) => r.g === g.id && r.y === 1).length,
+      ...(g.tags ? { tags: g.tags } : {}),
     })),
     split: { ...template.split, overrides: Object.fromEntries(sorted.map((g) => [g.key, g.split])) },
     files: { train: fileRef("train"), val: fileRef("val"), test: fileRef("test") },
@@ -101,11 +118,11 @@ export function buildDataset(groups: readonly SynthGroup[], rows: readonly Synth
 
 /** 12 pages over 8 domains and 3 strata: 8 pages in test (6 domains), 2 val, 2 train. */
 export const GROUPS: SynthGroup[] = [
-  ...[0, 1, 2, 3, 4, 5, 6, 7].map((i): SynthGroup => ({ id: `t${i}`, key: `test${Math.floor(i / 2) % 4}.example`, stratum: ["forum", "docs", "shop", "docs"][Math.floor(i / 2)] as string, split: "test" })),
-  { id: "v0", key: "val0.example", stratum: "docs", split: "val" },
-  { id: "v1", key: "val1.example", stratum: "shop", split: "val" },
-  { id: "r0", key: "train0.example", stratum: "forum", split: "train" },
-  { id: "r1", key: "train1.example", stratum: "docs", split: "train" },
+  ...[0, 1, 2, 3, 4, 5, 6, 7].map((i): SynthGroup => ({ id: `t${i}`, key: `test${Math.floor(i / 2) % 4}.example`, stratum: ["forum", "docs", "shop", "docs"][Math.floor(i / 2)] as string, split: "test", snapshot: snapshotOf(i + 1) })),
+  { id: "v0", key: "val0.example", stratum: "docs", split: "val", snapshot: snapshotOf(9) },
+  { id: "v1", key: "val1.example", stratum: "shop", split: "val", snapshot: snapshotOf(10) },
+  { id: "r0", key: "train0.example", stratum: "forum", split: "train", snapshot: snapshotOf(11) },
+  { id: "r1", key: "train1.example", stratum: "docs", split: "train", snapshot: snapshotOf(12) },
 ];
 
 export const specWith = (stage: PipelineSpec["stages"][number], externals: NonNullable<PipelineSpec["externals"]>): PipelineSpec => ({
@@ -126,11 +143,11 @@ export interface World {
   externals: NonNullable<PipelineSpec["externals"]>;
 }
 
-export function world(withBaseline = true): World {
+export function world(withBaseline = true, build: BuildOptions = {}): World {
   const dataDir = tmpDir();
   const store = new ArtifactStore(dataPaths(dataDir).artifacts);
   const model = store.putFiles("ModelPackage", modelFiles());
-  const dataset = store.putFiles("Dataset", buildDataset(GROUPS, ROWS));
+  const dataset = store.putFiles("Dataset", buildDataset(GROUPS, ROWS, build));
   const externals: World["externals"] = { model: { type: "ModelPackage", id: model }, dataset: { type: "Dataset", id: dataset } };
   if (withBaseline) {
     // A "heuristic": keep when the element has long text and few links. Covers every test unit.

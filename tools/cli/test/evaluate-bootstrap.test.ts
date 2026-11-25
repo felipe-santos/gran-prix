@@ -102,7 +102,8 @@ describe("cluster bootstrap CIs", () => {
       expect(c.delta).toBeGreaterThan(0.1);
       expect(c.ci95[0]).toBeGreaterThan(0);
     }
-    expect(intrinsic.comparison.map((c) => c.stratum).sort()).toEqual(["easy", "hard"]);
+    // every stratum, plus the "overall" row
+    expect(intrinsic.comparison.map((c) => c.stratum).sort()).toEqual(["easy", "hard", "overall"]);
   });
 
   it("paired difference is negative with a CI below 0 when the baseline is better", () => {

@@ -1,8 +1,9 @@
 import type { Prf } from "@gran-prix/contracts";
-import { dotWhisker, legend, legendMarker, niceAxis, seriesFor, UNIT_AXIS, type DwRow, type Series } from "./charts.js";
+import { dotWhisker, legend, legendMarker, seriesFor, UNIT_AXIS, type DwRow, type Series } from "./charts.js";
 import type { MetricCis } from "./extras.js";
-import { ci, esc, int, num, pct, signed } from "./format.js";
-import { absent, noteLine, numCell, section, tableWrap, th, tile, type Ctx, type Intrinsic, type Section } from "./ui.js";
+import { ci, esc, int, num, pct } from "./format.js";
+import { aggregatesTable, byTagTable, comparisonBlock, methodsLine } from "./sections-methods.js";
+import { noteLine, numCell, section, tableWrap, th, tile, type Ctx, type Intrinsic, type Section } from "./ui.js";
 
 const METRICS = [
   { key: "f1", label: "F1" },
@@ -74,6 +75,12 @@ function cell(p: Prf, k: MetricKey, cis: MetricCis | undefined): string {
   return numCell(num(p[k]), c ? ci(c) : undefined);
 }
 
+/** A baseline's coverage (share of pages it produced an output for), shown once, on its overall row. */
+function coverageNote(i: Intrinsic, se: Series, stratum: string | null): string {
+  const cov = se.cls === "s0" || stratum !== null ? undefined : i.baselines[se.name]?.coverage;
+  return cov === undefined ? "" : `<span class="cov">coverage ${pct(cov)}</span>`;
+}
+
 function strataTable(c: Ctx, i: Intrinsic, series: Series[]): string {
   const hasCi = c.x.metric_ci !== undefined;
   const labels: (string | null)[] = [null, ...Object.keys(i.by_stratum)];
@@ -82,14 +89,14 @@ function strataTable(c: Ctx, i: Intrinsic, series: Series[]): string {
       const rows = series.flatMap((se) => {
         const p = prfFor(i, se, s);
         if (!p) return [];
-        const groups = s !== null && se.cls === "s0" ? int(i.by_stratum[s]?.n_groups ?? 0) : "—";
-        return [{ se, p, groups }];
+        const ng = s === null ? undefined : se.cls === "s0" ? i.by_stratum[s]?.n_groups : i.baselines[se.name]?.by_stratum[s]?.n_groups;
+        return [{ se, p, groups: ng === undefined ? "—" : int(ng) }];
       });
       return `<tbody class="grp">${rows
         .map(({ se, p, groups }, idx) => {
           const head = idx === 0 ? `<th scope="rowgroup" rowspan="${rows.length}">${esc(s ?? "Overall")}</th>` : "";
           const cis = cisFor(c, se, s);
-          return `<tr class="${se.cls === "s0" ? "model" : "base"}">${head}<td class="sys"><span class="sw">${legendMarker(se)}</span>${esc(se.name)}</td>${numCell(int(p.n))}${numCell(groups)}${cell(p, "precision", cis)}${cell(p, "recall", cis)}${cell(p, "f1", cis)}</tr>`;
+          return `<tr class="${se.cls === "s0" ? "model" : "base"}">${head}<td class="sys"><span class="sw">${legendMarker(se)}</span>${esc(se.name)}${coverageNote(i, se, s)}</td>${numCell(int(p.n))}${numCell(groups)}${cell(p, "precision", cis)}${cell(p, "recall", cis)}${cell(p, "f1", cis)}</tr>`;
         })
         .join("")}</tbody>`;
     })
@@ -98,45 +105,6 @@ function strataTable(c: Ctx, i: Intrinsic, series: Series[]): string {
     ? "Point estimate with 95% group-bootstrap CI below it. Groups (pages or domains) are resampled, never rows."
     : "Point estimates at the operating threshold. Per-stratum 95% CIs are not in this report.";
   return `<table><caption>${esc(caption)}</caption><thead><tr>${th("Stratum")}${th("System")}${th("n", true)}${th("Groups", true)}${th("Precision", true)}${th("Recall", true)}${th("F1", true)}</tr></thead>${body}</table>`;
-}
-
-/** Model-minus-baseline F1 per stratum with the report's group-bootstrap CI. */
-function comparisonBlock(i: Intrinsic): string {
-  if (i.comparison.length === 0) return absent("No model-versus-baseline comparison in this report.");
-  const baselines = Object.keys(i.baselines);
-  const series: Series[] = seriesFor("", baselines).slice(1).map((s) => ({ ...s, cls: "s0" }));
-  const strata = [...new Set(i.comparison.map((e) => e.stratum))];
-  const rows: DwRow[] = strata.map((s) => ({
-    label: s,
-    points: baselines.map((b) => {
-      const e = i.comparison.find((x) => x.stratum === s && x.baseline === b);
-      return e ? { value: e.delta, ci: e.ci95 } : undefined;
-    }),
-  }));
-  const all = i.comparison.flatMap((e) => [e.ci95[0], e.ci95[1], e.delta]);
-  const axis = niceAxis(Math.min(...all), Math.max(...all));
-  const svg = dotWhisker({
-    id: "chart-delta",
-    title: "F1 difference, model minus baseline, by stratum",
-    desc: "Dot is the F1 difference; the whisker is its 95% group-bootstrap confidence interval; the dashed line marks zero.",
-    rows,
-    series,
-    domain: axis.domain,
-    ticks: axis.ticks,
-    axisLabel: "ΔF1 = model − baseline (95% CI; right of dashed line = model better)",
-    decimals: 3,
-    zeroLine: true,
-  });
-  const verdict = (e: Intrinsic["comparison"][number]): string =>
-    e.ci95[0] > 0 ? "Yes: model better" : e.ci95[1] < 0 ? "Yes: baseline better" : "No";
-  const body = i.comparison
-    .map(
-      (e) =>
-        `<tr><th scope="row">${esc(e.stratum)}</th><td>${esc(e.baseline)}</td>${numCell(num(e.model))}${numCell(num(e.baseline_value))}${numCell(signed(e.delta))}${numCell(ci(e.ci95))}${numCell(int(e.n_groups))}<td>${verdict(e)}</td></tr>`,
-    )
-    .join("");
-  const table = `<table><thead><tr>${th("Stratum")}${th("Baseline")}${th("Model F1", true)}${th("Baseline F1", true)}${th("ΔF1", true)}${th("95% CI of ΔF1", true)}${th("Groups", true)}${th("CI excludes 0")}</tr></thead><tbody>${body}</tbody></table>`;
-  return `<h3>Model versus each baseline (F1)</h3>${legend(series)}<div class="panel">${svg}</div>${tableWrap(table)}`;
 }
 
 function labelSourceTable(i: Intrinsic): string {
@@ -151,10 +119,11 @@ function labelSourceTable(i: Intrinsic): string {
 function worstGroups(i: Intrinsic, limit = 8): string {
   if (i.per_group.length === 0) return "";
   const sorted = [...i.per_group].sort((a, b) => a.f1 - b.f1 || a.group_id.localeCompare(b.group_id)).slice(0, limit);
+  const withKey = sorted.some((g) => g.group_key !== undefined);
   const body = sorted
-    .map((g) => `<tr><th scope="row"><code>${esc(g.group_id)}</code></th><td>${esc(g.stratum)}</td>${numCell(num(g.f1))}${numCell(pct(g.kept_ratio))}</tr>`)
+    .map((g) => `<tr><th scope="row"><code>${esc(g.group_id)}</code></th>${withKey ? `<td>${esc(g.group_key ?? "—")}</td>` : ""}<td>${esc(g.stratum)}</td>${numCell(num(g.f1))}${numCell(pct(g.kept_ratio))}</tr>`)
     .join("");
-  return `<h3>Weakest groups</h3>${noteLine(`The ${Math.min(limit, i.per_group.length)} lowest-F1 groups of ${int(i.per_group.length)}. Start error analysis here.`)}${tableWrap(`<table><thead><tr>${th("Group")}${th("Stratum")}${th("F1", true)}${th("Kept share of tokens", true)}</tr></thead><tbody>${body}</tbody></table>`)}`;
+  return `<h3>Weakest groups</h3>${noteLine(`The ${Math.min(limit, i.per_group.length)} lowest-F1 groups of ${int(i.per_group.length)}. Start error analysis here.`)}${tableWrap(`<table><thead><tr>${th("Group")}${withKey ? th("Group key") : ""}${th("Stratum")}${th("F1", true)}${th("Kept share of tokens", true)}</tr></thead><tbody>${body}</tbody></table>`)}`;
 }
 
 /** (3) Per-stratum metrics: table plus dot-and-whisker, model against every baseline. */
@@ -163,10 +132,13 @@ export function strataSection(c: Ctx): Section | undefined {
   if (!i) return undefined;
   const series = reportSeries(i);
   const body = [
+    methodsLine(i),
     overallTiles(i),
     metricPanels(c, i, series),
     tableWrap(strataTable(c, i, series)),
+    aggregatesTable(i),
     comparisonBlock(i),
+    byTagTable(i),
     labelSourceTable(i),
     worstGroups(i),
   ].join("");
