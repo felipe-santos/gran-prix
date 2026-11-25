@@ -1,6 +1,15 @@
 import { inject, describe, expect, it } from "vitest";
-import { sha256Of, validate, type FileRef } from "@gran-prix/contracts";
-import { eligibleUnits, indexBySnapshot, labelPageReadability, loadSnapshotHtml, readSetDocs, readabilityLabel, textSimilarity } from "../src/index.js";
+import { validate } from "@gran-prix/contracts";
+import {
+  NodeFeaturesSetReader,
+  SnapshotSetReader,
+  eligibleUnits,
+  indexBySnapshot,
+  labelPageReadability,
+  readSetDocs,
+  readabilityLabel,
+  textSimilarity,
+} from "../src/index.js";
 import { readTree } from "../src/testing/index.js";
 import { loadCorpus } from "./helpers.js";
 
@@ -76,38 +85,61 @@ describe("Readability labels of a page", () => {
   });
 });
 
-describe("snapshot sets", () => {
-  const set = readTree(dir, "snapshot-set");
-  const docs1 = byName("docs-1").snapshot;
-  const docs1Path = `snapshots/${docs1.snapshot_id.slice(7)}.json`;
-  const files = { files: () => Object.keys(set), file: (p: string) => set[p] as Uint8Array };
+describe("snapshot and features sets (the readers the collect stage shares)", () => {
+  const snapSet = readTree(dir, "snapshot-set");
+  const featSet = readTree(dir, "features-set");
+  const source = (set: Record<string, Uint8Array>) => ({ file: (p: string) => set[p] as Uint8Array });
+  const snaps = new SnapshotSetReader(source(snapSet));
+  const feats = new NodeFeaturesSetReader(source(featSet));
 
-  it("finds members by their format, wherever they are, and loads the gzipped HTML next to them", () => {
-    const members = readSetDocs<{ snapshot_id: string; html: FileRef }>({ ...files, json: () => null }, "gran-prix.page-snapshot");
-    expect(members).toHaveLength(12); // manifest.json is not a member: it has another format
-    const m = members.find((x) => x.path === docs1Path)!;
-    const html = loadSnapshotHtml(files, m.path, m.doc.html);
+  it("follow the manifest: one entry per page, the snapshot, its flattened html and its features", () => {
+    expect(snaps.entries()).toHaveLength(12);
+    expect(feats.entries().map((e) => e.snapshot_id)).toEqual(snaps.entries().map((e) => e.snapshot_id));
+    const e = snaps.entries().find((x) => x.snapshot_id === byName("docs-1").snapshot.snapshot_id)!;
+    expect(snaps.snapshot(e)).toEqual(byName("docs-1").snapshot);
+    const html = snaps.html(e);
     expect(html).toContain('data-gp-id="n0"');
     expect(html).not.toMatch(/<script[^>]+(src|type)=/i); // scripts are kept but emptied
     expect(html).toBe(byName("docs-1").html);
+    const fe = feats.entries().find((x) => x.snapshot_id === e.snapshot_id)!;
+    expect(feats.features(fe)).toEqual(byName("docs-1").features);
+    expect(fe).toMatchObject({ features_id: byName("docs-1").features.features_id, group_key: e.group_key, stratum: e.stratum });
   });
 
-  it("accepts a JSON artifact holding one document or an array", () => {
-    const doc = byName("docs-1").features;
-    const none = { files: () => [], file: () => new Uint8Array() };
-    expect(readSetDocs({ ...none, json: () => doc }, "gran-prix.node-features")).toHaveLength(1);
-    expect(readSetDocs({ ...none, json: () => [doc, doc] }, "gran-prix.node-features")).toHaveLength(2);
-    expect(readSetDocs({ ...none, json: () => { throw new Error("empty"); } }, "gran-prix.node-features")).toEqual([]);
+  it("refuse a set whose manifest is not theirs", () => {
+    expect(() => new SnapshotSetReader(source(featSet)).manifest()).toThrow(/not a SnapshotSet/);
+    expect(() => new NodeFeaturesSetReader(source(snapSet)).manifest()).toThrow(/not a NodeFeaturesSet/);
   });
 
-  it("checks the FileRef hash and reports a missing file", () => {
-    const m = readSetDocs<{ html: FileRef }>({ ...files, json: () => null }, "gran-prix.page-snapshot").find((x) => x.path === docs1Path)!;
-    expect(() => loadSnapshotHtml(files, m.path, { ...m.doc.html, sha256: sha256Of("other") })).toThrow(/does not match/);
-    expect(() => loadSnapshotHtml(files, m.path, { ...m.doc.html, path: "nope.gz", sha256: sha256Of("x") })).toThrow(/not in the SnapshotSet/);
-    // a wrong path is recovered through the hash-named file of the collect layout
-    expect(loadSnapshotHtml(files, m.path, { ...m.doc.html, path: "nope.gz" })).toBe(byName("docs-1").html);
-    // the hash of the DECODED html is accepted too
-    expect(loadSnapshotHtml(files, m.path, { ...m.doc.html, sha256: sha256Of(byName("docs-1").html) })).toBe(byName("docs-1").html);
+  it("report a member the manifest names but the set lacks", () => {
+    const { ["snapshots/" + byName("docs-1").snapshot.snapshot_id.slice(7) + ".json"]: _gone, ...rest } = snapSet;
+    const reader = new SnapshotSetReader({
+      file: (p: string) => {
+        const b = rest[p];
+        if (!b) throw new Error(`ENOENT ${p}`);
+        return b;
+      },
+    });
+    const e = reader.entries().find((x) => x.snapshot_id === byName("docs-1").snapshot.snapshot_id)!;
+    expect(() => reader.snapshot(e)).toThrow(/ENOENT/);
+  });
+});
+
+describe("NodeLabelsSet documents", () => {
+  const doc = { format: "gran-prix.node-labels", snapshot_id: "sha256:1" };
+  const none = { files: () => [], file: () => new Uint8Array() };
+
+  it("are found by their format, wherever they are; a JSON artifact holds one document or an array", () => {
+    expect(readSetDocs({ ...none, json: () => doc }, "gran-prix.node-labels")).toHaveLength(1);
+    expect(readSetDocs({ ...none, json: () => [doc, doc] }, "gran-prix.node-labels")).toHaveLength(2);
+    expect(readSetDocs({ ...none, json: () => { throw new Error("empty"); } }, "gran-prix.node-labels")).toEqual([]);
+    const set: Record<string, Uint8Array> = {
+      "labels/a.json": new TextEncoder().encode(JSON.stringify(doc)),
+      "labels/b.json": new TextEncoder().encode(JSON.stringify({ format: "other" })),
+      "labels/c.txt": new TextEncoder().encode("not json"),
+    };
+    const members = readSetDocs({ files: () => Object.keys(set), file: (p: string) => set[p] as Uint8Array, json: () => null }, "gran-prix.node-labels");
+    expect(members.map((m) => m.path)).toEqual(["labels/a.json"]);
   });
 
   it("indexBySnapshot refuses two documents for one snapshot", () => {

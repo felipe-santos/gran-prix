@@ -4,11 +4,11 @@
  * without a network. Needs the `@gran-prix/features` bundle (`gp-features.iife.js`) and Chromium.
  *
  * Layout written under `outDir` (the real collect/extract layout, plus oracle files for the tests):
- *   snapshot-set/manifest.json            entries in order: { name, snapshot_id }
+ *   snapshot-set/manifest.json            SnapshotSetManifest (format gran-prix.snapshot-set), entries in order
  *   snapshot-set/snapshots/<hex>.json     PageSnapshot (<hex> = snapshot_id without "sha256:")
  *   snapshot-set/html/<hex>.html.gz       gzip of the FLATTENED HTML (open shadow roots inlined, scripts emptied);
  *                                         <hex> = sha256 of the DECODED html, which is what the FileRef hashes
- *   features-set/manifest.json            same entries
+ *   features-set/manifest.json            NodeFeaturesSetManifest (format gran-prix.node-features-set)
  *   features-set/features/<hex>.json      NodeFeatures under FeatureSchema v0 (<hex> = snapshot id)
  *   schema.json                           FeatureSchema v0
  *   truth/<name>.json                     the fixture's truth rules ({ category, rules })
@@ -21,6 +21,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 import { sha256Hex, sha256Of, type FileRef } from "@gran-prix/contracts";
 import { buildPageSnapshot, featureSchemaV0, launch, probeLoadedPage, vectorize } from "@gran-prix/features";
+import {
+  FEATURES_SET_FORMAT,
+  SNAPSHOT_SET_FORMAT,
+  type NodeFeaturesSetEntry,
+  type NodeFeaturesSetManifest,
+  type SnapshotSetEntry,
+  type SnapshotSetManifest,
+} from "../set-readers.js";
 
 type Page = Parameters<typeof probeLoadedPage>[0];
 
@@ -132,6 +140,8 @@ export async function buildCorpus(opts: BuildCorpusOptions): Promise<string[]> {
   for (const d of dirs) mkdirSync(d, { recursive: true });
   writeFileSync(join(opts.outDir, "schema.json"), JSON.stringify(featureSchemaV0));
   const index: Array<{ name: string; snapshot_id: string; hex: string }> = [];
+  const snapshotEntries: SnapshotSetEntry[] = [];
+  const featureEntries: NodeFeaturesSetEntry[] = [];
   const { browser, context } = await launch();
   try {
     // Sequential on purpose: background tabs get throttled timers, which would distort the settle windows.
@@ -166,8 +176,30 @@ export async function buildCorpus(opts: BuildCorpusOptions): Promise<string[]> {
         const hex = snapshot.snapshot_id.slice("sha256:".length);
         writeFileSync(join(opts.outDir, "snapshot-set", "snapshots", `${hex}.json`), JSON.stringify(snapshot));
         writeFileSync(join(opts.outDir, "snapshot-set", "html", `${htmlHex}.html.gz`), gz);
-        writeFileSync(join(opts.outDir, "features-set", "features", `${hex}.json`), JSON.stringify(vectorize(snapshot, featureSchemaV0)));
+        const features = vectorize(snapshot, featureSchemaV0);
+        writeFileSync(join(opts.outDir, "features-set", "features", `${hex}.json`), JSON.stringify(features));
         index.push({ name, snapshot_id: snapshot.snapshot_id, hex });
+        snapshotEntries.push({
+          snapshot_id: snapshot.snapshot_id,
+          url: snapshot.page.url,
+          final_url: snapshot.page.final_url,
+          stratum: truth.category,
+          group_key: snapshot.page.group_key,
+          http_status: snapshot.capture.http_status,
+          flags: [],
+          node_count: snapshot.nodes.length,
+          snapshot: `snapshots/${hex}.json`,
+          html: html.path,
+        });
+        featureEntries.push({
+          snapshot_id: snapshot.snapshot_id,
+          features_id: features.features_id,
+          group_key: snapshot.page.group_key,
+          stratum: truth.category,
+          flags: [],
+          n_rows: features.unit_ids.length,
+          features: `features/${hex}.json`,
+        });
         writeFileSync(join(opts.outDir, "truth", `${name}.json`), JSON.stringify(truth));
         writeFileSync(join(opts.outDir, "browser-truth", `${name}.json`), JSON.stringify(await browserTruth(page, truth.rules, snapshot.nodes.length)));
       } finally {
@@ -177,8 +209,15 @@ export async function buildCorpus(opts: BuildCorpusOptions): Promise<string[]> {
   } finally {
     await browser.close();
   }
-  const entries = index.map(({ name, snapshot_id }) => ({ name, snapshot_id }));
-  for (const set of ["snapshot-set", "features-set"]) writeFileSync(join(opts.outDir, set, "manifest.json"), JSON.stringify({ entries, failures: [] }));
+  const snapshotManifest: SnapshotSetManifest = { format: SNAPSHOT_SET_FORMAT, format_version: "1.0.0", entries: snapshotEntries, failures: [] };
+  const featuresManifest: NodeFeaturesSetManifest = {
+    format: FEATURES_SET_FORMAT,
+    format_version: "1.0.0",
+    feature_schema_id: featureSchemaV0.schema_id,
+    entries: featureEntries,
+  };
+  writeFileSync(join(opts.outDir, "snapshot-set", "manifest.json"), JSON.stringify(snapshotManifest));
+  writeFileSync(join(opts.outDir, "features-set", "manifest.json"), JSON.stringify(featuresManifest));
   writeFileSync(join(opts.outDir, "index.json"), JSON.stringify(index));
   return [...names];
 }

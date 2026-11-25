@@ -30,5 +30,21 @@ export {
   type ReadabilityLabelParams,
   type TruthLabelParams,
 } from "./label-page.js";
-export { indexBySnapshot, loadSnapshotHtml, readSetDocs, type FileSetLike, type SetMember, type SetSource } from "./sets.js";
+export { indexBySnapshot, readSetDocs, type FileSetLike, type SetMember, type SetSource } from "./sets.js";
+export {
+  FEATURES_SET_FORMAT,
+  NodeFeaturesSetReader,
+  SNAPSHOT_SET_FORMAT,
+  SnapshotSetReader,
+  featuresPath,
+  hexOf,
+  htmlPath,
+  snapshotPath,
+  type FileSource,
+  type NodeFeaturesSetEntry,
+  type NodeFeaturesSetManifest,
+  type SnapshotSetEntry,
+  type SnapshotSetFailure,
+  type SnapshotSetManifest,
+} from "./set-readers.js";
 export { DEFAULT_EXCLUDE_FLAGS, buildDataset, groupIdOf, type BuiltDataset, type DatasetParams, type DatasetSource, type PageMeta } from "./dataset.js";

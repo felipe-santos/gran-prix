@@ -1,5 +1,5 @@
-import { LABEL_SOURCES, type FeatureSchema, type LabelSource, type NodeFeatures, type NodeLabels, type PageSnapshot, type SplitName, type SplitRanges } from "@gran-prix/contracts";
-import { buildDataset, indexBySnapshot, readSetDocs, type DatasetSource } from "@gran-prix/labels";
+import { LABEL_SOURCES, type FeatureSchema, type LabelSource, type NodeLabels, type PageSnapshot, type SplitName, type SplitRanges } from "@gran-prix/contracts";
+import { NodeFeaturesSetReader, SnapshotSetReader, buildDataset, indexBySnapshot, readSetDocs, type DatasetSource } from "@gran-prix/labels";
 import { defineStage, type StagePlugin } from "../stage.js";
 import type { ArtifactHandle } from "../store.js";
 
@@ -78,26 +78,29 @@ export const datasetJsonl: StagePlugin = defineStage(
       group_by?: "group_key" | "group";
     };
     const schema = (ctx.inputs["schema"] as ArtifactHandle).json() as FeatureSchema;
-    const features = indexBySnapshot(readSetDocs<NodeFeatures>(ctx.inputs["features"] as ArtifactHandle, "gran-prix.node-features"), "NodeFeatures");
+    const featuresReader = new NodeFeaturesSetReader(ctx.inputs["features"] as ArtifactHandle);
+    const features = new Map(featuresReader.entries().map((e) => [e.snapshot_id, e]));
     const labels = indexBySnapshot(readSetDocs<NodeLabels>(ctx.inputs["labels"] as ArtifactHandle, "gran-prix.node-labels"), "NodeLabels");
     const snapsInput = ctx.inputs["snapshots"] as ArtifactHandle | undefined;
     if (!snapsInput) {
       throw new Error('dataset needs each page\'s group_key and category to split by domain: connect the "snapshots" input');
     }
-    const snapshots = indexBySnapshot(readSetDocs<PageSnapshot>(snapsInput, "gran-prix.page-snapshot"), "PageSnapshot");
+    const snapsReader = new SnapshotSetReader(snapsInput);
+    const snapshots = new Map(snapsReader.entries().map((e) => [e.snapshot_id, e]));
 
     const sources: DatasetSource[] = [];
     for (const [id, f] of features) {
       const l = labels.get(id);
-      const s = snapshots.get(id);
+      const se = snapshots.get(id);
       if (!l) {
         ctx.log(`snapshot ${id}: features without labels, left out of the dataset`);
         continue;
       }
-      if (!s) throw new Error(`features ${f.doc.features_id} refer to snapshot ${id}, which is not in the snapshot set`);
+      if (!se) throw new Error(`features ${f.features_id} refer to snapshot ${id}, which is not in the snapshot set`);
+      const s = snapsReader.snapshot(se);
       sources.push({
-        page: { snapshot_id: s.doc.snapshot_id, group_key: s.doc.page.group_key, category: s.doc.page.category, flags: captureFlags(s.doc) },
-        features: f.doc,
+        page: { snapshot_id: s.snapshot_id, group_key: s.page.group_key, category: s.page.category, flags: captureFlags(s) },
+        features: featuresReader.features(f),
         labels: l.doc,
       });
     }

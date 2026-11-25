@@ -1,10 +1,10 @@
-import { canonicalJson, type NodeFeatures, type NodeLabels, type PageSnapshot } from "@gran-prix/contracts";
+import { canonicalJson, type NodeLabels } from "@gran-prix/contracts";
 import {
+  NodeFeaturesSetReader,
+  SnapshotSetReader,
   assertTruthRules,
-  indexBySnapshot,
   labelPageReadability,
   labelPageTruth,
-  loadSnapshotHtml,
   mergeLabels,
   readSetDocs,
   type NodeLabelsDoc,
@@ -17,16 +17,12 @@ import type { ArtifactHandle } from "../store.js";
 
 /**
  * Label stages (E1.7, E2.6). Ports are the canonical ones of the registry: `snapshots` (SnapshotSet) and
- * `features` (NodeFeaturesSet) in, `labels` (NodeLabelsSet) out. Sets are file-set artifacts whose JSON
- * members are recognized by `format` and joined by `snapshot_id` (see `@gran-prix/labels` `sets.ts`).
- * The output set holds one `labels/<snapshot hex12>.json` per snapshot that has feature rows.
+ * `features` (NodeFeaturesSet) in, `labels` (NodeLabelsSet) out. SnapshotSet and NodeFeaturesSet are read through
+ * the manifest-driven `SnapshotSetReader` / `NodeFeaturesSetReader` the collect and extract stages share
+ * (`@gran-prix/labels` `set-readers.ts`); the two are joined by `snapshot_id`. The output set holds one `labels/<snapshot hex12>.json` per snapshot that has feature rows.
  */
 
-const FORMATS = {
-  snapshot: "gran-prix.page-snapshot",
-  features: "gran-prix.node-features",
-  labels: "gran-prix.node-labels",
-} as const;
+const LABELS_FORMAT = "gran-prix.node-labels";
 
 const labelsPath = (doc: { snapshot_id: string }): string => `labels/${doc.snapshot_id.slice("sha256:".length, "sha256:".length + 12)}.json`;
 
@@ -42,15 +38,16 @@ interface Page extends PageInput {
 
 /** Pairs every NodeFeatures with its snapshot and loads the flattened HTML. */
 function pages(ctx: StageContext): Page[] {
-  const snaps = ctx.inputs["snapshots"] as ArtifactHandle;
-  const feats = ctx.inputs["features"] as ArtifactHandle;
-  const snapshots = indexBySnapshot(readSetDocs<PageSnapshot>(snaps, FORMATS.snapshot), "PageSnapshot");
-  const features = readSetDocs<NodeFeatures>(feats, FORMATS.features);
-  if (features.length === 0) throw new Error("the features set holds no NodeFeatures document");
-  return features.map((f) => {
-    const s = snapshots.get(f.doc.snapshot_id);
-    if (!s) throw new Error(`features ${f.doc.features_id} refer to snapshot ${f.doc.snapshot_id}, which is not in the snapshot set`);
-    return { name: s.doc.page.url_key, snapshot: s.doc, features: f.doc, html: loadSnapshotHtml(snaps, s.path, s.doc.html) };
+  const snaps = new SnapshotSetReader(ctx.inputs["snapshots"] as ArtifactHandle);
+  const feats = new NodeFeaturesSetReader(ctx.inputs["features"] as ArtifactHandle);
+  const entries = new Map(snaps.entries().map((e) => [e.snapshot_id, e]));
+  const featureEntries = feats.entries();
+  if (featureEntries.length === 0) throw new Error("the features set holds no NodeFeatures document");
+  return featureEntries.map((fe) => {
+    const se = entries.get(fe.snapshot_id);
+    if (!se) throw new Error(`features ${fe.features_id} refer to snapshot ${fe.snapshot_id}, which is not in the snapshot set`);
+    const snapshot = snaps.snapshot(se);
+    return { name: snapshot.page.url_key, snapshot, features: feats.features(fe), html: snaps.html(se) };
   });
 }
 
@@ -180,7 +177,7 @@ export const labelMerge: StagePlugin = defineStage(
   (ctx) => {
     const bySnapshot = new Map<string, NodeLabels[]>();
     for (const layer of ctx.inputs["layers"] as ArtifactHandle[]) {
-      for (const m of readSetDocs<NodeLabels>(layer, FORMATS.labels) as SetMember<NodeLabels>[]) {
+      for (const m of readSetDocs<NodeLabels>(layer, LABELS_FORMAT) as SetMember<NodeLabels>[]) {
         const list = bySnapshot.get(m.doc.snapshot_id);
         if (list) list.push(m.doc);
         else bySnapshot.set(m.doc.snapshot_id, [m.doc]);
