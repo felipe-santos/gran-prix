@@ -12,7 +12,7 @@ import { ensureWasmLoaded } from '../lib/wasmLoader';
  * Both trainers receive (current_dx, current_dy) as input and output
  * the forecasted delta for the X or Y axis respectively.
  *
- * Follows the same isolation pattern as useFlappyWasm.ts.
+ * Each trainer is an isolated WASM instance, so the two axes never share state.
  */
 
 const HIDDEN_SIZE = 12;
