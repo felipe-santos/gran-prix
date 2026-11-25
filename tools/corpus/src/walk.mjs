@@ -214,6 +214,7 @@ class Collector {
       flags,
       nodes: snap.nodes,
       title: snap.page.title ?? "",
+      htmlLang: snap.page.lang ?? null,
       ...(serverChars === undefined ? {} : { serverChars }),
     });
     const groupKey = got.entry.group_key;
@@ -227,6 +228,8 @@ class Collector {
       text_elements: ev.textElements,
       node_count: got.entry.node_count,
       lang: ev.lang,
+      lang_source: ev.langDecision.source,
+      lang_top: ev.langDecision.top,
       flags,
     });
     const reasons = [...ev.reasons];
