@@ -1,0 +1,381 @@
+{
+  "format": "gran-prix.pipeline-spec",
+  "format_version": "1.0.0",
+  "name": "dom-v0",
+  "description": "E1 gate pipeline: the 12 synthetic fixture pages -> collect -> extract (FeatureSchema v0) -> label (human truth + Readability heuristic) -> merge -> dataset -> train (gp-train, small MLP) -> package -> evaluate. A pipeline test, not a quality claim. Split: group = file stem (one page per group), assigned by explicit split.overrides because a 12-group hash split can leave a split empty: train = the six *-1 pages + landing-2, val = article-2 + docs-2, test = forum-2 + product-2 + spa-2 (every page has human truth, so the test split keeps its rows; ADR-006). The seed in split.seed is the salt of the hash bucket and is only the fallback for groups without an override. Report is a post-step, not a stage: gp report <evaluate.report> --extras <evaluate.extras>. Run from the repo root (or pass --root): gp run pipelines/dom-v0.json",
+  "vars": {
+    "seed": 42,
+    "split_seed": "dom-v0"
+  },
+  "externals": {
+    "urls": { "type": "UrlList", "path": "pipelines/dom-v0.urls.json" },
+    "schema": { "type": "FeatureSchema", "path": "packages/features/src/schema/feature-schema.v0.json" },
+    "train_config": { "type": "TrainConfig", "path": "pipelines/dom-v0.train-config.json" }
+  },
+  "stages": [
+    {
+      "id": "collect",
+      "kind": "collect",
+      "impl": "ts:collect.playwright@1.0.0",
+      "params": {
+        "viewport": [1280, 900],
+        "captured_at": "2026-01-01T00:00:00Z",
+        "fail_on_error": true
+      },
+      "inputs": {
+        "urls": { "external": "urls" }
+      }
+    },
+    {
+      "id": "extract",
+      "kind": "extract",
+      "impl": "ts:extract.dom-node@1.0.0",
+      "params": {},
+      "inputs": {
+        "snapshots": { "stage": "collect", "output": "snapshots" },
+        "schema": { "external": "schema" }
+      }
+    },
+    {
+      "id": "label_truth",
+      "kind": "label",
+      "impl": "ts:label.truth@1.0.0",
+      "params": {
+        "pages": [
+          {
+            "url_contains": "/article-1.html",
+            "rules": [
+              { "selector": "article.story > h1", "label": "main" },
+              { "selector": "article.story .dek", "label": "main" },
+              { "selector": "article.story > p", "label": "main" },
+              { "selector": "article.story > h2", "label": "main" },
+              { "selector": "article.story blockquote", "label": "main" },
+              { "selector": ".crumbs", "label": "support" },
+              { "selector": ".byline", "label": "support" },
+              { "selector": "figcaption", "label": "support" },
+              { "selector": ".tags", "label": "support" },
+              { "selector": ".author-bio", "label": "support" },
+              { "selector": ".comments", "label": "support" },
+              { "selector": "#cookie-banner", "label": "noise" },
+              { "selector": ".site-header", "label": "noise" },
+              { "selector": ".ad", "label": "noise" },
+              { "selector": ".share", "label": "noise" },
+              { "selector": ".sidebar", "label": "noise" },
+              { "selector": ".related", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" },
+              { "selector": "#subscribe-modal", "label": "noise" },
+              { "selector": ".sr-only", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/article-2.html",
+            "rules": [
+              { "selector": "article.post h1", "label": "main" },
+              { "selector": "article.post > p", "label": "main" },
+              { "selector": "article.post > h2", "label": "main" },
+              { "selector": "article.post > ul", "label": "main" },
+              { "selector": "article.post figure pre", "label": "main" },
+              { "selector": "article.post figcaption", "label": "support" },
+              { "selector": ".post-head .meta", "label": "support" },
+              { "selector": ".toc", "label": "support" },
+              { "selector": ".post-foot", "label": "support" },
+              { "selector": ".topbar", "label": "noise" },
+              { "selector": ".promo", "label": "noise" },
+              { "selector": ".related-posts", "label": "noise" },
+              { "selector": "newsletter-box", "label": "noise" },
+              { "selector": ".stealth", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/docs-1.html",
+            "rules": [
+              { "selector": "article.doc > h1", "label": "main" },
+              { "selector": "article.doc > .lead", "label": "main" },
+              { "selector": "article.doc > h2", "label": "main" },
+              { "selector": "article.doc > p", "label": "main" },
+              { "selector": "article.doc > table", "label": "main" },
+              { "selector": "article.doc > pre", "label": "main" },
+              { "selector": "article.doc > ul", "label": "main" },
+              { "selector": ".breadcrumbs", "label": "support" },
+              { "selector": ".toc-right", "label": "support" },
+              { "selector": ".feedback", "label": "noise" },
+              { "selector": ".pager", "label": "noise" },
+              { "selector": ".topbar", "label": "noise" },
+              { "selector": ".side", "label": "noise" },
+              { "selector": "#version-banner", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/docs-2.html",
+            "rules": [
+              { "selector": "article.ref > h1", "label": "main" },
+              { "selector": "article.ref > p", "label": "main" },
+              { "selector": "article.ref > h2", "label": "main" },
+              { "selector": "article.ref > table", "label": "main" },
+              { "selector": "article.ref > pre", "label": "main" },
+              { "selector": "article.ref > ul", "label": "main" },
+              { "selector": "article.ref .deprecated", "label": "support" },
+              { "selector": ".see-also", "label": "noise" },
+              { "selector": ".nav", "label": "noise" },
+              { "selector": ".cookie-notice", "label": "noise" },
+              { "selector": ".site-header", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/forum-1.html",
+            "rules": [
+              { "selector": ".thread-title", "label": "main" },
+              { "selector": ".post-text", "label": "main" },
+              { "selector": ".thread-meta", "label": "support" },
+              { "selector": ".post-date", "label": "support" },
+              { "selector": ".author-col", "label": "support" },
+              { "selector": ".board-crumbs", "label": "support" },
+              { "selector": ".sig", "label": "noise" },
+              { "selector": ".post-actions", "label": "noise" },
+              { "selector": ".forum-head", "label": "noise" },
+              { "selector": ".ad-slot", "label": "noise" },
+              { "selector": ".pagination", "label": "noise" },
+              { "selector": ".quick-reply", "label": "noise" },
+              { "selector": ".forum-side", "label": "noise" },
+              { "selector": "#login-wall", "label": "noise" },
+              { "selector": ".forum-footer", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/forum-2.html",
+            "rules": [
+              { "selector": ".q-title", "label": "main" },
+              { "selector": ".post-body > p", "label": "main" },
+              { "selector": ".post-body > pre", "label": "main" },
+              { "selector": ".q-stats", "label": "support" },
+              { "selector": ".answers-head", "label": "support" },
+              { "selector": ".post-tags", "label": "support" },
+              { "selector": ".post-user", "label": "support" },
+              { "selector": ".comments", "label": "support" },
+              { "selector": ".votes", "label": "noise" },
+              { "selector": ".top", "label": "noise" },
+              { "selector": ".your-answer", "label": "noise" },
+              { "selector": ".right-col", "label": "noise" },
+              { "selector": "#mobile-menu", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" },
+              { "selector": ".cookie", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/landing-1.html",
+            "rules": [
+              { "selector": ".hero-title", "label": "main" },
+              { "selector": ".hero-sub", "label": "main" },
+              { "selector": ".feature", "label": "main" },
+              { "selector": "#features > h2", "label": "main" },
+              { "selector": ".eyebrow", "label": "support" },
+              { "selector": "#pricing", "label": "support" },
+              { "selector": "#stories", "label": "support" },
+              { "selector": ".hero .btn", "label": "noise" },
+              { "selector": ".hero .btn-secondary", "label": "noise" },
+              { "selector": ".fine", "label": "noise" },
+              { "selector": ".nav", "label": "noise" },
+              { "selector": ".logo-strip", "label": "noise" },
+              { "selector": ".cta-band", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" },
+              { "selector": ".cookie", "label": "noise" },
+              { "selector": "#beta-popup", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/landing-2.html",
+            "rules": [
+              { "selector": ".headline", "label": "main" },
+              { "selector": ".lede", "label": "main" },
+              { "selector": "#how", "label": "main" },
+              { "selector": "#library", "label": "main" },
+              { "selector": "#faq", "label": "support" },
+              { "selector": ".stores", "label": "noise" },
+              { "selector": ".alert", "label": "noise" },
+              { "selector": ".bar", "label": "noise" },
+              { "selector": ".newsletter", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" },
+              { "selector": "#rating-popup", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/product-1.html",
+            "rules": [
+              { "selector": ".product-title", "label": "main" },
+              { "selector": ".price", "label": "main" },
+              { "selector": ".stock", "label": "support" },
+              { "selector": ".variants", "label": "support" },
+              { "selector": ".rating", "label": "support" },
+              { "selector": ".description", "label": "main" },
+              { "selector": ".specs", "label": "main" },
+              { "selector": ".reviews", "label": "support" },
+              { "selector": ".crumbs", "label": "support" },
+              { "selector": ".add", "label": "noise" },
+              { "selector": ".wish", "label": "noise" },
+              { "selector": ".trust", "label": "noise" },
+              { "selector": ".promo-bar", "label": "noise" },
+              { "selector": ".site-header", "label": "noise" },
+              { "selector": ".related-products", "label": "noise" },
+              { "selector": ".hidden", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" },
+              { "selector": ".cookie", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/product-2.html",
+            "rules": [
+              { "selector": ".title", "label": "main" },
+              { "selector": ".price-line", "label": "main" },
+              { "selector": ".tagline", "label": "main" },
+              { "selector": ".sku", "label": "support" },
+              { "selector": ".options", "label": "support" },
+              { "selector": ".delivery", "label": "support" },
+              { "selector": "product-specs", "label": "main" },
+              { "selector": ".story", "label": "main" },
+              { "selector": ".qa", "label": "support" },
+              { "selector": ".reviews", "label": "support" },
+              { "selector": ".banner", "label": "noise" },
+              { "selector": ".top", "label": "noise" },
+              { "selector": ".video-note", "label": "noise" },
+              { "selector": ".buy", "label": "noise" },
+              { "selector": ".recs", "label": "noise" },
+              { "selector": ".chat", "label": "noise" },
+              { "selector": ".hidden", "label": "noise" },
+              { "selector": ".site-footer", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/spa-1.html",
+            "rules": [
+              { "selector": "article.story > h1", "label": "main" },
+              { "selector": "article.story > p", "label": "main" },
+              { "selector": ".byline", "label": "support" },
+              { "selector": ".reader-notes", "label": "support" },
+              { "selector": ".appbar", "label": "noise" },
+              { "selector": ".app-footer", "label": "noise" },
+              { "selector": ".drawer", "label": "noise" },
+              { "selector": ".more-stories", "label": "noise" },
+              { "selector": ".toast", "label": "noise" }
+            ]
+          },
+          {
+            "url_contains": "/spa-2.html",
+            "rules": [
+              { "selector": "article.recipe > h1", "label": "main" },
+              { "selector": ".intro", "label": "main" },
+              { "selector": ".ingredients", "label": "main" },
+              { "selector": ".method", "label": "main" },
+              { "selector": ".timing", "label": "support" },
+              { "selector": ".ratings", "label": "support" },
+              { "selector": ".nav", "label": "noise" },
+              { "selector": ".ad", "label": "noise" },
+              { "selector": ".foot", "label": "noise" },
+              { "selector": ".suggest", "label": "noise" },
+              { "selector": ".promo", "label": "noise" }
+            ]
+          }
+        ]
+      },
+      "inputs": {
+        "snapshots": { "stage": "collect", "output": "snapshots" },
+        "features": { "stage": "extract", "output": "features" }
+      }
+    },
+    {
+      "id": "label_heuristic",
+      "kind": "label",
+      "impl": "ts:label.heuristic@1.0.0",
+      "params": {
+        "labeler": "readability"
+      },
+      "inputs": {
+        "snapshots": { "stage": "collect", "output": "snapshots" },
+        "features": { "stage": "extract", "output": "features" }
+      }
+    },
+    {
+      "id": "label_merge",
+      "kind": "label",
+      "impl": "ts:label.merge@1.0.0",
+      "params": {},
+      "inputs": {
+        "layers": [
+          { "stage": "label_truth", "output": "labels" },
+          { "stage": "label_heuristic", "output": "labels" }
+        ]
+      }
+    },
+    {
+      "id": "dataset",
+      "kind": "dataset",
+      "impl": "ts:dataset.jsonl@1.0.0",
+      "params": {
+        "split": {
+          "seed": "${vars.split_seed}",
+          "group_by": "group_key",
+          "overrides": {
+            "article-1": "train",
+            "docs-1": "train",
+            "forum-1": "train",
+            "landing-1": "train",
+            "product-1": "train",
+            "spa-1": "train",
+            "landing-2": "train",
+            "article-2": "val",
+            "docs-2": "val",
+            "forum-2": "test",
+            "product-2": "test",
+            "spa-2": "test"
+          }
+        }
+      },
+      "inputs": {
+        "features": { "stage": "extract", "output": "features" },
+        "labels": { "stage": "label_merge", "output": "labels" },
+        "schema": { "external": "schema" },
+        "snapshots": { "stage": "collect", "output": "snapshots" }
+      }
+    },
+    {
+      "id": "train",
+      "kind": "train",
+      "impl": "rust:train.gp-train@1.0.0",
+      "params": {
+        "seed": "${vars.seed}",
+        "name": "dom-v0",
+        "task_name": "dom-main-content"
+      },
+      "inputs": {
+        "dataset": { "stage": "dataset", "output": "dataset" },
+        "config": { "external": "train_config" }
+      }
+    },
+    {
+      "id": "package",
+      "kind": "package",
+      "impl": "ts:package.bundle@1.0.0",
+      "params": {},
+      "inputs": {
+        "model": { "stage": "train", "output": "model" }
+      }
+    },
+    {
+      "id": "evaluate",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params": {
+        "seed": "${vars.seed}",
+        "split": "test",
+        "resamples": 200,
+        "gates": []
+      },
+      "inputs": {
+        "model": { "stage": "train", "output": "model" },
+        "dataset": { "stage": "dataset", "output": "dataset" }
+      }
+    }
+  ]
+}
