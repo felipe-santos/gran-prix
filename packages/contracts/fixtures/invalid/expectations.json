@@ -293,6 +293,17 @@
     "code": "schema",
     "path": "inputs[0].type"
   },
+  "train-config.sample-weight-unknown-value.json": {
+    "contract": "train-config",
+    "code": "schema",
+    "path": "sample_weight"
+  },
+  "train-config.sample-weight-row-on-wasm.json": {
+    "contract": "train-config",
+    "code": "invariant",
+    "path": "sample_weight",
+    "message": "gp-train"
+  },
   "page-snapshot.text-unit-wrong-owner.json": {
     "contract": "page-snapshot",
     "code": "invariant",

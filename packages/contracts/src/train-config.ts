@@ -22,7 +22,7 @@ const NetworkSpec = Type.Union([
 export const TrainConfigContract = defineContract(
   "train-config",
   "gran-prix.train-config",
-  "1.0.0",
+  "1.1.0",
   contractObject(
     "train-config",
     "gran-prix.train-config",
@@ -38,6 +38,12 @@ export const TrainConfigContract = defineContract(
           Type.Object({ kind: Type.Literal("step"), every: PosInt, gamma: Type.Number({ exclusiveMinimum: 0, maximum: 1 }) }),
           Type.Object({ kind: Type.Literal("cosine"), min_lr: Type.Number({ minimum: 0 }) }),
         ]),
+      ),
+      sample_weight: Type.Optional(
+        Type.Union([Type.Literal("none"), Type.Literal("row")], {
+          description:
+            'v1.1: "none" (the default when absent) = every row counts the same. "row" = the loss is the weighted mean sum(w_i * l_i) / sum(w_i) over the batch, w_i = the `w` column of the Dataset rows (declared by the manifest\'s row_weight, e.g. own-text characters); a Dataset without row weights is refused. Only the engine "gp-train" supports "row".',
+        }),
       ),
       epochs: PosInt,
       batch_size: PosInt,

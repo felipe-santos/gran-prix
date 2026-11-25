@@ -133,6 +133,9 @@ export function trainConfigInvariants(c: TrainConfig): Issues {
     out.check(c.data.class_balance.pos_weight !== undefined, "data.class_balance.pos_weight", 'strategy "pos_weight" requires pos_weight');
     out.check(c.runtime.engine === "gp-train", "data.class_balance.strategy", 'pos_weight is only supported by engine "gp-train"');
   }
+  if (c.sample_weight === "row") {
+    out.check(c.runtime.engine === "gp-train", "sample_weight", 'sample_weight "row" is only supported by engine "gp-train"');
+  }
   if (c.train_config_id !== undefined) {
     out.idCheck(c.train_config_id === contractId("train-config", c), "train_config_id", "does not match the hash of the config");
   }

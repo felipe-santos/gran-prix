@@ -33,11 +33,11 @@ describe("v1.1 contract set", () => {
       "pipeline-spec": "1.1.0",
       "model-package": "1.1.0",
       "node-features": "1.0.1",
+      "train-config": "1.1.0",
       "label-agreement": "1.0.0",
       "qa-task-set": "1.0.0",
       // untouched by v1.1
       golden: "1.0.0",
-      "train-config": "1.0.0",
       "node-labels": "1.0.0",
       "content-tree": "1.0.0",
       "network-def": "1.0.0",
@@ -226,6 +226,28 @@ describe("FeatureSchema / NodeFeatures / Dataset v1.1", () => {
     expect(u.dataset.rows.every((r) => typeof r.w === "number")).toBe(true);
     expect(u.dataset.manifest.groups.every((g) => (g.tags ?? []).length > 0)).toBe(true);
     expect(Object.keys(u.dataset.manifest.stats.by_tag ?? {}).sort()).toEqual(["lang:en", "lang:pt", "logged_in"]);
+  });
+});
+
+describe("TrainConfig v1.1: sample_weight", () => {
+  it("is optional: the v1.0 config (no sample_weight) is still valid, and so is the explicit none", () => {
+    expect(u.trainConfig.sample_weight).toBeUndefined();
+    expect(validate("train-config", u.trainConfig).issues).toEqual([]);
+    const none = { ...u.trainConfig, sample_weight: "none" as const };
+    delete (none as { train_config_id?: string }).train_config_id;
+    expect(validate("train-config", { ...none, train_config_id: contractId("train-config", none) }).issues).toEqual([]);
+  });
+
+  it('"row" validates for the engine gp-train and is part of the config id', () => {
+    expect(u.trainConfigRowWeight.sample_weight).toBe("row");
+    expect(u.trainConfigRowWeight.format_version).toBe("1.1.0");
+    expect(validate("train-config", u.trainConfigRowWeight).issues).toEqual([]);
+    expect(u.trainConfigRowWeight.train_config_id).not.toBe(u.trainConfig.train_config_id);
+  });
+
+  it("a config without the field keeps the id it had before v1.1 (the default adds nothing to the hash)", () => {
+    const { train_config_id: id, ...body } = u.trainConfig;
+    expect(contractId("train-config", body)).toBe(id);
   });
 });
 

@@ -4,7 +4,7 @@
   "x-gran-prix": {
     "contract": "train-config",
     "format": "gran-prix.train-config",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "$defs": {
     "SemVer": {
@@ -183,6 +183,13 @@
             "min_lr": { "minimum": 0, "type": "number" }
           }
         }
+      ]
+    },
+    "sample_weight": {
+      "description": "v1.1: \"none\" (the default when absent) = every row counts the same. \"row\" = the loss is the weighted mean sum(w_i * l_i) / sum(w_i) over the batch, w_i = the `w` column of the Dataset rows (declared by the manifest's row_weight, e.g. own-text characters); a Dataset without row weights is refused. Only the engine \"gp-train\" supports \"row\".",
+      "anyOf": [
+        { "const": "none", "type": "string" },
+        { "const": "row", "type": "string" }
       ]
     },
     "epochs": { "minimum": 1, "type": "integer" },

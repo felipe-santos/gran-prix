@@ -1,6 +1,6 @@
 import type { ContractName } from "../../registry.js";
 import { buildNodeFeatures, buildFeatureSchema, buildNodeLabels, buildSnapshot } from "./extract-docs.js";
-import { buildDataset, buildTrainConfig, sealDataset, type DatasetFixture } from "./data-docs.js";
+import { buildDataset, buildTrainConfig, buildTrainConfigRowWeight, sealDataset, type DatasetFixture } from "./data-docs.js";
 import { buildContentTree, buildDemoPipeline, buildDemoStageKind, buildPipeline, buildStageKinds } from "./graph-docs.js";
 import { buildLabelAgreement, buildQaTaskSet } from "./audit-docs.js";
 import { buildDownstreamReport, buildEvalReport, buildModel, type ModelFixture } from "./model-docs.js";
@@ -31,6 +31,7 @@ export interface Universe {
   datasetRow: DatasetRow;
   networkDef: NetworkDef;
   trainConfig: TrainConfig;
+  trainConfigRowWeight: TrainConfig;
   modelFixture: ModelFixture;
   model: ModelPackage;
   golden: Golden;
@@ -68,6 +69,7 @@ export function buildUniverse(): Universe {
     datasetRow: ds.rows[0] as DatasetRow,
     networkDef: NETWORK_DEF,
     trainConfig: buildTrainConfig(),
+    trainConfigRowWeight: buildTrainConfigRowWeight(),
     modelFixture,
     model,
     golden: modelFixture.golden,
@@ -109,6 +111,7 @@ export const VALID_PATH: Record<ContractName, string> = {
  */
 export const EXTRA_VALID: ReadonlyArray<{ contract: ContractName; path: string; pick: (u: Universe) => unknown }> = [
   { contract: "eval-report", path: "eval-report.downstream.json", pick: (u) => u.downstreamReport },
+  { contract: "train-config", path: "train-config.row-weight.json", pick: (u) => u.trainConfigRowWeight },
   { contract: "stage-kind-spec", path: "stage-kind-spec.demo.json", pick: (u) => u.demoKind },
   { contract: "pipeline-spec", path: "pipeline-spec.demo.json", pick: (u) => u.demoPipeline },
 ];
