@@ -45,7 +45,10 @@ describe("contract fixture (minimal valid EvalReport)", () => {
     expect(text).toContain("macro_f1_delta &gt;= 0");
     expect(text).toContain("0.182");
     expect(html).toMatch(/<span class="badge pass"><svg[^>]*>.*?<\/svg>PASS<\/span>/);
-    expect(text).toContain("All 1 gate passed");
+    // contracts v1.1 enriched the valid EvalReport fixture from 1 gate to 4.
+    expect(text).toContain("All 4 gates passed");
+    expect(text).toContain("g1a_f1_article");
+    expect(text).toContain("g4_token_reduction_d2");
   });
 
   it("derives the confusion matrix from tp/fp/tn/fn", () => {
