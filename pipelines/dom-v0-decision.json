@@ -1,0 +1,45 @@
+{
+  "format": "gran-prix.decision-config",
+  "format_version": "1.0.0",
+  "protocol": "plano/experimento-dom-v0.md, frozen by the tag prereg-dom-v0: sections 6.5 (uncertainty), 8 (gates G0-G6) and 11 (decision rules). Every number the rules compare against is in this file; scripts/decide-dom-v0.mjs has none. Changing a value here after results exist is a deviation (DESVIOS.md).",
+  "seeds": [1, 2, 3, 4, 5],
+  "seed_aggregation": {
+    "point": "mean",
+    "ci_lower": "mean_of_lowers",
+    "note": "Protocol 7 (B6): the MLP decision statistic is the mean over the 5 fixed seeds. A point estimate is the mean of the per-seed estimates; a CI bound is the mean of the per-seed bounds (an approximation: the seeds share the same pages, so their intervals are close; the minimum over seeds is reported next to it)."
+  },
+  "strata": {
+    "hard": ["product", "docs", "forum", "landing", "spa"],
+    "article": "article"
+  },
+  "systems": {
+    "mlp_oof_prefix": "mlp-s",
+    "gbdt": "gbdt",
+    "router": "router-oracle",
+    "individual": ["readability", "trafilatura-precision", "trafilatura-default", "trafilatura-recall", "defuddle-default", "defuddle-no-low-scoring"],
+    "g6_competitors": ["readability", "defuddle-default"]
+  },
+  "qa": {
+    "respondents": ["r1", "r2"],
+    "eligibility_respondent": "r1",
+    "arms": { "full": "full_page", "model": "pruned_model", "router": "pruned_router", "oracle": "oracle" },
+    "stratum_separator": "@",
+    "pp_per_unit": 100
+  },
+  "bootstrap": { "resamples": 10000, "seed": 20261125, "method": "percentile, resampling domains (group_key) whole" },
+  "thresholds": {
+    "G0": { "min_delta": 0.03 },
+    "G1a": { "min_delta": 0.05, "ci_lower_gt": 0 },
+    "G1b": { "min_delta": 0.02 },
+    "G2": { "test_min_delta": -0.02, "pooled_lower_min": -0.05, "pooled_one_sided_level": 0.95 },
+    "G3": { "ci_lower_min_pp": -5, "retention_min": 0.95, "category_flag_pp": -10 },
+    "G4": { "d1_min": 10, "d2_min": 2, "d2_ml_not_the_source_below": 1.5 },
+    "G5": { "p95_ms_max": 150, "model_bytes_max": 100000, "min_pages": 20, "cpu_throttle_min": 4, "repetitions_min": 3 },
+    "G6": { "min_delta_vs_competitor": -0.02, "min_pages": 10, "inaccessible_share_min": 0.8, "inaccessible_gate_id": "G6_inaccessible_share" },
+    "eligibility": { "delta_min": 0.05, "ci_level": 0.8, "ci_lower_gt": 0, "qa_delta_min_pp": -10, "retention_min": 0.95, "d2_median_min": 1.5 },
+    "concept_no_go": { "oracle_delta_pp": -5, "statistic": "point" },
+    "inconclusive_zone": { "delta_min": 0.05, "ci_lower_max": 0 },
+    "rescue_arm": { "recall_target": 0.98 },
+    "gbdt_minus_mlp_investigate_above": 0.03
+  }
+}
