@@ -12,11 +12,14 @@ import { LabelSource, LabelSpace } from "./node-labels.js";
 export const SplitName = Type.Union([Type.Literal("train"), Type.Literal("val"), Type.Literal("test")]);
 export type SplitName = Static<typeof SplitName>;
 
+/** `key` or `key:value`, e.g. `logged_in`, `lang:pt`, `content_type:forum`. */
+export const Tag = Type.String({ pattern: "^[a-z][a-z0-9_]*(:[A-Za-z0-9_.-]+)?$", description: "key or key:value." });
+
 /** One JSONL line. Short keys on purpose (file size). Rows sorted by (g, u). */
 export const DatasetRowContract = defineContract(
   "dataset-row",
   "gran-prix.dataset-row",
-  "1.0.0",
+  "1.1.0",
   Type.Object(
     {
       g: Type.String({ minLength: 1, description: "group_id (a page)." }),
@@ -26,12 +29,13 @@ export const DatasetRowContract = defineContract(
       c: Unit01,
       s: LabelSource,
       l: Type.Optional(NonNegInt),
+      w: Type.Optional(NonNegInt),
     },
     {
       $id: "urn:gran-prix:schema:dataset-row",
       title: "dataset-row",
       description:
-        "One JSONL row: g = group_id, u = unit_id, x = features, y = training target, c = label confidence, s = label source, l = label in the source (e.g. 3-class) space when y is a projection. No format envelope (one object per line).",
+        "One JSONL row: g = group_id, u = unit_id, x = features, y = training target, c = label confidence, s = label source, l = label in the source (e.g. 3-class) space when y is a projection, w (v1.1) = evaluation weight: the unit's own-text length in Unicode code points (NFC, whitespace collapsed), declared by the manifest's row_weight. No format envelope (one object per line).",
     },
   ),
 );
@@ -49,7 +53,7 @@ const Range = Type.Tuple([Type.Integer({ minimum: 0 }), Type.Integer({ minimum: 
 export const DatasetManifestContract = defineContract(
   "dataset-manifest",
   "gran-prix.dataset-manifest",
-  "1.0.0",
+  "1.1.0",
   contractObject(
     "dataset-manifest",
     "gran-prix.dataset-manifest",
@@ -57,6 +61,11 @@ export const DatasetManifestContract = defineContract(
       dataset_id: Sha256,
       feature_schema_id: Sha256,
       dim: PosInt,
+      row_weight: Type.Optional(
+        Type.Literal("own_text_chars", {
+          description: "v1.1: when present, every row carries `w` = own-text length of its unit (the weight of the char-weighted metrics).",
+        }),
+      ),
       label_space: LabelSpace,
       label_projection: Type.Optional(
         Type.Object({
@@ -90,6 +99,7 @@ export const DatasetManifestContract = defineContract(
           bucket: NonNegInt,
           n_rows: NonNegInt,
           n_pos: NonNegInt,
+          tags: Type.Optional(Type.Array(Tag, { description: "v1.1 (C9): extra slices of the group (logged_in, lang:pt, ...), sorted ascending, unique." })),
         }),
         { description: "Sorted by group_id." },
       ),
@@ -108,6 +118,11 @@ export const DatasetManifestContract = defineContract(
       stats: Type.Object({
         by_split: Type.Record(Type.String(), Type.Object({ rows: NonNegInt, pos_rate: Unit01 })),
         by_stratum: Type.Record(Type.String(), Type.Object({ groups: NonNegInt, rows: NonNegInt, pos_rate: Unit01 })),
+        by_tag: Type.Optional(
+          Type.Record(Type.String(), Type.Object({ groups: NonNegInt, rows: NonNegInt, pos_rate: Unit01 }), {
+            description: "v1.1: same shape as by_stratum, keyed by tag. Recomputable from groups[].tags.",
+          }),
+        ),
       }),
     },
     "Dataset manifest: feature schema binding, label space, hash-bucket split by group_key, file hashes.",
