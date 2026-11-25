@@ -16,6 +16,8 @@
 // document is discovered by the next re-walk; its discovery counts as DOM activity. Roots attached
 // before insertion are found by (a) when the host is inserted. Closed roots are invisible by design.
 
+import { childrenOf, docReadyState, rootChildrenOf, rootElement, shadowRootOf } from "./dom.js";
+
 export interface SettleRecord {
   /** "quiet": the DOM was quiet for quietMs. "max": the hard cap was hit first. */
   reason: "quiet" | "max";
@@ -57,15 +59,16 @@ function observe(t: Tracker, root: Node): void {
 /** Observes every open shadow root reachable through the composed tree. Returns how many were new. */
 function scanShadowRoots(t: Tracker): number {
   let found = 0;
-  const stack: Element[] = document.documentElement ? [document.documentElement] : [];
+  const de = rootElement();
+  const stack: Element[] = de ? [de] : [];
   while (stack.length > 0) {
     const el = stack.pop() as Element;
-    const sr = el.shadowRoot;
+    const sr = shadowRootOf(el);
     if (sr) {
       if (!t.roots.has(sr)) { observe(t, sr); t.rootCount++; found++; }
-      for (const c of sr.children) stack.push(c);
+      for (const c of rootChildrenOf(sr)) stack.push(c);
     }
-    for (const c of el.children) stack.push(c);
+    for (const c of childrenOf(el)) stack.push(c);
   }
   t.lastScan = performance.now();
   t.dirty = false;
@@ -82,7 +85,7 @@ export function startTracking(): void {
     lastScan: 0,
     roots: new WeakSet(),
     rootCount: 0,
-    fromStart: document.readyState === "loading",
+    fromStart: docReadyState() === "loading",
     observer: new MutationObserver((list) => {
       t.count += list.length;
       t.last = performance.now();
@@ -109,7 +112,7 @@ export function settle({ quietMs = 600, maxMs = 8000 }: { quietMs?: number; maxM
       }
       const finish = (reason: SettleRecord["reason"]): void =>
         resolve({ reason, waited_ms: Math.round(now - t0), mutations: t.count, shadow_roots: t.rootCount, tracked_from_start: t.fromStart });
-      if (document.readyState === "complete" && now - t.last >= quietMs) return finish("quiet");
+      if (docReadyState() === "complete" && now - t.last >= quietMs) return finish("quiet");
       if (now - t0 >= maxMs) return finish("max");
       setTimeout(tick, TICK_MS);
     };

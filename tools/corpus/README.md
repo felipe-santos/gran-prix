@@ -15,8 +15,8 @@ nothing in `src/config.mjs` is tunable. A different choice is a registered devia
   truth are not used and not stored. Changes made: URLs are re-ordered, filtered and re-categorised for this corpus.
   The WCXB ground truth is never used as gold or as a gate (§2.4).
 * **WebMainBench** (OpenDataLab), **Apache-2.0** (<https://huggingface.co/datasets/opendatalab/WebMainBench>): frame and
-  internal use only; its HTML is not redistributed and not stored (the 545-sample file is streamed and only the URL,
-  language and JSON-LD types are kept). The licence says nothing about the copyright of the source pages.
+  internal use only; its HTML is not redistributed and not stored (the complete 7,809-page file, ~1.35 GB, is only
+  streamed and only the URL, track id, language and JSON-LD types are kept). The licence says nothing about the copyright of the source pages.
 
 ## Usage
 
@@ -28,7 +28,7 @@ pnpm --filter @gran-prix/contracts build && pnpm --filter @gran-prix/features bu
   && pnpm --filter @gran-prix/model build && pnpm --filter @gran-prix/report build \
   && pnpm --filter @gran-prix/cli build          # (tsc may report errors in unrelated stages; capture.js is still emitted)
 
-node tools/corpus/src/cli.mjs frame                    # 1. frame.jsonl from the two URL lists (network, ~145 MB streamed)
+node tools/corpus/src/cli.mjs frame                    # 1. frame.jsonl from the two URL lists (network: ~35 MB of WCXB metadata + ~1.35 GB of WebMainBench streamed, never stored)
 node tools/corpus/src/cli.mjs walk                     # 2. walk + collect, resumable (skips every URL in walked.jsonl)
 node tools/corpus/src/cli.mjs walk --category docs --limit 10     # a partial run
 node tools/corpus/src/cli.mjs report                   # 3. exclusions.jsonl, urls.csv, summary.json, first20-exclusions.md
@@ -74,9 +74,9 @@ Outputs in the data dir: `frame.jsonl` (`url, source_dataset, source_type, categ
 
 ## Language detection
 
-`tinyld` (MIT, no dependencies, ISO 639-1 output, built for short texts). Chosen over `franc`/`franc-min`, which need
-long texts and confuse close languages (pt/es/gl) more often on short snippets, and over `cld`/`cld3`, which need native
-builds. The detector runs on the first 3,000 characters of visible text; `<html lang>` is recorded but not used.
+`tinyld` (MIT, no dependencies, ISO 639-1 output, built for short texts), used as described in "Notas de implementação,
+tentativa 2" below. Chosen over `franc`/`franc-min`, which need long texts and confuse close languages (pt/es/gl) more often
+on short snippets, and over `cld`/`cld3`, which need native builds.
 
 ## Known limits
 
@@ -85,6 +85,36 @@ builds. The detector runs on the first 3,000 characters of visible text; `<html 
   accepted-page screenshots exist so the owner can look.
 * Category membership is the dataset's label (WCXB) or a URL/JSON-LD rule (WebMainBench). The protocol asks that doubtful
   category cases be settled by URL and screenshot before labelling: the screenshots are in `screens/`.
-* The collect stage's probe breaks on pages whose `<form>` holds a control named `children` (DOM clobbering: `el.children`
-  is then not iterable, `packages/features/src/probe/settle.ts:68` and `probe.ts:91`). Such pages are excluded with reason
-  `capture`; they are listed in `walked.jsonl`. Fix upstream and re-walk the affected categories if the bias matters.
+* The collect stage's flatten step (`tools/cli/src/stages/collect/flatten.ts`, outside the probe) still reads `el.shadowRoot`,
+  `host.getAttribute` and `document.*` the plain way: a page whose `<form>` has a control literally named `shadowRoot` (or
+  an `<img name="cloneNode">`) could still fail there. Not seen in attempt 2; reported, not fixed (out of the lane's scope).
+
+## Notas de implementação, tentativa 2
+
+The first collection (attempt 1, archived in `attempt-1/` of the data dir) exposed three implementation defects. The
+**protocol rules did not change** (§2.2 is frozen): these are corrections of how the rules are implemented, written down before
+the second collection started, and no rule changed once it started.
+
+1. **Probe vs DOM clobbering (`packages/features/src/probe/dom.ts`).** A `<form>` with a control named `children` made
+   `el.children` the control; the probe threw and the page was excluded as `capture` (yeti.com, sweetwater.com, ...: an
+   e-commerce bias). The probe now reads every Element/Node/Document/ShadowRoot property through getters and methods captured
+   from the prototypes. Snapshot ids of the 13 fixtures are unchanged; `PROBE_VERSION` stays 0.2.0.
+2. **Captcha flag (`tools/cli/src/stages/collect/flags.ts`).** `captcha` used to match anywhere in the rendered text, so documentation
+   and shops that mention CAPTCHAs were excluded (supabase docs auth, cloudflare CDN, finewoodworking forum, huel, leverx). It now
+   marks a challenge page: the pattern in the `<title>` (anchored phrases of the interstitials), or in a rendered text shorter than
+   800 characters (interstitials are ~300-600; 800 leaves headroom over the longest known one and was not tuned on a sample).
+3. **Language and keyword heuristics (`src/rules.mjs`).**
+   * Language, written before the run: (a) the sample is the visible text units of >= 40 characters concatenated up to 5,000
+     characters (all visible text if fewer than 300 remain); (b) L_h is the primary subtag of `<html lang>` when well formed;
+     (c) `tinyld.detectAll(sample)`; (d) if L_h is among the detector's top 3, or the detector does not decide, the page's language is
+     L_h, else the detector's first choice. The protocol limits are unchanged: en, with pt/es at most 30% per category, any
+     other language excluded. Motivation: short technical English (API docs, shop pages) was classified tl, el, cs, hi, rn.
+   * Adult: `18+` only with an age context ("18+ only", "adults only", "must be 18", "over 18 to enter"), `xxx` only when it names
+     content ("xxx videos", "xxx porn"); the threshold of 3 hits and the host list are unchanged. Motivation: "Java 18+" in the
+     Spring Boot tutorial and placeholder `xxx`.
+   * Out-of-scope type: the search/login/registration/feed words count only when they are the whole path (optionally under a
+     locale prefix), not any path segment (`/docs/guides/auth` is documentation); `?s=` needs a non-numeric value (`?s=20` is a
+     Twitter share parameter). Title rule unchanged from the attempt-1 fix.
+   * Profile / PII: one-segment URLs of big platforms (`github.com/<x>`) are profiles unless the segment is a reserved product
+     word (`features`, `enterprise`, `pricing`, ...); `/people/` and `/members/` alone are sections, not profiles (XenForo
+     `/members/name.1234/` still is); e-mail addresses at RFC 2606 / placeholder domains do not count towards the 5-address threshold.

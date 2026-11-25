@@ -9,6 +9,7 @@ const USAGE = `usage: gp-corpus <command> [--data-dir DIR]
                       walk the frame in hash order and collect accepted pages (resumable)
   report              first20-exclusions.md, urls.csv and the summary
   split               hash-bucket split check (salt gp-dom-v0-s{i})
+  diff                attempt-diff.md: pages whose destination changed vs <data-dir>/attempt-1
 default data dir: ${DEFAULT_DATA_DIR}`;
 
 const { values, positionals } = parseArgs({
@@ -53,6 +54,11 @@ switch (cmd) {
   case "split": {
     const { splitCheck } = await import("./split.mjs");
     await splitCheck(dataDir);
+    break;
+  }
+  case "diff": {
+    const { attemptDiff } = await import("./attempt-diff.mjs");
+    await attemptDiff(dataDir);
     break;
   }
   default:

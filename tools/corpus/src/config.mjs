@@ -54,8 +54,9 @@ export const MAX_SERVER_HTML_BYTES = 3_000_000;
 export const WCXB_REPO = "murrough-foley/web-content-extraction-benchmark";
 export const WCXB_BASE = `https://huggingface.co/datasets/${WCXB_REPO}/resolve/main`;
 export const WMB_REPO = "opendatalab/WebMainBench";
-export const WMB_545_URL = `https://huggingface.co/datasets/${WMB_REPO}/resolve/main/WebMainBench_545.jsonl`;
-export const WMB_BYTES_LIMIT = 300 * 1024 * 1024;
+// The complete file (7,809 pages, ~1.35 GB) embeds the HTML: it is only streamed, never stored (attempt 2). Cap of the stream: 2 GB.
+export const WMB_FULL_URL = `https://huggingface.co/datasets/${WMB_REPO}/resolve/main/webmainbench.jsonl`;
+export const WMB_BYTES_LIMIT = 2 * 1024 * 1024 * 1024;
 
 /** The main checkout's gitignored data dir: shared and persistent across worktrees (D12). */
 export const DEFAULT_DATA_DIR = join("/home/ubuntu/files/PRIX/gran-prix", "data", "corpus", "frame-v0");

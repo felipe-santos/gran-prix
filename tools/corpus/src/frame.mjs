@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { CATEGORIES, WCXB_BASE, WCXB_EXCLUDED_TYPES, WCXB_TYPE_TO_CATEGORY, WMB_545_URL, WMB_BYTES_LIMIT } from "./config.mjs";
+import { CATEGORIES, WCXB_BASE, WCXB_EXCLUDED_TYPES, WCXB_TYPE_TO_CATEGORY, WMB_FULL_URL, WMB_BYTES_LIMIT } from "./config.mjs";
 import { byOrderHash, etld1, orderHash } from "./hash.mjs";
 import { appendJsonl, readJsonl, writeJsonl } from "./jsonl.mjs";
 
@@ -13,7 +13,15 @@ async function getWithRetry(url, tries = 7) {
   let last;
   for (let i = 0; i < tries; i++) {
     try {
-      const r = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(60_000) });
+      // The timeout covers the response HEADERS only: the 1.35 GB stream of WebMainBench runs for tens of minutes.
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 60_000);
+      let r;
+      try {
+        r = await fetch(url, { redirect: "follow", signal: ctl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
       if (r.ok) return r;
       last = new Error(`HTTP ${r.status} for ${url}`);
       if (r.status !== 429 && r.status < 500) break;
@@ -94,19 +102,19 @@ export function jsonLdTypes(html) {
 }
 
 /**
- * WebMainBench: the full jsonl (1.35 GB) embeds the HTML, so the 545-sample subset (109 MB, under the 300 MB cap) is
- * streamed and only url/language/JSON-LD types are kept; the stream is aborted past the cap. Nothing is stored raw.
+ * WebMainBench: the full jsonl (7,809 pages, ~1.35 GB) embeds the HTML. It is streamed line by line and only
+ * track_id / url / language / JSON-LD types are kept (the HTML is never stored); the stream is aborted past the 2 GB cap.
  */
 export async function fetchWmbIndex(dataDir, { log = console.error } = {}) {
   const rawDir = join(dataDir, "raw");
   await mkdir(rawDir, { recursive: true });
-  const indexPath = join(rawDir, "wmb-index.jsonl");
+  const indexPath = join(rawDir, "wmb-full-index.jsonl");
   const cached = await readJsonl(indexPath);
   if (cached.length > 0) {
     log(`wmb: index cached (${cached.length} rows)`);
     return { rows: cached, downloadedBytes: 0 };
   }
-  const res = await getWithRetry(WMB_545_URL);
+  const res = await getWithRetry(WMB_FULL_URL);
   const rows = [];
   let bytes = 0;
   let buf = "";

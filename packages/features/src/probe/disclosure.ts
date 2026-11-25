@@ -29,6 +29,7 @@
 // Not covered (documented limits): "read more" toggles without `aria-controls`, JS-only accordions without ARIA, <select>
 // options, content-visibility:auto, closed shadow roots and iframes (not entered by the walk anyway), controls inside
 // closed shadow trees whose `aria-controls` points across the shadow boundary (ids resolve inside one tree only).
+import { byIdInTreeOf, checkVisible, clientRectOf, childrenOf, closestOf, getAttr, hasAttr, parentElementOf, tagNameOf } from "./dom.js";
 import { walkComposed } from "./walk.js";
 
 const VIS = { visibilityProperty: true, opacityProperty: true } as const;
@@ -41,20 +42,15 @@ export interface DisclosureDetector {
   test(el: Element, parentFlag: boolean): boolean;
 }
 
-const roleOf = (el: Element): string => (el.getAttribute("role") ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
-
-function lookup(el: Element, id: string): Element | null {
-  const root = el.getRootNode() as Partial<Document> & Node;
-  return typeof root.getElementById === "function" ? root.getElementById(id) : null;
-}
+const roleOf = (el: Element): string => (getAttr(el, "role") ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
 
 function idRefs(el: Element, attr: string): Element[] {
-  const v = el.getAttribute(attr);
+  const v = getAttr(el, attr);
   if (!v) return [];
   const out: Element[] = [];
   for (const id of v.split(/\s+/)) {
     if (id === "") continue;
-    const t = lookup(el, id);
+    const t = byIdInTreeOf(el, id);
     if (t) out.push(t);
   }
   return out;
@@ -62,36 +58,37 @@ function idRefs(el: Element, attr: string): Element[] {
 
 /** On screen as the user sees it: visible per CSS (display, visibility, opacity, content-visibility), a real box, not pushed off to the left/top. */
 function isShown(el: Element): boolean {
-  if (!el.checkVisibility(VIS)) return false;
-  const r = el.getBoundingClientRect();
+  if (!checkVisible(el, VIS)) return false;
+  const r = clientRectOf(el);
   if (r.width <= 0 || r.height <= 0 || (r.width <= 1 && r.height <= 1)) return false;
   return r.right + window.scrollX > 0 && r.bottom + window.scrollY > 0;
 }
 
 /** True when the nearest ancestor that has a box is visible (an element hidden because of a hidden ancestor is not a collapse). */
 function parentOk(el: Element): boolean {
-  let p = el.parentElement;
-  while (p && getComputedStyle(p).display === "contents") p = p.parentElement;
-  return p === null || p.checkVisibility(VIS);
+  let p = parentElementOf(el);
+  while (p && getComputedStyle(p).display === "contents") p = parentElementOf(p);
+  return p === null || checkVisible(p, VIS);
 }
 
 /** The element has no visible box of its own: the evidence that something is keeping it closed. */
 function isCollapsedBox(el: Element, cs: CSSStyleDeclaration): boolean {
   if (cs.display === "contents") return false;
-  if (!el.checkVisibility(VIS)) return true;
-  const r = el.getBoundingClientRect();
+  if (!checkVisible(el, VIS)) return true;
+  const r = clientRectOf(el);
   if ((r.width <= 0 || r.height <= 0) && (cs.overflowX !== "visible" || cs.overflowY !== "visible")) return true; // max-height:0 accordion
   return r.right + window.scrollX <= 0 || r.bottom + window.scrollY <= 0; // pushed off-screen
 }
 
 /** Overlays and menus: hidden by design, but not the page's own content (guide 2.3: modal, popup, drawer, off-canvas menu). */
 function isPopupLike(control: Element, target: Element, cs: CSSStyleDeclaration): boolean {
-  const haspopup = control.getAttribute("aria-haspopup");
+  const haspopup = getAttr(control, "aria-haspopup");
   if (haspopup !== null && haspopup.toLowerCase() !== "false") return true;
   if (POPUP_ROLES.has(roleOf(target))) return true;
-  if (target.tagName === "DIALOG" || target.tagName === "NAV" || target.hasAttribute("popover")) return true;
-  if (target.getAttribute("aria-modal") === "true" || cs.position === "fixed") return true;
-  return target.closest(POPUP_ANCESTORS) !== null;
+  const targetTag = tagNameOf(target);
+  if (targetTag === "DIALOG" || targetTag === "NAV" || hasAttr(target, "popover")) return true;
+  if (getAttr(target, "aria-modal") === "true" || cs.position === "fixed") return true;
+  return closestOf(target, POPUP_ANCESTORS) !== null;
 }
 
 export function createDisclosureDetector(root: Element): DisclosureDetector {
@@ -103,9 +100,9 @@ export function createDisclosureDetector(root: Element): DisclosureDetector {
     if (l) l.push(v); else m.set(k, [v]);
   };
   walkComposed(root, ({ el }) => {
-    const controls = el.hasAttribute("aria-controls");
+    const controls = hasAttr(el, "aria-controls");
     if (!controls) return;
-    if (el.getAttribute("aria-expanded") === "false") for (const t of idRefs(el, "aria-controls")) push(controlledBy, t, el);
+    if (getAttr(el, "aria-expanded") === "false") for (const t of idRefs(el, "aria-controls")) push(controlledBy, t, el);
     if (roleOf(el) === "tab") for (const t of idRefs(el, "aria-controls")) push(tabsOfPanel, t, el);
   });
 
@@ -114,7 +111,7 @@ export function createDisclosureDetector(root: Element): DisclosureDetector {
     let s = firstSummary.get(details);
     if (s === undefined) {
       s = null;
-      for (const c of details.children) if (c.tagName === "SUMMARY") { s = c; break; }
+      for (const c of childrenOf(details)) if (tagNameOf(c) === "SUMMARY") { s = c; break; }
       firstSummary.set(details, s);
     }
     return s;
@@ -128,21 +125,21 @@ export function createDisclosureDetector(root: Element): DisclosureDetector {
 
   const tabpanelCollapsed = (panel: Element): boolean => {
     const tabs = tabsFor(panel);
-    if (tabs.length > 0) return tabs.every((t) => t.getAttribute("aria-selected") !== "true") && tabs.some(isShown);
-    const parent = panel.parentElement;
+    if (tabs.length > 0) return tabs.every((t) => getAttr(t, "aria-selected") !== "true") && tabs.some(isShown);
+    const parent = parentElementOf(panel);
     if (!parent) return false;
-    for (const s of parent.children) if (s !== panel && roleOf(s) === "tabpanel" && isShown(s)) return true;
+    for (const s of childrenOf(parent)) if (s !== panel && roleOf(s) === "tabpanel" && isShown(s)) return true;
     return false;
   };
 
   const isRoot = (el: Element, cs: CSSStyleDeclaration): boolean => {
     // (a) closed <details>, any child but its summary
-    const p = el.parentElement;
-    if (p && p.tagName === "DETAILS" && !(p as HTMLDetailsElement).open && summaryOf(p) !== el) {
-      if (cs.display !== "none" && isShown(p) && !el.checkVisibility()) return true;
+    const p = parentElementOf(el);
+    if (p && tagNameOf(p) === "DETAILS" && !hasAttr(p, "open") && summaryOf(p) !== el) {
+      if (cs.display !== "none" && isShown(p) && !checkVisible(el)) return true;
     }
     // (d) hidden="until-found": the element is visible, its contents are skipped
-    const hid = el.getAttribute("hidden");
+    const hid = getAttr(el, "hidden");
     if (hid !== null && hid.toLowerCase() === "until-found" && cs.getPropertyValue("content-visibility") === "hidden" && parentOk(el)) return true;
     // (b) aria-controls of a control with aria-expanded="false"
     const controls = controlledBy.get(el);
