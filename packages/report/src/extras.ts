@@ -1,10 +1,10 @@
 /**
- * Report extras: data the report can show but that EvalReport v1.0.0 cannot carry.
+ * Report extras: data a v1.0 report cannot carry, as an optional sidecar.
  *
- * The EvalReport contract has no per-stratum confidence intervals, no PR-curve points, no
- * D1/D2 token denominators, no gate thresholds or CIs, no human-readable names and no notes
- * or threats. These are PROPOSED contract additions (see the package README). Until the
- * contract grows them, they travel in a separate sidecar document that is NOT part of the
+ * EvalReport v1.0.0 has no per-stratum confidence intervals, PR-curve points, D1/D2 token
+ * denominators, gate thresholds or CIs, human-readable names or notes. EvalReport v1.1.0 carries
+ * all of them itself (same field names), so for a v1.1 report the sidecar is only a fallback: a
+ * field present in the report always wins (see `resolve.ts`). The sidecar is NOT part of the
  * report's content id: `gp-report --extras extras.json` or `renderReport(report, { extras })`.
  * Every field is optional; a section whose data is absent is omitted or shown as one line.
  */

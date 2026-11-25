@@ -1,7 +1,7 @@
 import { legend, xyChart, type Series } from "./charts.js";
 import { ci as fmtCi, esc, int, num } from "./format.js";
 import { reportSeries } from "./sections-metrics.js";
-import { absent, noteLine, numCell, section, tableWrap, th, type Ctx, type Section } from "./ui.js";
+import { absent, noteLine, notInReport, numCell, section, tableWrap, th, type Ctx, type Section } from "./ui.js";
 
 const TABLE_CAP = 40;
 
@@ -14,7 +14,7 @@ export function prSection(c: Ctx): Section | undefined {
     return section(
       "pr",
       "Precision-recall curve",
-      absent(`PR curve points are not in this report (EvalReport v1.0.0 carries only the summary PR AUC = ${num(i.overall.pr_auc)}).`),
+      absent(`${notInReport(c, "PR curve points are", "carries only the summary PR AUC")} Summary PR AUC = ${num(i.overall.pr_auc)}.`),
     );
   }
   const sorted = [...pts].sort((a, b) => a.recall - b.recall || b.precision - a.precision);
@@ -50,11 +50,12 @@ export function prSection(c: Ctx): Section | undefined {
     .map((p) => `<tr><td class="n">${num(p.threshold)}</td>${numCell(num(p.precision))}${numCell(num(p.recall))}</tr>`)
     .join("");
   const table = `<details><summary>Curve points (${int(pts.length)}${step > 1 ? `, every ${step}th shown` : ""})</summary>${tableWrap(`<table><thead><tr>${th("Threshold", true)}${th("Precision", true)}${th("Recall", true)}</tr></thead><tbody>${rows}</tbody></table>`)}</details>`;
+  const rule = c.x.pr_curve?.operating_rule ? noteLine(`Operating point chosen by: ${c.x.pr_curve.operating_rule}.`) : "";
   const gap = Math.abs(nearest.threshold - c.r.threshold) > 0.05 ? noteLine(`No curve point within 0.05 of the operating threshold; the marked point comes from the evaluation at ${num(c.r.threshold, 2)}.`) : "";
   return section(
     "pr",
     "Precision-recall curve",
-    `${legend(key)}<div class="panel">${svg}</div>${noteLine(`PR AUC ${num(op.pr_auc)}. The ringed point is the operating threshold ${num(c.r.threshold, 2)} used for every number in this report.`)}${gap}${table}`,
+    `${legend(key)}<div class="panel">${svg}</div>${noteLine(`PR AUC ${num(op.pr_auc)}. The ringed point is the operating threshold ${num(c.r.threshold, 2)} used for every number in this report.`)}${rule}${gap}${table}`,
   );
 }
 

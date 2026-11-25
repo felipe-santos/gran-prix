@@ -23,6 +23,7 @@ const prf = ({ tp, fp, tn, fn }) => {
   return { n: tp + fp + tn + fn, tp, fp, tn, fn, precision: r4(p), recall: r4(r), f1: r4((2 * p * r) / (p + r)), accuracy: r4((tp + tn) / (tp + fp + tn + fn)) };
 };
 const sum = (list) => list.reduce((a, c) => ({ tp: a.tp + c.tp, fp: a.fp + c.fp, tn: a.tn + c.tn, fn: a.fn + c.fn }), { tp: 0, fp: 0, tn: 0, fn: 0 });
+const mean = (xs) => xs.reduce((a, c) => a + c, 0) / xs.length;
 const id = (s) => sha256Of(`gran-prix-report-fixture:${s}`);
 
 const STRATA = ["article", "product", "listing", "forum", "docs"];
@@ -209,6 +210,81 @@ const extras = {
   ],
 };
 
+// ---- The same synthetic study as a native EvalReport v1.1: no sidecar, every v1.1 field in the report. ----
+const v11 = structuredClone(report);
+v11.format_version = "1.1.0";
+v11.system = { kind: "model", family: "mlp", name: "gp-mlp-v0", version: "0.1.0" };
+v11.names = extras.names;
+v11.notes = extras.notes;
+const I = v11.intrinsic;
+I.weighting = { unit: "chars", positive_class: "keep (main + support)", weight_source: "dataset-row.w (own-text chars)" };
+I.bootstrap = { resamples: 10000, seed: 20261125, cluster_by: "group_key", method: "percentile", stratified: true };
+I.metric_ci = extras.metric_ci;
+I.pr_curve = {
+  points: [...extras.pr_curve.points].sort((a, b) => a.threshold - b.threshold),
+  operating_threshold: report.threshold,
+  operating_rule: "max threshold with char-weighted recall >= 0.85 on dev OOF (synthetic)",
+};
+const coverage = { readability: 0.99, trafilatura: 0.94, "heuristic-v0": 1 };
+for (const [name, cov] of Object.entries(coverage)) I.baselines[name].coverage = cov;
+const tagStrata = { "lang:en": ["article", "product", "listing"], "lang:pt": ["forum", "docs"], logged_in: ["forum", "product"] };
+I.by_tag = Object.fromEntries(Object.entries(tagStrata).map(([t, ss]) => [t, { ...prf(sum(ss.map((s) => model[s]))), n_groups: ss.reduce((a, s) => a + GROUPS[s], 0) }]));
+const hard = ["listing", "forum", "docs"];
+const hardMicro = prf(sum(hard.map((s) => model[s])));
+const hardBase = prf(sum(hard.map((s) => baselines.trafilatura[s])));
+const macroPage = r4(0.5 * hardMicro.f1 + 0.5 * mean(hard.map((s) => by_stratum[s].f1)));
+const macroStratum = r4(mean(hard.map((s) => by_stratum[s].f1)));
+I.aggregates = [{ name: "hard", strata: hard, micro: hardMicro, macro_page_f1: macroPage, macro_stratum_f1: macroStratum, ci95: [0.74, 0.86] }];
+for (const e of I.comparison) e.aggregation = "macro_page";
+const extraCmp = (stratum, metric, model_, base, ci, n_groups, aggregation) => ({ stratum, metric, model: model_, baseline: "trafilatura", baseline_value: base, delta: model_ - base, ci95: ci, n_groups, ...(aggregation ? { aggregation } : {}) });
+I.comparison.push(
+  extraCmp("hard", "f1", macroPage, r4(hardBase.f1), [0.052, 0.128], 77, "macro_page"),
+  extraCmp("hard", "recall", hardMicro.recall, hardBase.recall, [0.03, 0.15], 77, "micro"),
+  extraCmp("article", "token_f1", 0.83, 0.8, [-0.02, 0.08], GROUPS.article),
+);
+I.token_reduction = {
+  tokenizer: "o200k_base",
+  converter: "turndown@7.2.0+gfm",
+  d1: {
+    full_tokens: 1200000, kept_tokens: 104000, n_pages: 135, median_ratio: 0.087, iqr_ratio: [0.06, 0.12], median_reduction: 11.5, iqr_reduction: [8.3, 16.7], pooled_ratio: r4(104000 / 1200000),
+    by_stratum: { article: { n_pages: 30, median_ratio: 0.05, median_reduction: 20 }, docs: { n_pages: 27, median_ratio: 0.11, median_reduction: 9.1 } },
+    description: "rendered outerHTML after settle, data-gp-* stripped",
+  },
+  d2: {
+    full_tokens: 310000, kept_tokens: 172000, n_pages: 135, median_ratio: 0.556, iqr_ratio: [0.4, 0.7], median_reduction: 1.8, iqr_reduction: [1.4, 2.5], pooled_ratio: r4(172000 / 310000),
+    by_stratum: { article: { n_pages: 30, median_ratio: 0.31, median_reduction: 3.2 }, docs: { n_pages: 27, median_ratio: 0.7, median_reduction: 1.4 } },
+  },
+};
+I.runtime = { p95_ms: 112.4, model_bytes: 84000, n_pages: 135, p50_ms: 58.2, cpu_throttle: 4, repetitions: 5, environment: "chromium-headless 130, 4x CPU throttle", page_elements: [800, 2400] };
+I.per_group.forEach((g, k) => {
+  g.group_key = `${g.group_id.split("_")[1]}`;
+  g.n_chars = 2000 + 350 * k;
+});
+v11.downstream.bootstrap = I.bootstrap;
+v11.downstream.judge.human_agreement = 0.87;
+v11.downstream.arms.full_page.evidence_retention = { mean: 1, n_questions: 500 };
+v11.downstream.arms.pruned_model.evidence_retention = { mean: 0.93, ci95: [0.9, 0.96], n_questions: 500, token_fraction_mean: 0.11 };
+v11.downstream.arms.pruned_readability.evidence_retention = { mean: 0.88, ci95: [0.84, 0.92], n_questions: 500 };
+const gate = (id, name, rule, g) => ({ id, name, rule, ...g });
+v11.gates = [
+  gate("g1_hard_strata_gain", "G1 Gain on hard strata", "macro-page F1(model) - F1(best baseline) >= 0.05 on hard, decided on the CI lower bound", {
+    value: 0.052, passed: true, comparator: ">=", threshold: 0.05, unit: "f1", stratum: "hard", observed: 0.081, ci95: [0.052, 0.128], use_ci_lower: true, metric: "f1", baseline: "trafilatura", aggregation: "macro_page",
+  }),
+  gate("g2_no_article_regression", "G2 No regression on articles", "article F1 - best baseline >= -0.02 (non-inferiority, point estimate)", {
+    value: -0.004, passed: true, comparator: ">=", threshold: -0.02, unit: "f1", stratum: "article", observed: -0.004, ci95: [-0.031, 0.022], metric: "f1", baseline: "trafilatura", aggregation: "macro_page",
+  }),
+  gate("g3_downstream_qa", "G3 Downstream QA", "accuracy(pruned) - accuracy(full page) >= -5 pp", {
+    value: -2.6, passed: true, comparator: ">=", threshold: -5, unit: "pp", observed: -2.6, ci95: [-5.8, 0.6], metric: "qa_accuracy",
+  }),
+  gate("g4a_tokens_d1", "G4 Token reduction vs D1 (raw HTML)", "median per-page tok(D1)/tok(output) >= 10x", { value: 11.5, passed: true, comparator: ">=", threshold: 10, unit: "x", observed: 11.5, metric: "token_reduction_d1" }),
+  gate("g4b_tokens_d2", "G4 Token reduction vs D2 (page markdown)", "median per-page tok(D2)/tok(output) >= 2x", { value: 1.8, passed: false, comparator: ">=", threshold: 2, unit: "x", observed: 1.8, metric: "token_reduction_d2" }),
+  gate("g5_runtime_p95_ms", "G5 Runtime p95", "p95 <= 150 ms for about 2k nodes", { value: 112.4, passed: true, comparator: "<=", threshold: 150, unit: "ms", observed: 112.4, metric: "p95_ms" }),
+  gate("g5b_model_size", "G5 Model size", "model bytes <= 256 KiB", { value: 84000, passed: true, comparator: "<=", threshold: 262144, unit: "bytes", observed: 84000, metric: "model_bytes" }),
+];
+v11.report_id = contractId("eval-report", v11);
+assertValid("eval-report", v11);
+
 writeFileSync(join(out, "rich-eval-report.json"), pretty(report));
 writeFileSync(join(out, "rich-extras.json"), pretty(extras));
-console.log("wrote rich-eval-report.json and rich-extras.json", report.report_id);
+writeFileSync(join(out, "rich-eval-report-v11.json"), pretty(v11));
+console.log("wrote rich-eval-report.json, rich-extras.json (v1.0 + sidecar) and rich-eval-report-v11.json (native v1.1)", report.report_id, v11.report_id);

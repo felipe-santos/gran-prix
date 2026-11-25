@@ -1,33 +1,7 @@
 import { dotWhisker, niceAxis, type DwRow, type Series } from "./charts.js";
-import { ci, esc, int, num, signed, times } from "./format.js";
-import { absent, codeId, kv, numCell, section, tableWrap, th, type Ctx, type Section } from "./ui.js";
-
-/** (6) Token reduction against both denominators (D1 raw HTML, D2 whole-page markdown). */
-export function tokensSection(c: Ctx): Section | undefined {
-  const stats = c.r.intrinsic?.token_stats;
-  const ex = c.x.token_reduction;
-  if (!stats && !ex?.d1 && !ex?.d2) return undefined;
-  const rows: string[] = [];
-  const row = (label: string, full: number, kept: number, median?: number, iqr?: readonly [number, number]): string => {
-    const ratio = full > 0 ? kept / full : 0;
-    const med = median !== undefined ? `${times(median)}${iqr ? ` (IQR ${esc(ci(iqr, 3))} kept/full)` : ""}` : "—";
-    return `<tr><th scope="row">${label}</th>${numCell(int(full))}${numCell(int(kept))}${numCell(num(ratio))}${numCell(times(ratio))}<td class="n">${med}</td></tr>`;
-  };
-  if (ex?.d1) rows.push(row("D1 · raw HTML (outerHTML)", ex.d1.full_tokens, ex.d1.kept_tokens, ex.d1.median_ratio, ex.d1.iqr_ratio));
-  if (ex?.d2) rows.push(row("D2 · whole-page markdown", ex.d2.full_tokens, ex.d2.kept_tokens, ex.d2.median_ratio, ex.d2.iqr_ratio));
-  if (stats) rows.push(row(`Contract <code>token_stats</code> (denominator not stated)`, stats.full_tokens, stats.kept_tokens));
-  const table = `<table><thead><tr>${th("Denominator")}${th("Full tokens", true)}${th("Kept tokens", true)}${th("Kept / full", true)}${th("Reduction", true)}${th("Median reduction (IQR)", true)}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
-  const tokenizer = ex?.tokenizer ?? stats?.tokenizer;
-  const missing = [!ex?.d1 ? "D1" : "", !ex?.d2 ? "D2" : ""].filter(Boolean);
-  const gap = missing.length
-    ? absent(`${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} not in this report: EvalReport v1.0.0 carries a single unlabelled kept/full ratio. Report both denominators before quoting a reduction factor.`)
-    : "";
-  return section(
-    "tokens",
-    "Token reduction",
-    `${tokenizer ? `<p>Tokenizer: <code>${esc(tokenizer)}</code>. Reduction = full tokens / kept tokens; the sum over pages, unless a median is shown.</p>` : ""}${tableWrap(table)}${gap}`,
-  );
-}
+import { ci, esc, int, num, signed } from "./format.js";
+import { bootstrapText } from "./sections-methods.js";
+import { codeId, kv, noteLine, numCell, section, tableWrap, th, type Ctx, type Section } from "./ui.js";
 
 function scoreAxis(values: number[]): ReturnType<typeof niceAxis> {
   return niceAxis(Math.min(...values), Math.max(...values));
@@ -51,10 +25,15 @@ export function downstreamSection(c: Ctx): Section | undefined {
     axisLabel: "Mean score (95% CI)",
     decimals: 3,
   });
+  const withEvidence = arms.some(([, a]) => a.evidence_retention);
+  const evidence = (a: (typeof arms)[number][1]): string => {
+    const e = a.evidence_retention;
+    return withEvidence ? (e ? numCell(num(e.mean), e.ci95 ? ci(e.ci95) : undefined) : numCell("—")) : "";
+  };
   const armRows = arms
-    .map(([k, a]) => `<tr><th scope="row">${esc(k)}</th>${numCell(int(a.n))}${numCell(num(a.score_mean), ci(a.score_ci95))}${numCell(int(a.tokens_in_mean))}${numCell(num(a.cost_usd, 2))}</tr>`)
+    .map(([k, a]) => `<tr><th scope="row">${esc(k)}</th>${numCell(int(a.n))}${numCell(num(a.score_mean), ci(a.score_ci95))}${evidence(a)}${numCell(int(a.tokens_in_mean))}${numCell(num(a.cost_usd, 2))}</tr>`)
     .join("");
-  const armTable = `<table><thead><tr>${th("Arm")}${th("n", true)}${th("Score (95% CI)", true)}${th("Mean input tokens", true)}${th("Cost (USD)", true)}</tr></thead><tbody>${armRows}</tbody></table>`;
+  const armTable = `<table><thead><tr>${th("Arm")}${th("n", true)}${th("Score (95% CI)", true)}${withEvidence ? th("Evidence retained (95% CI)", true) : ""}${th("Mean input tokens", true)}${th("Cost (USD)", true)}</tr></thead><tbody>${armRows}</tbody></table>`;
   let paired = "";
   if (d.paired_deltas.length > 0) {
     const all = d.paired_deltas.flatMap((p) => [p.ci95[0], p.ci95[1], p.mean_delta]);
@@ -80,9 +59,10 @@ export function downstreamSection(c: Ctx): Section | undefined {
   const info = kv([
     ["Task set", codeId(d.task_set_id)],
     ["Answering model", `<code>${esc(d.llm.model)}</code>`],
-    ["Judge", `${esc(judge.kind)}${judge.model ? ` (<code>${esc(judge.model)}</code>)` : ""}`],
+    ["Judge", `${esc(judge.kind)}${judge.model ? ` (<code>${esc(judge.model)}</code>)` : ""}${judge.human_agreement !== undefined ? `, agreement with human raters ${num(judge.human_agreement)}` : ""}`],
   ]);
-  return section("downstream", "Downstream QA", `${info}<h3>Score by arm</h3><div class="panel">${armSvg}</div>${tableWrap(armTable)}${paired}`);
+  const methods = d.bootstrap ? noteLine(`CIs: ${bootstrapText(d.bootstrap)}.`) : "";
+  return section("downstream", "Downstream QA", `${info}${methods}<h3>Score by arm</h3><div class="panel">${armSvg}</div>${tableWrap(armTable)}${paired}`);
 }
 
 /** (7) Notes and threats to validity. Omitted when there are none. */
