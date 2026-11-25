@@ -5,11 +5,14 @@ packages:
   - "demo-web"
   - "tools/*"
 
-# pnpm 11 does not run dependency install scripts unless allowed here. Neither of these
-# needs its script: esbuild and @swc/core ship their native binaries through platform
-# specific optionalDependencies (esbuild's postinstall is only a startup optimization,
-# the @swc/core one is a sanity check). Keeping them off means installs never execute
-# third-party code, and CI and local builds behave the same.
+# pnpm 11 does not run dependency install scripts unless allowed here (the legacy
+# `pnpm.onlyBuiltDependencies` field of package.json is ignored), and an unreviewed
+# script makes `pnpm install` fail with ERR_PNPM_IGNORED_BUILDS. Narrow allowlist;
+# these are the only two packages in the tree with an install script:
+#  - esbuild (Vite, Vitest): postinstall validates the platform binary and, where
+#    possible, swaps it in for the JS shim (startup optimization and fallback path).
+#  - @swc/core (vite-plugin-top-level-await): postinstall is only a sanity check, the
+#    native binary comes from platform optionalDependencies, so it stays off.
 allowBuilds:
+  esbuild: true
   "@swc/core": false
-  esbuild: false
