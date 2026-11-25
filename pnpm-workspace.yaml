@@ -4,6 +4,7 @@ packages:
   - "packages/*"
   - "demo-web"
   - "tools/*"
+  - "experiments/spikes/*"
 
 # pnpm 11 does not run dependency install scripts unless allowed here (the legacy
 # `pnpm.onlyBuiltDependencies` field of package.json is ignored), and an unreviewed

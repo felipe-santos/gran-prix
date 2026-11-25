@@ -21,7 +21,7 @@
 /PROMPT
 /origin
 
-model.json
+/model.json
 
 node_modules/
 demo-web/dist
