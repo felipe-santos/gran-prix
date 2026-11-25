@@ -21,7 +21,9 @@ import { RECALL_TARGET, macroPageF1, weightedRecall } from "./tau.js";
  *    configuration, with `threshold.fixed = tau*`), `model` (ModelPackage: that configuration refit on ALL of dev,
  *    `thresholds.accept = tau*`; `package` turns it into a Bundle) and `report` (the grid's scores, picks, tau*).
  *  - Selection criterion and tau* are those of the GBDT (`tau.ts`), tuning is nested (`cv.ts`), the grid is fixed in
- *    code (`grid.ts`, <= 12 configurations). One instance = one seed; the protocol's 5 seeds are 5 instances.
+ *    code (`grid.ts`, <= 12 configurations). Weight: selection and tau* use the dataset's character weights `w`, and
+ *    (since TrainConfig 1.1.0) every fit trains with `sample_weight: "row"` on the same `w`, as the GBDT does; a
+ *    dataset without `row_weight` is 1 per row for the selection and unweighted for the fits. One instance = one seed; the protocol's 5 seeds are 5 instances.
  *  - Reproducible: no clock and no machine fact enters an output; `toolDigests` pins gp-train and the grid.
  */
 
@@ -105,7 +107,7 @@ const PARAMS_SCHEMA = {
 
 /** Digest of everything in code that decides what a fit is: the grids and the fixed hyperparameters. */
 export function gridDigest(): Sha256 {
-  return sha256Of(canonicalJson({ impl: TRAIN_CV_IMPL, fixed: FIXED, recall_target: RECALL_TARGET, grids: GRIDS }));
+  return sha256Of(canonicalJson({ impl: TRAIN_CV_IMPL, fixed: FIXED, recall_target: RECALL_TARGET, sample_weight: "row when the dataset declares row_weight", grids: GRIDS }));
 }
 
 const single = (ctx: StageContext, port: string): ArtifactHandle => {
@@ -177,7 +179,7 @@ async function run(binary: string, ctx: StageContext): Promise<StageOutputs> {
     dev,
     points,
     async (point, fit, predict) => {
-      const r = await fitAndPredict({ binary, dev, config: trainConfigOf(point, p.seed, policy, 0.5, epochs), seed: p.seed, fit, predict, provenance });
+      const r = await fitAndPredict({ binary, dev, config: trainConfigOf(point, p.seed, policy, 0.5, epochs, dev.weighted), seed: p.seed, fit, predict, provenance });
       if (++done % 50 === 0) ctx.log(`${done} fits done`);
       return r.p;
     },
@@ -187,7 +189,7 @@ async function run(binary: string, ctx: StageContext): Promise<StageOutputs> {
 
   // The frozen model: the selected configuration refit on ALL of dev, accept = tau* from the nested OOF.
   const chosen = points[cv.selected] as GridPoint;
-  const finalConfig: TrainConfig = trainConfigOf(chosen, p.seed, policy, cv.tau, epochs);
+  const finalConfig: TrainConfig = trainConfigOf(chosen, p.seed, policy, cv.tau, epochs, dev.weighted);
   const all = Array.from({ length: dev.n }, (_, i) => i);
   const final = await fitAndPredict({ binary, dev, config: finalConfig, seed: p.seed, fit: all, predict: all, keepPackage: true, provenance });
   const files = final.files as Record<string, Uint8Array>;
@@ -207,7 +209,7 @@ async function run(binary: string, ctx: StageContext): Promise<StageOutputs> {
     folds: { outer: folds, inner: innerFolds, by: "group_key (registrable domain), deterministic greedy balance, no randomness" },
     dev: { rows: dev.n, pages, domains, weighting: dev.weighted ? "dataset-row.w (own-text characters)" : "1 per row" },
     data_policy: policy,
-    fixed: { epochs, batch_size: FIXED.batch_size, early_stopping: false, validation_split: false, optimizer: "adam", lr_schedule: "cosine", normalization: "zscore fitted on the fitting rows" },
+    fixed: { epochs, batch_size: FIXED.batch_size, sample_weight: dev.weighted ? "row" : "none", early_stopping: false, validation_split: false, optimizer: "adam", lr_schedule: "cosine", normalization: "zscore fitted on the fitting rows" },
     grid: { name: gridName, size: points.length, budget: 12 },
     configs: points.map((pt, i) => ({ index: i, ...pt, dev_cv_macro_page_f1_at_tau: round6(cv.scores[i] as number), tau_star: cv.taus[i] })),
     selected: { index: cv.selected, config: chosen, train_config_id: finalConfig.train_config_id },

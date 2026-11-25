@@ -7,7 +7,8 @@ import { contractId, type LabelSource, type TrainConfig } from "@gran-prix/contr
  * to lr / 20, 40 epochs, batch 256, z-score normalization fitted on the fitting rows, NO early stopping and NO
  * validation split (every row of the fitting set is used to fit, and the threshold is not chosen by the trainer: the
  * operating point tau* comes from the out-of-fold scores, protocol 6.3). A network of 64+32 hidden units has about
- * 3 700 weights (~15 KB), well inside the 100 KB budget of G5.
+ * 3 700 weights (~15 KB), well inside the 100 KB budget of G5. When the dataset declares `row_weight`, every fit
+ * trains with `sample_weight: "row"` (character-weighted loss, like the GBDT); the grid itself does not change.
  *
  * The grid is code, not a parameter of the data: it never depends on a result. A pipeline may pass `params.grid_name`
  * to pick another named grid defined here (a new name is a new, declared grid), or, for tests only, `params.configs`.
@@ -55,14 +56,21 @@ export interface DataPolicy {
   allowed_sources: LabelSource[];
 }
 
-/** The TrainConfig of one grid point (contract `train-config`, engine gp-train), with its `train_config_id`. */
-export function trainConfigOf(point: GridPoint, seed: number, policy: DataPolicy, threshold: number, epochs: number = FIXED.epochs): TrainConfig {
+/**
+ * The TrainConfig of one grid point (contract `train-config`, engine gp-train), with its `train_config_id`.
+ *
+ * `weighted` = the dataset carries row weights (own-text characters): the fit then uses `sample_weight: "row"`, i.e. the
+ * loss is the character-weighted mean, the same weight the GBDT trains with (protocol 7: same data and weight). That
+ * field is TrainConfig 1.1.0; a config without it stays 1.0.0 (and keeps its id).
+ */
+export function trainConfigOf(point: GridPoint, seed: number, policy: DataPolicy, threshold: number, epochs: number = FIXED.epochs, weighted = false): TrainConfig {
   const body = {
     format: "gran-prix.train-config" as const,
-    format_version: "1.0.0" as const,
+    format_version: (weighted ? "1.1.0" : "1.0.0") as "1.0.0" | "1.1.0",
     seed,
     network: { kind: "mlp" as const, hidden: [...point.hidden], activation: "relu" as const, input_dim: "auto" as const },
     loss: "bce_logits" as const,
+    ...(weighted ? { sample_weight: "row" as const } : {}),
     optimizer: { kind: "adam" as const, lr: point.lr },
     lr_schedule: { kind: "cosine" as const, min_lr: point.lr * FIXED.min_lr_ratio },
     epochs,

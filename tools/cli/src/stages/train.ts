@@ -120,6 +120,8 @@ function run(binary: string, ctx: StageContext): { files: Record<string, Uint8Ar
  *    the canonical train ports of the registry. A TrainConfig comes from the `config`
  *    input (preferred, it is an artifact) or from `params.config`.
  *  - `params.seed` is required and overrides the seed of the TrainConfig.
+ *  - The TrainConfig reaches `gp-train` as written, `sample_weight` included: `"row"` weights the loss by the
+ *    Dataset's `w` column (own-text characters) and fails loudly when the dataset declares no `row_weight`.
  *  - The cache key includes the sha256 of the `gp-train` binary (`toolDigests`), so a
  *    rebuilt trainer re-runs this stage and everything downstream.
  *  - Reproducible: the run id, `created_at` and duration written to `model.json` are

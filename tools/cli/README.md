@@ -307,6 +307,16 @@ or the epoch, 0), so the package is a pure function of (params, inputs, binary):
 another run id gives byte-identical artifacts. The real run id lives in the receipt and `meta.json`.
 The package must pass `loadModelPackage` (9/9) before the stage accepts it.
 
+**Sample weight** (TrainConfig 1.1.0, optional `sample_weight: "none" | "row"`, default `none`). The config reaches
+`gp-train` as written. With `"row"` the loss is the weighted mean `sum(w_i * l_i) / sum(w_i)` over each batch, with `w`
+the dataset row's own-text characters (the manifest must declare `row_weight`, otherwise the run fails loudly); a batch
+whose weights sum to 0 takes no step, and the validation loss is weighted the same way. Without the field the trainer
+is byte-for-byte the one that had no weight. **`ts:train.cv` now fits every grid point with `sample_weight: "row"`
+whenever the dataset declares `row_weight`** (the same weight the GBDT trains with, protocol 7; the selection criterion
+and tau* already used the same character weights), so MLP results of an earlier build are not comparable: the build of
+`gp-train` and the grid digest are in the cache key, so they re-run on their own. A dataset without `row_weight` is fit
+unweighted, as before.
+
 **package** verifies the package the same way, then writes the bundle: the package files,
 `model.generated.ts` (`@gran-prix/infer-ts`, head taken from `output_spec`), `selftest.mjs` and
 `bundle.json` (`model_id`, sha256 and size of every other file, self-test result). The self-test runs
