@@ -1,0 +1,22 @@
+{
+  "name": "@gran-prix/wasm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Size-optimized WASM bridge of gran-prix (built from ../../gran-prix-wasm, never committed).",
+  "main": "./dist/web/gran_prix_wasm.js",
+  "types": "./dist/web/gran_prix_wasm.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/web/gran_prix_wasm.d.ts",
+      "default": "./dist/web/gran_prix_wasm.js"
+    },
+    "./node": {
+      "types": "./dist/node/gran_prix_wasm.d.ts",
+      "default": "./dist/node/gran_prix_wasm.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-wasm.mjs --target both --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node"
+  }
+}

@@ -3,6 +3,7 @@
  * Reproducible, size-optimized build of the gran-prix-wasm bridge.
  *
  *   node scripts/build-wasm.mjs [--target web|nodejs|both] [--out-dir <dir>]
+ *                               [--web-out <dir>] [--node-out <dir>]
  *
  * The size profile is applied through CARGO_PROFILE_RELEASE_* environment
  * variables instead of `[profile.release]` in gran-prix-wasm/Cargo.toml:
@@ -15,6 +16,14 @@
  *   nodejs  -> gran-prix-wasm/pkg-node   (CommonJS, used by the smoke test)
  *   both    -> both of the above; with --out-dir <dir> the web build goes to
  *              <dir> and the nodejs build to <dir>-node.
+ *
+ * Explicit per-target directories take precedence over --out-dir:
+ *   --web-out <dir>   directory of the web build
+ *   --node-out <dir>  directory of the nodejs build
+ * The published layout used by demo-web and CI is
+ *   node scripts/build-wasm.mjs --target both \
+ *        --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
+ * (`npm run build` in packages/wasm does exactly that).
  * Requires `wasm-pack` on PATH and the wasm32-unknown-unknown Rust target.
  */
 import { spawnSync } from 'node:child_process';
@@ -36,12 +45,15 @@ const SIZE_PROFILE_ENV = {
 };
 
 function usage(code) {
-  console.error('usage: node scripts/build-wasm.mjs [--target web|nodejs|both] [--out-dir <dir>]');
+  console.error(
+    'usage: node scripts/build-wasm.mjs [--target web|nodejs|both] [--out-dir <dir>]\n' +
+    '                                   [--web-out <dir>] [--node-out <dir>]',
+  );
   process.exit(code);
 }
 
 function parseArgs(argv) {
-  const opts = { target: 'web', outDir: null };
+  const opts = { target: 'web', outDir: null, webOut: null, nodeOut: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const val = () => (i + 1 < argv.length ? argv[++i] : usage(2));
@@ -49,6 +61,10 @@ function parseArgs(argv) {
     else if (a.startsWith('--target=')) opts.target = a.slice(9);
     else if (a === '--out-dir') opts.outDir = val();
     else if (a.startsWith('--out-dir=')) opts.outDir = a.slice(10);
+    else if (a === '--web-out') opts.webOut = val();
+    else if (a.startsWith('--web-out=')) opts.webOut = a.slice(10);
+    else if (a === '--node-out') opts.nodeOut = val();
+    else if (a.startsWith('--node-out=')) opts.nodeOut = a.slice(11);
     else if (a === '-h' || a === '--help') usage(0);
     else { console.error(`unknown argument: ${a}`); usage(2); }
   }
@@ -81,11 +97,16 @@ function build(target, outDir) {
 }
 
 const opts = parseArgs(process.argv.slice(2));
-const base = opts.outDir ? resolve(ROOT, opts.outDir) : null;
+const abs = (p) => (p ? resolve(ROOT, p) : null);
+const base = abs(opts.outDir);
+const webDir = abs(opts.webOut) ?? base ?? join(CRATE, 'pkg');
+// A lone nodejs target uses --out-dir as is; with `both` it gets the `-node` suffix.
+const nodeDir =
+  abs(opts.nodeOut) ??
+  (base ? (opts.target === 'both' ? `${base}-node` : base) : join(CRATE, 'pkg-node'));
 const jobs = [];
-if (opts.target === 'web' || opts.target === 'both') jobs.push(['web', base ?? join(CRATE, 'pkg')]);
-if (opts.target === 'nodejs') jobs.push(['nodejs', base ?? join(CRATE, 'pkg-node')]);
-if (opts.target === 'both') jobs.push(['nodejs', base ? `${base}-node` : join(CRATE, 'pkg-node')]);
+if (opts.target === 'web' || opts.target === 'both') jobs.push(['web', webDir]);
+if (opts.target === 'nodejs' || opts.target === 'both') jobs.push(['nodejs', nodeDir]);
 
 const results = jobs.map(([target, dir]) => ({ target, dir, wasm: build(target, dir) }));
 
