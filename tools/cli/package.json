@@ -33,7 +33,8 @@
   },
   "dependencies": {
     "@gran-prix/contracts": "workspace:*",
-    "@gran-prix/model": "workspace:*"
+    "@gran-prix/model": "workspace:*",
+    "@gran-prix/report": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
