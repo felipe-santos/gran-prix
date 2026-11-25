@@ -254,6 +254,28 @@ importers:
         specifier: ^5.1.1
         version: 5.1.1(@types/node@24.19.2)(jsdom@29.1.1)(vite@7.3.2(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.30.2))
 
+  tools/corpus:
+    dependencies:
+      '@gran-prix/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@gran-prix/features':
+        specifier: workspace:*
+        version: link:../../packages/features
+      robots-parser:
+        specifier: ^3.1.1
+        version: 3.1.1
+      tinyld:
+        specifier: ^1.3.4
+        version: 1.3.4
+      tldts:
+        specifier: ~7.5.3
+        version: 7.5.5
+    devDependencies:
+      vitest:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@24.19.2)(jsdom@29.1.1)(vite@7.3.2(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.30.2))
+
   tools/studio:
     dependencies:
       '@gran-prix/contracts':
@@ -1643,6 +1665,10 @@ packages:
   reselect@5.1.1:
     resolution: {integrity: sha512-K/BG6eIky/SBpzfHZv/dd+9JBFiS4SWV7FIujVyJRux6e45+73RaUHXLmIR1f7WOMaQ0U1km6qwklRQxpJJY0w==}
 
+  robots-parser@3.1.1:
+    resolution: {integrity: sha512-ltsI9/0CiaaZpnJeLT4vwK86cW1AfSXoBgnQHIaCtBrg4K8UckV7HakNzWfG8UvT2hqwrLZ1YWilWMEiynBg6g==}
+    engines: {node: '>=10.0.0'}
+
   rollup@4.59.0:
     resolution: {integrity: sha512-2oMpl67a3zCH9H79LeMcbDhXW/UmWG/y2zuqnF2jQq5uq9TbM9TVyXvA4+t+ne2IIkBdrLpAaRQAvo7YI/Yyeg==}
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
@@ -1727,6 +1753,11 @@ packages:
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
     engines: {node: '>=12.0.0'}
+
+  tinyld@1.3.4:
+    resolution: {integrity: sha512-u26CNoaInA4XpDU+8s/6Cq8xHc2T5M4fXB3ICfXPokUQoLzmPgSZU02TAkFwFMJCWTjk53gtkS8pETTreZwCqw==}
+    engines: {node: '>= 12.10.0', npm: '>= 6.12.0', yarn: '>= 1.20.0'}
+    hasBin: true
 
   tinypool@1.1.1:
     resolution: {integrity: sha512-Zba82s87IFq9A9XmjiX5uZA/ARWDrB03OHlq+Vw1fSdt0I+4/Kutwy8BP4Y/y/aORMo61FQ0vIb5j44vSo5Pkg==}
@@ -3148,6 +3179,8 @@ snapshots:
 
   reselect@5.1.1: {}
 
+  robots-parser@3.1.1: {}
+
   rollup@4.59.0:
     dependencies:
       '@types/estree': 1.0.8
@@ -3236,6 +3269,8 @@ snapshots:
     dependencies:
       fdir: 6.5.0(picomatch@4.0.4)
       picomatch: 4.0.4
+
+  tinyld@1.3.4: {}
 
   tinypool@1.1.1: {}
 

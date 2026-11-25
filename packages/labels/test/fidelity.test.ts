@@ -6,7 +6,12 @@ import { inject, describe, expect, it } from "vitest";
 import { importTruth, readabilityLabel, type ElementDecision, type TruthClass } from "../src/index.js";
 import { Counts, loadCorpus, scorePage, type Prf } from "./helpers.js";
 
-const corpus = loadCorpus(inject("corpusDir"));
+// The spike's 12 pages, pinned: fixtures added later (docs-3, the flags.disclosure probe fixture) are not in its numbers.
+const SPIKE_FIXTURES = [
+  "article-1", "article-2", "docs-1", "docs-2", "forum-1", "forum-2",
+  "landing-1", "landing-2", "product-1", "product-2", "spa-1", "spa-2",
+] as const;
+const corpus = loadCorpus(inject("corpusDir"), SPIKE_FIXTURES);
 
 const MAIN = new Set<TruthClass>(["main"]);
 const MAIN_SUPPORT = new Set<TruthClass>(["main", "support"]);

@@ -1,12 +1,13 @@
 import { inject, describe, expect, it } from "vitest";
 import { assertTruthRules, classIndex, importTruth, labelPageTruth } from "../src/index.js";
+import { fixtureNames } from "../src/testing/index.js";
 import { loadCorpus } from "./helpers.js";
 
 const corpus = loadCorpus(inject("corpusDir"));
 
 describe("truth importer", () => {
-  it("covers every element that owns text on all 12 fixtures (the spike's lint)", () => {
-    expect(corpus).toHaveLength(12);
+  it("covers every element that owns text on every fixture (the spike's lint)", () => {
+    expect(corpus).toHaveLength(fixtureNames().length);
     for (const p of corpus) {
       const imp = importTruth(p.html, p.truth.rules, { url: p.snapshot.page.final_url });
       expect(imp.uncovered, p.name).toEqual([]);
