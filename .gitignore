@@ -31,3 +31,6 @@ gran-prix-wasm/target
 IDEIAS/
 gran-prix-wasm/pkg-node/
 
+
+# Local Claude Code settings (personal)
+.claude/settings.json
