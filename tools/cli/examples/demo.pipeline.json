@@ -1,0 +1,42 @@
+{
+  "format": "gran-prix.pipeline-spec",
+  "format_version": "1.0.0",
+  "name": "demo",
+  "description": "Runner demo: two emitters, a join and a (fake) paid stage. Try: gp run examples/demo.pipeline.json --budget-usd 1",
+  "vars": { "sep": "-", "price": 0.25 },
+  "stages": [
+    {
+      "id": "emit_a",
+      "kind": "collect",
+      "impl": "ts:demo.emit-json@1.0.0",
+      "params": { "value": "alpha" },
+      "inputs": {}
+    },
+    {
+      "id": "emit_b",
+      "kind": "collect",
+      "impl": "ts:demo.emit-json@1.0.0",
+      "params": { "value": "beta" },
+      "inputs": {}
+    },
+    {
+      "id": "join",
+      "kind": "extract",
+      "impl": "ts:demo.concat@1.0.0",
+      "params": { "separator": "${vars.sep}" },
+      "inputs": {
+        "parts": [
+          { "stage": "emit_a", "output": "out" },
+          { "stage": "emit_b", "output": "out" }
+        ]
+      }
+    },
+    {
+      "id": "label",
+      "kind": "label",
+      "impl": "ts:demo.spend@1.0.0",
+      "params": { "cost_usd": "${vars.price}", "calls": 2 },
+      "inputs": { "in": { "stage": "join", "output": "out" } }
+    }
+  ]
+}
