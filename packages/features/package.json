@@ -1,0 +1,44 @@
+{
+  "name": "@gran-prix/features",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Feature extraction for the Gran-Prix DOM pipeline: an in-page probe (PageSnapshot) and a pure, Node/browser-identical vectorizer (NodeFeatures) under FeatureSchema v0.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./bundle": "./dist/gp-features.iife.js",
+    "./schema/feature-schema.v0.json": "./src/schema/feature-schema.v0.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src/schema",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs && tsc -p tsconfig.build.json",
+    "build:bundle": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.pure.json",
+    "test": "vitest run",
+    "schema:regen": "UPDATE_SCHEMA=1 vitest run test/schema.test.ts"
+  },
+  "dependencies": {
+    "@gran-prix/contracts": "workspace:*",
+    "playwright-core": "^1.57.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}
