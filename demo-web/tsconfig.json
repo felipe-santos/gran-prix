@@ -17,8 +17,7 @@
     /* Path Mapping */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@gran-prix/wasm": ["../packages/wasm/dist/web/gran_prix_wasm"]
+      "@/*": ["./src/*"]
     },
 
     /* Linting */

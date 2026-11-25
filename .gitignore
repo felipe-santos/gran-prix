@@ -23,7 +23,7 @@
 
 model.json
 
-demo-web/node_modules
+node_modules/
 demo-web/dist
 
 

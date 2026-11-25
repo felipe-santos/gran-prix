@@ -39,16 +39,14 @@ cargo install wasm-pack
 From the repository root, build the WASM bindings. The app imports them as `@gran-prix/wasm`, which resolves to `packages/wasm/dist/web` (gitignored, never committed):
 
 ```bash
-node scripts/build-wasm.mjs --target both \
-  --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
+pnpm install
+pnpm build:wasm   # node scripts/build-wasm.mjs --target both --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 ```
 
 Then start the web app:
 
 ```bash
-cd demo-web
-npm install
-npm run dev
+pnpm --filter demo-web dev   # from the repository root: one pnpm workspace, one lockfile
 ```
 
 Open the Vite URL, usually:
@@ -64,14 +62,16 @@ http://localhost:5173
 Build the WASM first (previous section), then:
 
 ```bash
-npm run build
+pnpm --filter demo-web build
 ```
 
 Preview the production build:
 
 ```bash
-npm run preview
+pnpm --filter demo-web preview
 ```
+
+The demo depends on the workspace package `@gran-prix/wasm` (`workspace:*`), so there is no Vite alias or tsconfig path for it: `pnpm build:wasm` produces `packages/wasm/dist/web`, which is the package's entry point.
 
 ---
 
