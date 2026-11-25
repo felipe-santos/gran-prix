@@ -257,7 +257,7 @@ No generated WASM is committed. `demo-web` depends on the workspace package `@gr
 
 ### Building WASM
 
-Requires [`wasm-pack`](https://rustwasm.github.io/wasm-pack/) and the `wasm32-unknown-unknown` Rust target.
+Requires [`wasm-pack`](https://rustwasm.github.io/wasm-pack/) and the `wasm32-unknown-unknown` Rust target. `rust-toolchain.toml` pins the exact compiler (`channel = "1.99.1"`, minimal profile, the wasm32 target), so `rustup` selects and installs it for every `cargo` and `wasm-pack` call in the repository. The size budget and the WASM sha256 depend on the rustc version: the pin makes the sha reproducible between local machines and CI. Bump it deliberately (edit `channel`, rebuild, re-run the size check).
 
 ```bash
 pnpm build:wasm      # = node scripts/build-wasm.mjs --target both \
@@ -268,7 +268,9 @@ pnpm smoke           # runs the bridge from Node (reads packages/wasm/dist/node)
 
 The Node scripts read `packages/wasm/dist/node` by default; set `GRAN_PRIX_WASM_NODE` to use another directory. Without options, `scripts/build-wasm.mjs` still writes to `gran-prix-wasm/pkg` (web) and `gran-prix-wasm/pkg-node` (Node).
 
-The build script applies the size profile (`opt-level=z`, LTO, `codegen-units=1`, `panic=abort`, `wasm-opt -Oz`) through `CARGO_PROFILE_RELEASE_*` environment variables, so it keeps working if the crates move into a Cargo workspace. It also appends `--remap-path-prefix` flags (Cargo registry and git checkouts, the Rust toolchain sysroot and the repository root) to any `RUSTFLAGS` you have set, so panic locations in the `.wasm` do not embed your home directory or checkout path: the same sources and toolchain give a bit-identical binary regardless of the checkout path or `CARGO_HOME`. `scripts/check-wasm-parity.mjs <node-package-A> <node-package-B>` checks that two builds produce bit-identical outputs. The CI workflow (`.github/workflows/ci.yml`) runs the Rust tests, this build with the size check, the Node smoke tests and the demo-web build (which consumes the WASM built by the `wasm` job) on pull requests and on pushes to branches other than `main`.
+The build script applies the size profile (`opt-level=z`, LTO, `codegen-units=1`, `panic=abort`, `wasm-opt -Oz`) through `CARGO_PROFILE_RELEASE_*` environment variables, so it keeps working if the crates move into a Cargo workspace. It also appends `--remap-path-prefix` flags (Cargo registry and git checkouts, the Rust toolchain sysroot and the repository root) to any `RUSTFLAGS` you have set, so panic locations in the `.wasm` do not embed your home directory or checkout path: the same sources and toolchain give a bit-identical binary regardless of the checkout path or `CARGO_HOME`. `scripts/check-wasm-parity.mjs <node-package-A> <node-package-B>` checks that two builds produce bit-identical outputs.
+
+The CI workflow (`.github/workflows/ci.yml`) runs the Rust tests, this build with the size check, the Node smoke tests and the demo-web build (which consumes the WASM built by the `wasm` job) on pull requests and on pushes to branches other than `main`.
 
 ---
 

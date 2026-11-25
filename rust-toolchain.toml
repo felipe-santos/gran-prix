@@ -1,0 +1,10 @@
+# Pins the exact compiler for every Cargo and wasm-pack invocation in this repository
+# (local machines and CI). The size budget (scripts/check-wasm-size.mjs) and the
+# reproducible WASM sha256 depend on the rustc version, so bump it deliberately:
+# change `channel`, rebuild the WASM, re-run the size check and update any recorded sha.
+# CI installs it from this file (see .github/workflows/*.yml).
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = []
+targets = ["wasm32-unknown-unknown"]
