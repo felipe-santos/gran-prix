@@ -1,0 +1,19 @@
+{
+  "page": "docs-3.html",
+  "category": "docs",
+  "rules": [
+    { "selector": "article.guide", "label": "main" },
+    { "selector": "article.guide [role=tab]", "label": "support" },
+    { "selector": "article.guide .acc button", "label": "noise" },
+    { "selector": ".fb-open", "label": "noise" },
+    { "selector": "#fb-modal", "label": "noise" },
+    { "selector": ".stale-popup", "label": "noise" },
+    { "selector": ".ad", "label": "noise" },
+    { "selector": ".menu-toggle", "label": "noise" },
+    { "selector": ".site-menu", "label": "noise" },
+    { "selector": ".sidebar", "label": "noise" },
+    { "selector": ".cookie-notice", "label": "noise" },
+    { "selector": ".site-header", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" }
+  ]
+}

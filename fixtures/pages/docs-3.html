@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Running the Fernwick relay behind a proxy - Fernwick Docs</title>
+<style>
+body{font:15px/1.5 Georgia,serif;margin:0}
+.wrap{display:grid;grid-template-columns:200px 1fr;gap:16px;padding:0 12px}
+.sidebar{background:#eef;padding:8px}
+.cookie-notice{position:fixed;top:0;left:0;right:0;background:#fffbe6;padding:6px;text-align:center;z-index:5}
+.site-header{padding:34px 12px 8px;border-bottom:1px solid #ccc}
+pre,code{font-family:monospace}pre{background:#eee;padding:8px;overflow:auto}
+.tabs [role=tablist]{display:flex;gap:6px;margin-bottom:6px}
+.tabs [role=tab][aria-selected=true]{font-weight:bold}
+.acc-item{border-top:1px solid #bbb}
+.acc-panel.clip{max-height:0;overflow:hidden}
+.ad{position:absolute;left:-9999px;top:40px;width:240px}
+#fb-modal{position:fixed;top:30%;left:30%;width:40%;background:#fff;border:1px solid #444;padding:12px;z-index:9}
+.site-menu{position:fixed;top:0;left:0;bottom:0;width:260px;background:#fff;padding:12px;z-index:8}
+.stale-popup{display:none}
+</style>
+</head>
+<body>
+<div class="cookie-notice">Fernwick stores one preference cookie. <button>Accept</button></div>
+<header class="site-header"><a href="/" class="brand">Fernwick Docs</a>
+  <button class="menu-toggle" aria-expanded="false" aria-controls="site-menu">Menu</button>
+  <nav class="site-menu" id="site-menu" hidden><a href="#">Overview</a> <a href="#">Install</a> <a href="#">Relay</a> <a href="#">Changelog</a></nav>
+</header>
+<div class="wrap">
+<aside class="sidebar" aria-label="Sections"><strong>Relay guide</strong>
+  <ul><li><a href="#">Behind a proxy</a></li><li><a href="#">Certificates</a></li><li><a href="#">Metrics</a></li></ul>
+</aside>
+<main>
+<article class="guide">
+  <h1>Running the Fernwick relay behind a proxy</h1>
+  <p>The relay forwards sensor readings from a greenhouse controller to your own server. When a corporate proxy sits in between, the relay needs to know how to reach it and which hosts to skip.</p>
+
+  <h2>Pointing the relay at the proxy</h2>
+  <p>The proxy address can be given on the command line, in the environment, or in the configuration file. All three forms are shown below.</p>
+  <div class="tabs">
+    <div role="tablist" aria-label="Configuration style">
+      <button role="tab" id="tab-cli" aria-selected="true" aria-controls="panel-cli">Command line</button>
+      <button role="tab" id="tab-env" aria-selected="false" aria-controls="panel-env">Environment</button>
+      <button role="tab" id="tab-file" aria-selected="false" aria-controls="panel-file">Config file</button>
+    </div>
+    <div role="tabpanel" id="panel-cli" aria-labelledby="tab-cli"><pre><code>fernwick-relay --proxy http://gate.example.test:3128 --no-proxy 10.0.0.0/8</code></pre></div>
+    <div role="tabpanel" id="panel-env" aria-labelledby="tab-env" hidden><pre><code>export FERNWICK_PROXY=http://gate.example.test:3128
+export FERNWICK_NO_PROXY=10.0.0.0/8</code></pre><p>Variables are read once, at start-up, and never reloaded.</p></div>
+    <div role="tabpanel" id="panel-file" aria-labelledby="tab-file" hidden><pre><code>[network]
+proxy = "http://gate.example.test:3128"
+skip = ["10.0.0.0/8"]</code></pre><p>The file is searched in the working directory and then in the home directory.</p></div>
+  </div>
+
+  <h2>Troubleshooting</h2>
+  <details><summary>The relay starts but no readings arrive</summary>
+    <p>Check that the proxy allows long-lived connections. The relay keeps one stream open for up to ten minutes.</p>
+    <ul><li>Raise the idle timeout of the proxy to at least twelve minutes.</li><li>Confirm that the host of your server is not listed in the skip list.</li></ul>
+    <details><summary>How do I see the open stream?</summary><p>Run the relay with the <code>--trace</code> flag and look for the line that starts with <code>stream opened</code>.</p></details>
+  </details>
+  <details><summary>Certificates are rejected</summary>
+    <p>A proxy that inspects traffic re-signs it with its own authority. Add that authority to the relay trust file instead of switching verification off.</p>
+    <p hidden>Draft note, not for publication.</p>
+  </details>
+  <details open><summary>Where are the logs written?</summary>
+    <p>On Linux the relay logs to the system journal. On other systems it writes <code>relay.log</code> next to the executable.</p>
+  </details>
+
+  <h2>Limits</h2>
+  <div class="acc">
+    <div class="acc-item"><h3><button id="acc-b1" aria-expanded="false" aria-controls="acc-p1">Payload size</button></h3>
+      <div id="acc-p1" class="acc-panel" role="region" aria-labelledby="acc-b1" hidden><p>A single reading may carry up to sixty-four kilobytes. Larger payloads are split into numbered parts before they are sent.</p></div></div>
+    <div class="acc-item"><h3><button id="acc-b2" aria-expanded="false" aria-controls="acc-p2">Retry schedule</button></h3>
+      <div id="acc-p2" class="acc-panel clip" role="region" aria-labelledby="acc-b2"><p>Failed sends are retried after two, ten and sixty seconds. After the third failure the reading waits in a local queue.</p></div></div>
+    <div class="acc-item"><h3><button id="acc-b3" aria-expanded="true" aria-controls="acc-p3">Queue length</button></h3>
+      <div id="acc-p3" class="acc-panel" role="region" aria-labelledby="acc-b3"><p>The local queue holds the last two thousand readings and drops the oldest first.</p></div></div>
+  </div>
+
+  <h2>Release notes</h2>
+  <p>Earlier versions behaved differently in a few places. The notes for each are kept on this page.</p>
+  <div class="older" hidden="until-found"><p>Versions before 2.4 ignored the skip list when the proxy address was set in the environment.</p><p>Versions before 2.1 could not read the configuration file from the home directory.</p></div>
+</article>
+<button class="fb-open" aria-haspopup="dialog" aria-expanded="false" aria-controls="fb-modal">Send feedback</button>
+<div id="fb-modal" role="dialog" aria-modal="true" hidden>
+  <p>Tell us what was missing on this page.</p>
+  <details><summary>What do we do with it?</summary><p>Feedback is read by the documentation team once a week.</p></details>
+</div>
+<div class="stale-popup"><p>You are reading an older copy of this page.</p></div>
+</main>
+</div>
+<div class="ad"><p>Sponsored: Lantern Cloud hosts your greenhouse data.</p>
+  <details><summary>Why this ad?</summary><p>Shown because the page mentions hosting.</p></details>
+</div>
+<footer class="site-footer"><p>Fernwick Docs are published under a permissive licence.</p><p><a href="#">Report a docs problem</a></p></footer>
+</body>
+</html>

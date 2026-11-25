@@ -6,7 +6,7 @@ E1.4. Two layers, kept apart on purpose:
   `PageSnapshot`: a pre-order element table, text units and page signals.
 * **`vectorize(snapshot, schema) -> NodeFeatures`** is a **pure** function of a snapshot and a FeatureSchema.
   No `Date`, no randomness, no DOM, no I/O; every float goes through `Math.fround`. The same source runs in
-  Node and inside Chromium and gives **bit-identical** `Float32Array`s (tested on all 12 fixtures).
+  Node and inside Chromium and gives **bit-identical** `Float32Array`s (tested on all 13 fixtures).
 
 Features are derived from the stored snapshot, so changing the schema never needs a re-crawl.
 
@@ -28,7 +28,7 @@ They import `@gran-prix/contracts` from source (vitest alias), so no prior contr
 | `src/vectorize/` | The pure part. Compiled by `tsconfig.pure.json` with **no DOM and no Node types**; a test also greps it for `Date`, `Math.random`, `document`, `process`... |
 | `src/vectorize/features.ts` | **The registry**: every feature's name, kind, doc, static transform, range, default and raw computation. |
 | `src/schema/feature-schema.v0.json` | The committed FeatureSchema, generated from the registry; a test fails on drift. |
-| `src/probe/` | In-page code (DOM): composed walk, settle, capture, page signals. |
+| `src/probe/` | In-page code (DOM): composed walk, settle, capture, page signals, `disclosure.ts` (the `flags.disclosure` rules). |
 | `src/browser.ts` | Entry of the IIFE bundle; installs `window.__gpFeatures`. |
 | `src/node/` | Node side: Playwright driver and `buildPageSnapshot` (hashes the snapshot with the contracts' identity helper). |
 
@@ -80,6 +80,38 @@ Text is made well-formed UTF-16 (lone surrogates become U+FFFD) so the content i
 
 Extensions beyond the contract (its schemas are open): `page.og_type`, `page.jsonld_types`, top-level `text_units`,
 top-level `probe` (`id_scheme`, `version`, `own_text_cap`), `capture.settle`.
+
+## `flags.disclosure` (collapsed content)
+
+`nodes[i].flags.disclosure = true` (PageSnapshot v1.1, C12) marks an element inside a **collapsed disclosure**: content of the
+page that a control keeps out of the rendered flow until the user opens it. It is not rendered, but it belongs to the labelable
+universe U (annotation guide 2.3; `tools/studio` already counts it). **The key is written only when true** (absent = false in the
+contract), so a page without collapsed content has the same snapshot id as before. Implemented in `src/probe/disclosure.ts`.
+FeatureSchema v0 does not read the flag (a test shows byte-identical features with and without it; `schema_id` is unchanged).
+
+A flagged element is a disclosure **root** or a descendant of one (the flag is inherited down the composed tree). Roots:
+
+| | Pattern | Container must be on screen | Evidence that the collapse hides it |
+|---|---|---|---|
+| (a) | any child of a **closed `<details>`** except its first `<summary>` | the `<details>` | the child is not visible (`checkVisibility()`; Chromium skips the contents of a closed `<details>` with `content-visibility:hidden`, so its rect and display are not reliable) |
+| (b) | element named in `aria-controls` of a control with **`aria-expanded="false"`** (ids resolve inside one tree, shadow roots included) | the control | the element has no visible box: `hidden` / `display:none` / `content-visibility`, `visibility:hidden`, `opacity:0`, zero size with overflow clipping (`max-height:0`), or pushed off-screen |
+| (c) | **`role="tabpanel"`** that is not visible while its tab is not selected. Tab = `role=tab` named by `aria-labelledby` or whose `aria-controls` names the panel; all of them `aria-selected` != true and one shown. With no tab, only when a sibling tabpanel is shown | the tab | as (b) |
+| (d) | **`hidden="until-found"`** (case-insensitive) | the parent | `content-visibility:hidden` on the element (the element itself is visible, its contents are skipped) |
+
+Rules that keep it from over-flagging (the flag means "collapsed by design, part of the content"):
+
+* **Visible content is never flagged**, and neither is the control / summary (`<summary>`, the `aria-expanded` button, the tab).
+* **The container must be on screen.** A closed `<details>` or an accordion inside a `display:none` modal or an off-screen ad
+  (`left:-9999px`) is hidden for another reason, not collapsed.
+* **Popups are not disclosures** (guide 2.3): in (b) the control has `aria-haspopup`, or the element has role dialog, alertdialog,
+  menu, menubar, listbox, tooltip, tree, grid or navigation, is `<dialog>`, `<nav>`, `[popover]`, `aria-modal`, `position:fixed`,
+  or sits inside `<nav>` / a dialog / a menu. Hidden modals, drawers and off-canvas menus keep the plain "not rendered" status.
+* **Descendants with their own `display:none`** (and their subtree) are not flagged: `<p hidden>` inside a closed `<details>` is hidden for another reason.
+
+Not covered (limits): "read more" toggles without `aria-controls`, JS-only accordions without ARIA, `content-visibility:auto`,
+iframes and closed shadow roots (never entered). The probe version string is unchanged on purpose (see the delivery report):
+snapshot ids move only for pages that contain a collapsed disclosure. Fixture: `fixtures/pages/docs-3.html` (all four patterns,
+plus a hidden modal, an off-screen ad, a drawer menu and a `<details>` inside each, which must stay unflagged).
 
 ## How to bundle and inject
 
@@ -198,7 +230,8 @@ match exact or prefix lists (`hint_ad`: `ad ads advert* sponsor* promo*`, **not*
 * `test/schema.test.ts`: contract validation, 40-60 features, drift against the registry, family coverage, README lists every feature.
 * `test/vectorize.test.ts`: hand-built snapshot, prefilter, context, ranges, pure helpers vs the contracts, purity grep.
 * `test/probe.test.ts`: id scheme, shadow DOM, captured fields, settle, late injection.
-* `test/fixtures.e2e.test.ts`: the 12 fixtures: contract validity, load-to-load determinism, **Node <-> Chromium bit parity**, sanity table.
+* `test/disclosure.test.ts`: every `flags.disclosure` pattern and its negatives, the `fixtures/pages/docs-3.html` fixture, no effect on features.
+* `test/fixtures.e2e.test.ts`: the 13 fixtures (12 corpus pages + `docs-3`): contract validity, load-to-load determinism, **Node <-> Chromium bit parity**, sanity table.
 
 ## Limitations
 

@@ -4,6 +4,7 @@
 // the result.
 import { ID_SCHEME, PROBE_VERSION, type ProbeOptions, type RawProbe, type SettleReport, type TextUnit } from "../probe-types.js";
 import type { SnapNodeLike } from "../vectorize/types.js";
+import { createDisclosureDetector } from "./disclosure.js";
 import { jsonLdTypes, ogType, wellFormed } from "./signals.js";
 import { settle } from "./settle.js";
 import { SKIP_TEXT_TAGS, walkComposed } from "./walk.js";
@@ -77,6 +78,8 @@ export async function probe(options: ProbeOptions = {}): Promise<RawProbe> {
   const nodes: SnapNodeLike[] = [];
   const texts: TextUnit[] = [];
   const inLink: boolean[] = [];
+  const disclosure: boolean[] = [];
+  const detector = createDisclosureDetector(document.documentElement);
 
   walkComposed(
     document.documentElement,
@@ -92,6 +95,8 @@ export async function probe(options: ProbeOptions = {}): Promise<RawProbe> {
       if (el.shadowRoot) childElems += el.shadowRoot.children.length;
       const tag = el.tagName.toLowerCase();
       inLink.push(tag === "a" || (parent >= 0 && (inLink[parent] as boolean)));
+      const collapsed = detector.test(el, parent >= 0 && (disclosure[parent] as boolean));
+      disclosure.push(collapsed);
       nodes.push({
         idx,
         parent,
@@ -105,7 +110,8 @@ export async function probe(options: ProbeOptions = {}): Promise<RawProbe> {
         child_elems: childElems,
         style: captureStyle(el),
         rect: captureRect(el, sx, sy),
-        flags: { in_shadow: inShadow, iframe_depth: 0 },
+        // `disclosure` is written only when true (absent = false in the contract), so pages without one keep their ids.
+        flags: collapsed ? { in_shadow: inShadow, iframe_depth: 0, disclosure: true } : { in_shadow: inShadow, iframe_depth: 0 },
       });
     },
     (t) => {

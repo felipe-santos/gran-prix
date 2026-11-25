@@ -27,7 +27,7 @@ export interface SnapNodeLike {
     z_index?: number;
   };
   rect: { x: number; y: number; w: number; h: number } | null;
-  flags: { in_shadow: boolean; iframe_depth: number };
+  flags: { in_shadow: boolean; iframe_depth: number; /** v1.1: inside a collapsed disclosure; absent = false. Not read by FeatureSchema v0. */ disclosure?: boolean };
 }
 
 export interface SnapshotLike {
