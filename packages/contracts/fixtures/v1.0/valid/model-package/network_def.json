@@ -1,0 +1,1 @@
+{"input_dim":4,"layers":[{"type":"linear","in_features":4,"out_features":3},{"type":"activation","function":"relu"},{"type":"linear","in_features":3,"out_features":1}]}

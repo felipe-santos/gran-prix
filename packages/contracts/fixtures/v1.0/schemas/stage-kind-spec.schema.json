@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:stage-kind-spec",
+  "x-gran-prix": {
+    "contract": "stage-kind-spec",
+    "format": "gran-prix.stage-kind-spec",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    }
+  },
+  "title": "stage-kind-spec",
+  "description": "Registry entry of a stage implementation: typed ports, params JSON Schema, runtime, determinism, gates.",
+  "type": "object",
+  "required": ["format", "format_version", "kind", "impl", "inputs", "outputs", "params_schema", "runtime", "determinism"],
+  "properties": {
+    "format": { "const": "gran-prix.stage-kind-spec", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "kind": {
+      "anyOf": [
+        { "const": "collect", "type": "string" },
+        { "const": "extract", "type": "string" },
+        { "const": "label", "type": "string" },
+        { "const": "dataset", "type": "string" },
+        { "const": "train", "type": "string" },
+        { "const": "evaluate", "type": "string" },
+        { "const": "package", "type": "string" },
+        { "const": "infer", "type": "string" }
+      ]
+    },
+    "impl": {
+      "minLength": 1,
+      "description": "Exact implementation id with version, e.g. \"ts:label.readability@1.0.0\".",
+      "type": "string"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "pattern": "^[a-z][a-z0-9_]*$", "type": "string" },
+          "type": {
+            "anyOf": [
+              { "const": "UrlList", "type": "string" },
+              { "const": "SnapshotSet", "type": "string" },
+              { "const": "FeatureSchema", "type": "string" },
+              { "const": "NodeFeaturesSet", "type": "string" },
+              { "const": "NodeLabelsSet", "type": "string" },
+              { "const": "Dataset", "type": "string" },
+              { "const": "NetworkDef", "type": "string" },
+              { "const": "TrainConfig", "type": "string" },
+              { "const": "ModelPackage", "type": "string" },
+              { "const": "EvalReport", "type": "string" },
+              { "const": "Bundle", "type": "string" },
+              { "const": "ContentTree", "type": "string" }
+            ]
+          },
+          "many": {
+            "description": "Port accepts/emits an ordered list of artifacts.",
+            "type": "boolean"
+          },
+          "optional": { "type": "boolean" }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": { "pattern": "^[a-z][a-z0-9_]*$", "type": "string" },
+          "type": {
+            "anyOf": [
+              { "const": "UrlList", "type": "string" },
+              { "const": "SnapshotSet", "type": "string" },
+              { "const": "FeatureSchema", "type": "string" },
+              { "const": "NodeFeaturesSet", "type": "string" },
+              { "const": "NodeLabelsSet", "type": "string" },
+              { "const": "Dataset", "type": "string" },
+              { "const": "NetworkDef", "type": "string" },
+              { "const": "TrainConfig", "type": "string" },
+              { "const": "ModelPackage", "type": "string" },
+              { "const": "EvalReport", "type": "string" },
+              { "const": "Bundle", "type": "string" },
+              { "const": "ContentTree", "type": "string" }
+            ]
+          },
+          "many": {
+            "description": "Port accepts/emits an ordered list of artifacts.",
+            "type": "boolean"
+          },
+          "optional": { "type": "boolean" }
+        }
+      }
+    },
+    "params_schema": {
+      "additionalProperties": true,
+      "description": "JSON Schema (draft-07) of `params`.",
+      "type": "object",
+      "properties": {}
+    },
+    "runtime": {
+      "anyOf": [
+        { "const": "node", "type": "string" },
+        { "const": "node+playwright", "type": "string" },
+        { "const": "node+wasm", "type": "string" },
+        { "const": "browser", "type": "string" },
+        { "const": "rust", "type": "string" }
+      ]
+    },
+    "determinism": {
+      "anyOf": [
+        { "const": "pure", "type": "string" },
+        { "const": "seeded", "type": "string" },
+        { "const": "cached-external", "type": "string" },
+        { "const": "external", "type": "string" }
+      ]
+    },
+    "map_over": {
+      "description": "Run once per group (page); cache per item.",
+      "const": "group",
+      "type": "string"
+    },
+    "gates": {
+      "description": "Gates this stage can evaluate; instances enable them with `gate: true` + params.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description"],
+        "properties": {
+          "id": { "minLength": 1, "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:network-def",
+  "x-gran-prix": {
+    "contract": "network-def",
+    "format": "gran-prix.network-def",
+    "version": "1.0.0"
+  },
+  "additionalProperties": false,
+  "title": "network-def",
+  "description": "Exact JSON of the Rust NetworkDef (no format envelope: it is the core's own format).",
+  "type": "object",
+  "required": ["input_dim", "layers"],
+  "properties": {
+    "input_dim": { "minimum": 1, "type": "integer" },
+    "layers": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["type", "in_features", "out_features"],
+            "properties": {
+              "type": { "const": "linear", "type": "string" },
+              "in_features": { "minimum": 1, "type": "integer" },
+              "out_features": { "minimum": 1, "type": "integer" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["type", "function"],
+            "properties": {
+              "type": { "const": "activation", "type": "string" },
+              "function": {
+                "anyOf": [
+                  { "const": "relu", "type": "string" },
+                  { "const": "sigmoid", "type": "string" },
+                  { "const": "tanh", "type": "string" },
+                  { "const": "softmax", "type": "string" }
+                ]
+              }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["type", "input_size", "hidden_size"],
+            "properties": {
+              "type": { "const": "rnn", "type": "string" },
+              "input_size": { "minimum": 1, "type": "integer" },
+              "hidden_size": { "minimum": 1, "type": "integer" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["type", "input_size", "hidden_size"],
+            "properties": {
+              "type": { "const": "gru", "type": "string" },
+              "input_size": { "minimum": 1, "type": "integer" },
+              "hidden_size": { "minimum": 1, "type": "integer" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["type", "rate"],
+            "properties": {
+              "type": { "const": "dropout", "type": "string" },
+              "rate": { "minimum": 0, "exclusiveMaximum": 1, "type": "number" }
+            }
+          },
+          {
+            "additionalProperties": false,
+            "type": "object",
+            "required": ["type", "num_features"],
+            "properties": {
+              "type": { "const": "batchnorm", "type": "string" },
+              "num_features": { "minimum": 1, "type": "integer" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

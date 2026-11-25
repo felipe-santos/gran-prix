@@ -1,0 +1,113 @@
+{
+  "format": "gran-prix.feature-schema",
+  "format_version": "1.0.0",
+  "schema_id": "sha256:9664b7084e314dae4d46773f2d5e24979a7ef092c139dd3945b1700ab8f5e0bd",
+  "name": "dom-node-fixture",
+  "version": "1.0.0",
+  "unit": "dom-node-own-content",
+  "description": "Four-feature schema used only by the contract fixtures.",
+  "extractor": {
+    "name": "fixture-extractor",
+    "version": "0.1.0"
+  },
+  "dim": 4,
+  "features": [
+    {
+      "index": 0,
+      "name": "log_text_len",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "log1p(text length) / log1p(10).",
+      "transform": {
+        "op": "log1p",
+        "scale": 10
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "1.0.0"
+    },
+    {
+      "index": 1,
+      "name": "link_density",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "link_text_len / text_len.",
+      "transform": {
+        "op": "clip",
+        "lo": 0,
+        "hi": 1
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "1.0.0"
+    },
+    {
+      "index": 2,
+      "name": "is_heading",
+      "kind": "bool",
+      "group": "tag",
+      "doc": "1 for h1..h6.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "1.0.0"
+    },
+    {
+      "index": 3,
+      "name": "depth_norm",
+      "kind": "scalar",
+      "group": "structure",
+      "doc": "depth / 32.",
+      "transform": {
+        "op": "div",
+        "by": 32
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 5,
+      "since": "1.0.0"
+    }
+  ],
+  "prefilter": {
+    "rules_version": "1",
+    "rules": [
+      {
+        "id": "skip_tags",
+        "kind": "tag",
+        "tags": [
+          "script",
+          "style",
+          "noscript",
+          "svg",
+          "template"
+        ]
+      },
+      {
+        "id": "display_none",
+        "kind": "style",
+        "display_none": true
+      },
+      {
+        "id": "zero_rect",
+        "kind": "zero_rect"
+      }
+    ]
+  },
+  "missing_policy": {
+    "nan": "zero",
+    "inf": "clip"
+  }
+}

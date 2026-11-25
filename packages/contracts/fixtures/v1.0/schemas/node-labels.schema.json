@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:node-labels",
+  "x-gran-prix": {
+    "contract": "node-labels",
+    "format": "gran-prix.node-labels",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "node-labels",
+  "description": "Labels of one snapshot from one labeler (or a merge of labelers). confidence = P(label correct), not a model score.",
+  "type": "object",
+  "required": ["format", "format_version", "labels_id", "snapshot_id", "label_space", "labeler", "items", "coverage"],
+  "properties": {
+    "format": { "const": "gran-prix.node-labels", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "labels_id": { "$ref": "#/$defs/Sha256" },
+    "snapshot_id": { "$ref": "#/$defs/Sha256" },
+    "label_space": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["kind", "classes"],
+          "properties": {
+            "kind": { "const": "binary", "type": "string" },
+            "classes": {
+              "type": "array",
+              "items": [
+                { "const": "drop", "type": "string" },
+                { "const": "keep", "type": "string" }
+              ],
+              "additionalItems": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "classes"],
+          "properties": {
+            "kind": { "const": "multiclass", "type": "string" },
+            "classes": {
+              "minItems": 2,
+              "type": "array",
+              "items": { "minLength": 1, "type": "string" }
+            }
+          }
+        }
+      ]
+    },
+    "labeler": {
+      "type": "object",
+      "required": ["id", "kind", "version", "params_sha256"],
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "description": "e.g. \"readability@2.0\", \"merge@1\".",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "anyOf": [
+                { "const": "rule", "type": "string" },
+                { "const": "heuristic", "type": "string" },
+                { "const": "readability", "type": "string" },
+                { "const": "llm", "type": "string" },
+                { "const": "human", "type": "string" },
+                { "const": "user_feedback", "type": "string" }
+              ]
+            },
+            { "const": "merge", "type": "string" }
+          ]
+        },
+        "version": { "$ref": "#/$defs/SemVer" },
+        "params_sha256": { "$ref": "#/$defs/Sha256" },
+        "inputs": {
+          "description": "merge: labels_id of each layer.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/Sha256" }
+        },
+        "llm": {
+          "type": "object",
+          "required": ["model", "prompt_id", "prompt_sha256", "temperature", "response_cache_keys"],
+          "properties": {
+            "model": { "minLength": 1, "type": "string" },
+            "prompt_id": { "type": "string" },
+            "prompt_sha256": { "$ref": "#/$defs/Sha256" },
+            "temperature": { "const": 0, "type": "number" },
+            "response_cache_keys": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/Sha256" }
+            }
+          }
+        }
+      }
+    },
+    "items": {
+      "description": "Sorted by unit_id, unique. May be partial.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["unit_id", "y", "confidence", "source"],
+        "properties": {
+          "unit_id": { "minimum": 0, "type": "integer" },
+          "y": { "minimum": 0, "type": "integer" },
+          "confidence": { "minimum": 0, "maximum": 1, "type": "number" },
+          "source": {
+            "anyOf": [
+              { "const": "rule", "type": "string" },
+              { "const": "heuristic", "type": "string" },
+              { "const": "readability", "type": "string" },
+              { "const": "llm", "type": "string" },
+              { "const": "human", "type": "string" },
+              { "const": "user_feedback", "type": "string" }
+            ]
+          },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": ["n_labeled", "n_candidates"],
+      "properties": {
+        "n_labeled": { "minimum": 0, "type": "integer" },
+        "n_candidates": { "minimum": 0, "type": "integer" }
+      }
+    }
+  }
+}
