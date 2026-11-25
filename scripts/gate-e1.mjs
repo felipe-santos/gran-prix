@@ -11,6 +11,7 @@
  * 3. `gp run` TWICE, into two fresh data dirs with different run ids. Every output artifact id of every stage must be
  *    identical across the two data dirs (and so must the cache keys).
  * 4. A second run in the SAME data dir must be a 100% cache hit.
+ *    The dataset manifest must declare `row_weight: own_text_chars` (rows carry `w`, which evaluate weighs by).
  * 5. Runtime parity of the model the pipeline produced:
  *      - `gp model check --runtime ts` and `--runtime wasm`: 9/9 each;
  *      - the package bundle's self-test (`node selftest.mjs` in the bundle) passes, and `bundle.json` records it;
@@ -194,6 +195,10 @@ const reportId = outOf(A.summary, "evaluate", "report");
 const extrasId = outOf(A.summary, "evaluate", "extras");
 const files = (id) => join(dirA, "artifacts", rel(id), "files");
 
+if (datasetId) {
+  const dm = readJson(join(files(datasetId), "manifest.json"));
+  check("the dataset rows carry own-text weights (manifest.row_weight = own_text_chars)", dm.row_weight === "own_text_chars", `row_weight ${dm.row_weight}, format_version ${dm.format_version}`);
+}
 if (modelId && bundleId && datasetId) {
   const modelDir = files(modelId);
   const modelJson = readJson(join(modelDir, "model.json"));
@@ -245,6 +250,12 @@ if (modelId && bundleId && datasetId) {
   check("Rust runtime (gp-train eval) loads the package and reproduces golden.json", rustOk, rustDetail);
 } else {
   check("runtime parity", false, "run A did not produce model, bundle and dataset");
+}
+
+if (reportId) {
+  const rep = readJson(join(dirA, "artifacts", rel(reportId), "content.json"));
+  const names = Object.keys(rep.intrinsic?.baselines ?? {});
+  check("the evaluate report compares the model with the Readability baseline", names.includes("readability") && (rep.intrinsic?.comparison ?? []).length > 0, `baselines: ${names.join(", ") || "none"}`);
 }
 
 log("\ngate-e1: post-step gp report");

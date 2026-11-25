@@ -302,12 +302,14 @@ trainer binary is copied once at the start so a concurrent `cargo build` cannot 
 2. `gp run` twice into two fresh data dirs, with run ids `gate-a` and `gate-b`: **every output artifact id and every
    cache key of every stage is identical** (the table at the end prints them, `==` per line);
 3. a second run in the same data dir is a **100% cache hit**;
+   (the dataset must declare `row_weight: own_text_chars`: rows carry `w`, the characters of their own text, and evaluate
+   weighs by it exactly; the report must hold the Readability baseline, wired from `label_heuristic` to `label_baselines`);
 4. parity of the produced model: `gp model check` 9/9 with `--runtime ts` and with `--runtime wasm`; the self-test of
    the package bundle (`node selftest.mjs`, the generated TypeScript runtime) passes; and the Rust runtime
    (`gp-train eval --with-scores`, which loads the package and verifies digests and `model_id`) reproduces every case of
    `golden.json` on the real dataset rows;
 5. `gp report` renders the evaluate output to HTML. The report is a post-step, not a stage: the pipeline has no `report`
-   kind, `gp report <evaluate.report> --extras <evaluate.extras>` is the command.
+   kind, `gp report <evaluate.report> [--extras <evaluate.extras>]` is the command.
 
 It prints a PASS/FAIL table and exits 1 on FAIL (2 on a setup problem). `tools/cli/test/dom-v0.test.ts` checks the
 pipeline file and the contracts example against the real stages without running them.
