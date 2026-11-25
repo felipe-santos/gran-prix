@@ -138,7 +138,7 @@ span of the session). Sum it for the human-hours budget of the experiment (`expe
 
 ```bash
 pnpm --filter @gran-prix/studio test        # unit + server tests + headless smoke (needs Chromium)
-pnpm --filter @gran-prix/studio typecheck
+pnpm --filter @gran-prix/studio typecheck   # needs @gran-prix/contracts and @gran-prix/labels built (their dist types)
 ```
 
 The tests run against the sibling sources (no prior build of the workspace packages), build the UI bundle once and run

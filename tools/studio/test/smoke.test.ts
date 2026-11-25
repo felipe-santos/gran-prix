@@ -4,25 +4,26 @@
 import { cpSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { launch } from "@gran-prix/features";
+import { chromium, type Browser, type BrowserContext } from "playwright-core";
 import { validate, type NodeLabels } from "@gran-prix/contracts";
 import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { startStudio, type RunningStudio } from "../src/server/app.js";
-import { cleanupTmp, tmpDir } from "./helpers.js";
+import { cleanupTmp, findChromium, tmpDir } from "./helpers.js";
 
 const uiDir = fileURLToPath(new URL("../dist/ui", import.meta.url));
 
 let studio: RunningStudio;
 let dataDir: string;
-let browser: Awaited<ReturnType<typeof launch>>["browser"];
-let context: Awaited<ReturnType<typeof launch>>["context"];
+let browser: Browser;
+let context: BrowserContext;
 
 beforeAll(async () => {
   expect(existsSync(join(uiDir, "index.html")), "the UI must be built (vite build): the global setup does it").toBe(true);
   dataDir = tmpDir("gp-studio-smoke-");
   cpSync(inject("corpusDataDir"), dataDir, { recursive: true });
   studio = await startStudio({ dataDir, annotator: "smoke", uiDir });
-  ({ browser, context } = await launch());
+  browser = await chromium.launch({ executablePath: findChromium(), headless: true, args: ["--no-sandbox"] });
+  context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
 });
 
 afterAll(async () => {

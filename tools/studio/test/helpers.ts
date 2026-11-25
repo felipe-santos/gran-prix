@@ -1,10 +1,21 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildModel, type PageModel } from "../src/core/model.js";
 import type { LightNode } from "../src/core/types.js";
 
 const dirs: string[] = [];
+
+/** GP_CHROMIUM wins; otherwise the newest Chromium cached by Playwright (same rule as @gran-prix/features' driver). */
+export function findChromium(): string | undefined {
+  if (process.env["GP_CHROMIUM"]) return process.env["GP_CHROMIUM"];
+  const base = join(homedir(), ".cache", "ms-playwright");
+  if (!existsSync(base)) return undefined;
+  const builds = readdirSync(base)
+    .filter((d) => /^chromium-\d+$/.test(d))
+    .sort((a, b) => Number(b.split("-")[1]) - Number(a.split("-")[1]));
+  return builds.map((b) => join(base, b, "chrome-linux64", "chrome")).find((p) => existsSync(p));
+}
 
 export function tmpDir(prefix = "gp-studio-"): string {
   const d = mkdtempSync(join(tmpdir(), prefix));
