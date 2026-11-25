@@ -224,6 +224,18 @@ impl NetworkDef {
     ///
     /// Returns an error if validation fails.
     pub fn compile(&self, backend: Box<dyn Backend>) -> GPResult<CompiledNetwork> {
+        self.compile_with(backend, None)
+    }
+
+    /// Like [`compile`](Self::compile), but every random weight is drawn from a
+    /// deterministic RNG derived from `seed` (see [`crate::init`]): layer `i`
+    /// uses its own stream `layer_rng(seed, i)`. The same `(NetworkDef, seed)`
+    /// always yields bit-identical weights, independent of the thread RNG.
+    pub fn compile_seeded(&self, backend: Box<dyn Backend>, seed: u64) -> GPResult<CompiledNetwork> {
+        self.compile_with(backend, Some(seed))
+    }
+
+    fn compile_with(&self, backend: Box<dyn Backend>, seed: Option<u64>) -> GPResult<CompiledNetwork> {
         self.validate()?;
 
         let mut graph = Graph::new(backend);
@@ -239,10 +251,15 @@ impl NetworkDef {
             // like `"layers[3]"` so they're identifiable downstream
             // (debugging, freeze-by-name APIs, importance reports).
             let prefix = format!("layers[{idx}]");
+            // Seeded compile: each layer draws from its own deterministic stream.
+            let mut rng = seed.map(|s| crate::init::layer_rng(s, idx as u64));
 
             match layer_def {
                 LayerDef::Linear { in_features, out_features } => {
-                    let mut linear = Linear::new(*in_features, *out_features);
+                    let mut linear = match rng.as_mut() {
+                        Some(r) => Linear::new_seeded(*in_features, *out_features, r),
+                        None => Linear::new(*in_features, *out_features),
+                    };
                     linear.set_name_prefix(prefix);
                     last_node = linear.forward(last_node, &mut gb);
                 }
@@ -252,13 +269,19 @@ impl NetworkDef {
                     last_node = act.forward(last_node, &mut gb);
                 }
                 LayerDef::Rnn { input_size, hidden_size } => {
-                    let mut rnn = RNNCell::new(*input_size, *hidden_size);
+                    let mut rnn = match rng.as_mut() {
+                        Some(r) => RNNCell::new_seeded(*input_size, *hidden_size, r),
+                        None => RNNCell::new(*input_size, *hidden_size),
+                    };
                     rnn.set_name_prefix(prefix);
                     last_node = rnn.forward(last_node, &mut gb);
                     stateful_layers.push(Box::new(rnn));
                 }
                 LayerDef::Gru { input_size, hidden_size } => {
-                    let mut gru = GRUCell::new(*input_size, *hidden_size);
+                    let mut gru = match rng.as_mut() {
+                        Some(r) => GRUCell::new_seeded(*input_size, *hidden_size, r),
+                        None => GRUCell::new(*input_size, *hidden_size),
+                    };
                     gru.set_name_prefix(prefix);
                     last_node = gru.forward(last_node, &mut gb);
                     stateful_layers.push(Box::new(gru));

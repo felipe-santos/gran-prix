@@ -54,6 +54,20 @@ impl Tensor {
         ))
     }
 
+    /// Seeded counterpart of [`Tensor::new_random`]: `Uniform[-1, 1)` drawn from
+    /// the given deterministic RNG (see [`crate::init`]), in row-major order.
+    pub fn new_random_seeded(dims: &[usize], rng: &mut crate::init::InitRng) -> Self {
+        Self::new_random_scaled_seeded(dims, 1.0, rng)
+    }
+
+    /// Like [`Tensor::new_random_seeded`] but each sample is multiplied by `scale`
+    /// (used for Xavier scaling).
+    pub fn new_random_scaled_seeded(dims: &[usize], scale: f32, rng: &mut crate::init::InitRng) -> Self {
+        Self::new_cpu(ArrayD::from_shape_simple_fn(IxDyn(dims), || {
+            crate::init::next_symmetric_f32(rng) * scale
+        }))
+    }
+
     pub fn shape(&self) -> &[usize] {
         self.shape.as_slice()
     }
