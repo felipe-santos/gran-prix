@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pkgDir = process.argv[2] ?? path.resolve(here, '../../gran-prix-wasm/pkg-node');
-const { Trainer } = createRequire(import.meta.url)(path.join(pkgDir, 'gran_prix_wasm.js'));
+const { Trainer, LossKind } = createRequire(import.meta.url)(path.join(pkgDir, 'gran_prix_wasm.js'));
 
 function checkSeededInit() {
   const def = JSON.stringify({
@@ -31,6 +31,9 @@ function checkSeededInit() {
   assert.ok(a.length > 0, 'seeded trainer has weights');
   assert.equal(bitsOf(a), bitsOf(b), 'same seed -> identical weights');
   assert.notEqual(bitsOf(a), bitsOf(c), 'different seed -> different weights');
+  // Explicit-loss variant: same contract.
+  const d = Trainer.fromNetworkDefWithLossSeeded(def, LossKind.BinaryCrossEntropy, 42).get_weights();
+  assert.equal(bitsOf(a), bitsOf(d), 'fromNetworkDefWithLossSeeded matches fromNetworkDefSeeded for the same seed');
   console.log(`seeded init OK (${a.length} params; seed 42 twice identical, seed 43 differs)`);
 }
 
