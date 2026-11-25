@@ -4,8 +4,8 @@ name: CI
 
 on:
   pull_request:
+  # main included: the project publishes by pushing main directly, so this is the only CI run its code gets.
   push:
-    branches-ignore: ["main"]
 
 permissions:
   contents: read
