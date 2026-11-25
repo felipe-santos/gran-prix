@@ -2,7 +2,8 @@
 /**
  * Smoke test for the Gran-Prix WASM `Trainer` bridge.
  *
- * Loads the Node-target build of the bridge (`pkg-node/`), instantiates
+ * Loads the Node-target build of the bridge (`packages/wasm/dist/node`,
+ * or the directory in $GRAN_PRIX_WASM_NODE), instantiates
  * a Trainer, exercises the surface area that demo-web demos depend on
  * (`predict`, `train_batch`, `train_step`, `get_weights`,
  * `import_weights`, `get_gradient_norms`, `fromNetworkDef`), and
@@ -22,10 +23,15 @@
  */
 
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PKG = resolve(__dirname, '../../gran-prix-wasm/pkg-node/gran_prix_wasm.js');
+// Build it first: node scripts/build-wasm.mjs --target both \
+//   --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
+const PKG_DIR = process.env.GRAN_PRIX_WASM_NODE
+  ? resolve(process.env.GRAN_PRIX_WASM_NODE)
+  : resolve(__dirname, '../../packages/wasm/dist/node');
+const PKG = join(PKG_DIR, 'gran_prix_wasm.js');
 
 let failures = 0;
 function check(label, ok, detail = '') {
