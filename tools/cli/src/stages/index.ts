@@ -12,6 +12,7 @@ import { EVALUATE_STAGES } from "./evaluate/index.js";
 import { LABELING_STAGES } from "./labeling.js";
 import { LLM_LABEL_STAGES } from "./label-llm.js";
 import { packageStage } from "./package.js";
+import { TOKENS_STAGES } from "./tokens/index.js";
 import { trainStage } from "./train.js";
 
 export const ALL_STAGES: StagePlugin[] = [
@@ -28,4 +29,6 @@ export const ALL_STAGES: StagePlugin[] = [
   // L5 (science): evaluate.intrinsic + baseline labelers (label.trafilatura, label.defuddle, label.router)
   ...BASELINE_LABEL_STAGES,
   ...EVALUATE_STAGES,
+  // L6 (tokens): measure.tokens (E3.5: D1 / D2 / pruned markdown, cl100k_base, median and IQR of the reduction)
+  ...TOKENS_STAGES,
 ];
