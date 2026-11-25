@@ -4,7 +4,7 @@
   "x-gran-prix": {
     "contract": "model-package",
     "format": "gran-prix.model-package",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "$defs": {
     "Iso8601": {
@@ -51,6 +51,7 @@
             "git_dirty": { "type": "boolean" },
             "node": { "type": "string" },
             "wasm_sha256": { "$ref": "#/$defs/Sha256" },
+            "tool_sha256": { "$ref": "#/$defs/Sha256" },
             "extractor": {
               "type": "object",
               "required": ["name", "version", "bundle_sha256"],
@@ -64,7 +65,11 @@
         },
         "created_at": { "$ref": "#/$defs/Iso8601" },
         "host": { "type": "string" },
-        "duration_ms": { "minimum": 0, "type": "integer" }
+        "duration_ms": { "minimum": 0, "type": "integer" },
+        "placeholder": {
+          "description": "v1.1: true = this embedded provenance is a deterministic stand-in (e.g. run_id 'deterministic', zeroed pipeline_spec_id) written by a stage that cannot know its run; the authoritative provenance is the runner receipt of the artifact id. Provenance is outside every content id, so the swap never changes an id.",
+          "type": "boolean"
+        }
       }
     },
     "SemVer": {

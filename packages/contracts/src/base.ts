@@ -34,6 +34,12 @@ export const FileRef = Type.Object({
   sha256: Sha256,
   bytes: NonNegInt,
   media_type: Type.Optional(Type.String()),
+  content_encoding: Type.Optional(
+    Type.String({
+      description:
+        "v1.1: transfer encoding of the stored file, e.g. 'gzip'. `sha256` and `bytes` ALWAYS describe the DECODED content, so the compressor / zlib build never changes an id; absent = stored as is.",
+    }),
+  ),
 });
 export type FileRef = Static<typeof FileRef>;
 

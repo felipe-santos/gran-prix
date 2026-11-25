@@ -8,7 +8,7 @@ import { NonNegInt, SemVer, Sha256, contractObject, defineContract } from "./bas
 export const NodeFeaturesContract = defineContract(
   "node-features",
   "gran-prix.node-features",
-  "1.0.0",
+  "1.0.1",
   contractObject(
     "node-features",
     "gran-prix.node-features",
@@ -18,9 +18,14 @@ export const NodeFeaturesContract = defineContract(
       feature_schema_id: Sha256,
       extractor: Type.Object({ name: Type.String({ minLength: 1 }), version: SemVer }),
       n_nodes_total: NonNegInt,
-      prefiltered: Type.Record(Type.String(), NonNegInt, { description: "Count of nodes dropped per prefilter rule id." }),
+      prefiltered: Type.Record(Type.String(), NonNegInt, {
+        description: "Count of nodes dropped per prefilter rule id; a node is counted once, under the first rule (schema order) that drops it.",
+      }),
       sanitized: Type.Object({ nan_replaced: NonNegInt, clipped: NonNegInt }),
-      unit_ids: Type.Array(NonNegInt, { description: "Snapshot node idx per row, strictly increasing." }),
+      unit_ids: Type.Array(NonNegInt, {
+        description:
+          "Snapshot node idx per row, strictly increasing. NORMATIVE (v1.0.1 clarification): exactly the nodes that survived the schema's prefilter, i.e. n_nodes_total - sum(prefiltered) rows. A node without a row was prefiltered.",
+      }),
       x: Type.Array(Type.Array(Type.Number()), {
         description: "x[r].length === schema.dim; finite float32 values.",
       }),

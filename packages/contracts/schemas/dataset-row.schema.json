@@ -4,10 +4,10 @@
   "x-gran-prix": {
     "contract": "dataset-row",
     "format": "gran-prix.dataset-row",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "title": "dataset-row",
-  "description": "One JSONL row: g = group_id, u = unit_id, x = features, y = training target, c = label confidence, s = label source, l = label in the source (e.g. 3-class) space when y is a projection. No format envelope (one object per line).",
+  "description": "One JSONL row: g = group_id, u = unit_id, x = features, y = training target, c = label confidence, s = label source, l = label in the source (e.g. 3-class) space when y is a projection, w (v1.1) = evaluation weight: the unit's own-text length in Unicode code points (NFC, whitespace collapsed), declared by the manifest's row_weight. No format envelope (one object per line).",
   "type": "object",
   "required": ["g", "u", "x", "y", "c", "s"],
   "properties": {
@@ -34,6 +34,7 @@
         { "const": "user_feedback", "type": "string" }
       ]
     },
-    "l": { "minimum": 0, "type": "integer" }
+    "l": { "minimum": 0, "type": "integer" },
+    "w": { "minimum": 0, "type": "integer" }
   }
 }

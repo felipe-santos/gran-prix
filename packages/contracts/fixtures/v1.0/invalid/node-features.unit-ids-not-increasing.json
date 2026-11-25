@@ -1,0 +1,46 @@
+{
+  "format": "gran-prix.node-features",
+  "format_version": "1.0.0",
+  "features_id": "sha256:73f4aea0fce167ace547acb2bacc59c623b63091cbe17bdb5f103300b748514d",
+  "snapshot_id": "sha256:7bea1d7cb7d85e9f430c9fe2fa73c2e97acdc9e409c4957b3b3728fa61a149dd",
+  "feature_schema_id": "sha256:f96fab2e444e45a20fc3a482f9790f64f82d913cb040a0ad6b7ccb25c93e6d65",
+  "extractor": {
+    "name": "fixture-extractor",
+    "version": "0.1.0"
+  },
+  "n_nodes_total": 5,
+  "prefiltered": {
+    "skip_tags": 0,
+    "display_none": 0,
+    "zero_rect": 0
+  },
+  "sanitized": {
+    "nan_replaced": 0,
+    "clipped": 0
+  },
+  "unit_ids": [
+    3,
+    2,
+    4
+  ],
+  "x": [
+    [
+      0.6000000238418579,
+      0,
+      1,
+      0.0625
+    ],
+    [
+      0.699999988079071,
+      0.1378999948501587,
+      0,
+      0.0625
+    ],
+    [
+      0.30000001192092896,
+      1,
+      0,
+      0.09375
+    ]
+  ]
+}

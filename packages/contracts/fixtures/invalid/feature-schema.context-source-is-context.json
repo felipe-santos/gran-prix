@@ -1,0 +1,120 @@
+{
+  "format": "gran-prix.feature-schema",
+  "format_version": "1.1.0",
+  "schema_id": "sha256:768f8ac935488c3440a703e4740ed338eb48f1e7e74692d3a01ea099790ffb56",
+  "name": "dom-node-fixture",
+  "version": "1.0.0",
+  "unit": "dom-node-own-content",
+  "description": "Four-feature schema used only by the contract fixtures.",
+  "extractor": {
+    "name": "fixture-extractor",
+    "version": "0.1.0"
+  },
+  "dim": 4,
+  "features": [
+    {
+      "index": 0,
+      "name": "log_text_len",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "log1p(text length) / log1p(10).",
+      "transform": {
+        "op": "log1p",
+        "scale": 10
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "1.0.0"
+    },
+    {
+      "index": 1,
+      "name": "link_density",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "link_text_len / text_len.",
+      "transform": {
+        "op": "clip",
+        "lo": 0,
+        "hi": 1
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "1.0.0",
+      "context": {
+        "rel": "next",
+        "source": "parent_link_density"
+      }
+    },
+    {
+      "index": 2,
+      "name": "is_heading",
+      "kind": "bool",
+      "group": "tag",
+      "doc": "1 for h1..h6.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "1.0.0"
+    },
+    {
+      "index": 3,
+      "name": "parent_link_density",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "link_density of the parent (0 for the root).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "1.1.0",
+      "context": {
+        "rel": "parent",
+        "source": "link_density"
+      }
+    }
+  ],
+  "prefilter": {
+    "rules_version": "1",
+    "rules": [
+      {
+        "id": "skip_tags",
+        "kind": "tag",
+        "tags": [
+          "script",
+          "style",
+          "noscript",
+          "svg",
+          "template"
+        ]
+      },
+      {
+        "id": "display_none",
+        "kind": "style",
+        "display_none": true
+      },
+      {
+        "id": "zero_rect",
+        "kind": "zero_rect"
+      }
+    ]
+  },
+  "missing_policy": {
+    "nan": "zero",
+    "inf": "clip"
+  }
+}

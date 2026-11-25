@@ -1,12 +1,15 @@
 import type { ContractName } from "../../registry.js";
 import { buildNodeFeatures, buildFeatureSchema, buildNodeLabels, buildSnapshot } from "./extract-docs.js";
 import { buildDataset, buildTrainConfig, sealDataset, type DatasetFixture } from "./data-docs.js";
-import { buildContentTree, buildPipeline, buildStageKinds } from "./graph-docs.js";
-import { buildEvalReport, buildModel, type ModelFixture } from "./model-docs.js";
+import { buildContentTree, buildDemoPipeline, buildDemoStageKind, buildPipeline, buildStageKinds } from "./graph-docs.js";
+import { buildLabelAgreement, buildQaTaskSet } from "./audit-docs.js";
+import { buildDownstreamReport, buildEvalReport, buildModel, type ModelFixture } from "./model-docs.js";
 import type { ContentTree } from "../../content-tree.js";
 import type { DatasetManifest, DatasetRow } from "../../dataset.js";
 import type { EvalReport } from "../../eval-report.js";
 import type { FeatureSchema } from "../../feature-schema.js";
+import type { LabelAgreement } from "../../label-agreement.js";
+import type { QaTaskSet } from "../../qa-task-set.js";
 import type { ModelPackage } from "../../model-package.js";
 import type { NodeFeatures } from "../../node-features.js";
 import type { NodeLabels } from "../../node-labels.js";
@@ -32,6 +35,11 @@ export interface Universe {
   model: ModelPackage;
   golden: Golden;
   evalReport: EvalReport;
+  downstreamReport: EvalReport;
+  labelAgreement: LabelAgreement;
+  qaTaskSet: QaTaskSet;
+  demoKind: StageKindSpec;
+  demoPipeline: PipelineSpec;
   contentTree: ContentTree;
   pipeline: PipelineSpec;
   stageKinds: StageKindSpec[];
@@ -46,6 +54,7 @@ export function buildUniverse(): Universe {
   ds.manifest = sealDataset({ ...ds.manifest, feature_schema_id: schema.schema_id });
   const modelFixture = buildModel(schema);
   const evalReport = buildEvalReport(modelFixture.model, ds.manifest.dataset_id);
+  const qaTaskSet = buildQaTaskSet(snapshot.snapshot_id, ds.manifest.dataset_id);
   const model: ModelPackage = {
     ...modelFixture.model,
     metrics: { eval_report_id: evalReport.report_id, headline: { f1: evalReport.intrinsic?.overall.f1 ?? 0 } },
@@ -63,6 +72,11 @@ export function buildUniverse(): Universe {
     model,
     golden: modelFixture.golden,
     evalReport,
+    downstreamReport: buildDownstreamReport(modelFixture.model, ds.manifest.dataset_id, qaTaskSet.task_set_id),
+    labelAgreement: buildLabelAgreement(ds.manifest.dataset_id),
+    qaTaskSet,
+    demoKind: buildDemoStageKind(),
+    demoPipeline: buildDemoPipeline(),
     contentTree: buildContentTree(model.model_id, schema.schema_id, snapshot.snapshot_id),
     pipeline: buildPipeline(),
     stageKinds: buildStageKinds(),
@@ -82,10 +96,22 @@ export const VALID_PATH: Record<ContractName, string> = {
   "model-package": "model-package/model.json",
   golden: "model-package/golden.json",
   "eval-report": "eval-report.json",
+  "label-agreement": "label-agreement.json",
+  "qa-task-set": "qa-task-set.json",
   "content-tree": "content-tree.json",
   "pipeline-spec": "pipeline-spec.json",
   "stage-kind-spec": "stage-kind-spec.json",
 };
+
+/**
+ * Additional valid documents that exercise other paths of a contract (relative to `fixtures/valid/`):
+ * a downstream report, and the v1.1 `demo` stage kind / pipeline.
+ */
+export const EXTRA_VALID: ReadonlyArray<{ contract: ContractName; path: string; pick: (u: Universe) => unknown }> = [
+  { contract: "eval-report", path: "eval-report.downstream.json", pick: (u) => u.downstreamReport },
+  { contract: "stage-kind-spec", path: "stage-kind-spec.demo.json", pick: (u) => u.demoKind },
+  { contract: "pipeline-spec", path: "pipeline-spec.demo.json", pick: (u) => u.demoPipeline },
+];
 
 const json = (v: unknown): string => `${JSON.stringify(v, null, 2)}\n`;
 
@@ -107,6 +133,9 @@ export function validFiles(u: Universe): Map<string, string | Uint8Array> {
   f.set("model-package/weights.f32le", u.modelFixture.weightsBytes);
   f.set(VALID_PATH.golden, u.modelFixture.goldenText);
   f.set(VALID_PATH["eval-report"], json(u.evalReport));
+  f.set(VALID_PATH["label-agreement"], json(u.labelAgreement));
+  f.set(VALID_PATH["qa-task-set"], json(u.qaTaskSet));
+  for (const e of EXTRA_VALID) f.set(e.path, json(e.pick(u)));
   f.set(VALID_PATH["content-tree"], json(u.contentTree));
   f.set(VALID_PATH["pipeline-spec"], json(u.pipeline));
   f.set(VALID_PATH["stage-kind-spec"], json(u.stageKinds.find((k) => k.kind === "label")));

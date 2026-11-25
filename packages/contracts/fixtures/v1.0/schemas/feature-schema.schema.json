@@ -1,0 +1,201 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:feature-schema",
+  "x-gran-prix": {
+    "contract": "feature-schema",
+    "format": "gran-prix.feature-schema",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "feature-schema",
+  "description": "Versioned, named features with stable indices and static transforms. Immutable, identified by schema_id.",
+  "type": "object",
+  "required": ["format", "format_version", "schema_id", "name", "version", "unit", "extractor", "dim", "features", "prefilter", "missing_policy"],
+  "properties": {
+    "format": { "const": "gran-prix.feature-schema", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "schema_id": { "$ref": "#/$defs/Sha256" },
+    "name": { "minLength": 1, "type": "string" },
+    "version": { "$ref": "#/$defs/SemVer" },
+    "unit": {
+      "minLength": 1,
+      "description": "What one row represents, e.g. dom-node-own-content.",
+      "type": "string"
+    },
+    "description": { "description": "NOT part of schema_id.", "type": "string" },
+    "extractor": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "minLength": 1, "type": "string" },
+        "version": { "$ref": "#/$defs/SemVer" }
+      }
+    },
+    "dim": { "minimum": 1, "type": "integer" },
+    "features": {
+      "minItems": 1,
+      "description": "features[i].index === i.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index", "name", "kind", "doc", "transform", "range", "default", "since"],
+        "properties": {
+          "index": { "minimum": 0, "type": "integer" },
+          "name": { "pattern": "^[a-z][a-z0-9_]*$", "type": "string" },
+          "kind": {
+            "anyOf": [
+              { "const": "scalar", "type": "string" },
+              { "const": "bool", "type": "string" },
+              { "const": "onehot", "type": "string" },
+              { "const": "hash_bucket", "type": "string" }
+            ]
+          },
+          "group": {
+            "description": "text | structure | style | tag | class_hint | ...",
+            "type": "string"
+          },
+          "doc": {
+            "description": "Human documentation. NOT part of schema_id.",
+            "type": "string"
+          },
+          "transform": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["op"],
+                "properties": {
+                  "op": { "const": "none", "type": "string" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["op", "scale"],
+                "properties": {
+                  "op": { "const": "log1p", "type": "string" },
+                  "scale": { "exclusiveMinimum": 0, "type": "number" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["op", "lo", "hi"],
+                "properties": {
+                  "op": { "const": "clip", "type": "string" },
+                  "lo": { "type": "number" },
+                  "hi": { "type": "number" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["op", "by"],
+                "properties": {
+                  "op": { "const": "div", "type": "string" },
+                  "by": { "description": "Non-zero divisor.", "type": "number" }
+                }
+              }
+            ]
+          },
+          "range": {
+            "description": "[lo, hi] guaranteed by the extractor; also the OOD clip bounds (clipped values are counted in NodeFeatures.sanitized).",
+            "type": "array",
+            "items": [
+              { "type": "number" },
+              { "type": "number" }
+            ],
+            "additionalItems": false,
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "default": {
+            "description": "Value when the feature does not apply. Within range.",
+            "type": "number"
+          },
+          "since": { "$ref": "#/$defs/SemVer" },
+          "onehot": {
+            "type": "object",
+            "required": ["of", "value"],
+            "properties": {
+              "of": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          },
+          "hash": {
+            "type": "object",
+            "required": ["fn", "buckets"],
+            "properties": {
+              "fn": { "const": "fnv1a32", "type": "string" },
+              "buckets": { "minimum": 1, "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "prefilter": {
+      "type": "object",
+      "required": ["rules_version", "rules"],
+      "properties": {
+        "rules_version": { "type": "string" },
+        "rules": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["id", "kind", "tags"],
+                "properties": {
+                  "id": { "minLength": 1, "type": "string" },
+                  "kind": { "const": "tag", "type": "string" },
+                  "tags": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["id", "kind", "display_none"],
+                "properties": {
+                  "id": { "minLength": 1, "type": "string" },
+                  "kind": { "const": "style", "type": "string" },
+                  "display_none": { "const": true, "type": "boolean" }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["id", "kind"],
+                "properties": {
+                  "id": { "minLength": 1, "type": "string" },
+                  "kind": {
+                    "anyOf": [
+                      { "const": "visibility_hidden", "type": "string" },
+                      { "const": "zero_rect", "type": "string" }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "missing_policy": {
+      "type": "object",
+      "required": ["nan", "inf"],
+      "properties": {
+        "nan": { "const": "zero", "type": "string" },
+        "inf": { "const": "clip", "type": "string" }
+      }
+    }
+  }
+}

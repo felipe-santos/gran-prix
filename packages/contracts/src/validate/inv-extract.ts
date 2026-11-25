@@ -26,6 +26,28 @@ export function snapshotInvariants(s: PageSnapshot): Issues {
     out.check(n.own_text_len <= n.text_len, `${at}.own_text_len`, "own_text_len must be <= text_len");
   });
   out.check(s.nodes.length > 0, "nodes", "a snapshot needs at least the root element");
+  // v1.1 fields (absent in v1.0 documents, so these rules never touch them).
+  if (s.probe) {
+    const cap = s.probe.own_text_cap;
+    s.nodes.forEach((n, i) => out.check(n.own_text.length <= cap, `nodes[${i}].own_text`, `own_text has ${n.own_text.length} UTF-16 units, above probe.own_text_cap (${cap})`));
+  }
+  const seenUnit = new Set<string>();
+  const lastChild = new Map<number, number>();
+  (s.text_units ?? []).forEach((u, i) => {
+    const at = `text_units[${i}]`;
+    out.check(u.owner < s.nodes.length, `${at}.owner`, `owner ${u.owner} is not a node idx (0..${s.nodes.length - 1})`);
+    const m = /^n([0-9]+)#t([0-9]+)$/.exec(u.id);
+    if (m) {
+      out.check(Number(m[1]) === u.owner, `${at}.id`, `id "${u.id}" does not name its owner n${u.owner}`);
+      const child = Number(m[2]);
+      const prev = lastChild.get(u.owner);
+      if (prev !== undefined) out.check(child > prev, `${at}.id`, `child index ${child} must exceed ${prev}, the previous text unit of n${u.owner} (document order)`);
+      lastChild.set(u.owner, child);
+    }
+    out.check(!seenUnit.has(u.id), `${at}.id`, `duplicate text unit id "${u.id}"`);
+    seenUnit.add(u.id);
+    out.check(u.t.trim().length > 0, `${at}.t`, "a text unit is a NON-BLANK text node");
+  });
   out.idCheck(s.snapshot_id === contractId("page-snapshot", s), "snapshot_id", "does not match the hash of the snapshot (excluding capture)");
   return out;
 }
@@ -48,6 +70,17 @@ export function featureSchemaInvariants(s: FeatureSchema): Issues {
     out.check(f.kind !== "onehot" || f.onehot !== undefined, `${at}.onehot`, 'kind "onehot" requires the onehot field');
     out.check(f.kind !== "hash_bucket" || f.hash !== undefined, `${at}.hash`, 'kind "hash_bucket" requires the hash field');
     if (f.kind === "bool") out.check(lo >= 0 && hi <= 1, `${at}.range`, 'kind "bool" must have range within [0, 1]');
+  });
+  // v1.1 context features: `source` is another, non-context feature of this schema.
+  s.features.forEach((f, i) => {
+    if (!f.context) return;
+    const at = `features[${i}].context.source`;
+    const src = seen.get(f.context.source);
+    out.check(src !== undefined, at, `source "${f.context.source}" is not a feature of this schema`);
+    if (src === undefined) return;
+    out.check(src !== i, at, "a context feature cannot be its own source");
+    out.check(!s.features[src]?.context, at, `source "${f.context.source}" is itself a context feature (sources must be non-context)`);
+    out.check(f.kind === "scalar" || f.kind === "bool", `features[${i}].kind`, "a context feature copies a finished value: kind must be scalar or bool");
   });
   const ruleIds = s.prefilter.rules.map((r) => r.id);
   ruleIds.forEach((id, i) => out.check(ruleIds.indexOf(id) === i, `prefilter.rules[${i}].id`, `duplicate prefilter rule id "${id}"`));

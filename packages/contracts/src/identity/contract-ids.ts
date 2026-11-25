@@ -13,6 +13,8 @@ const OMITTED_FROM_ID = {
   "dataset-manifest": { id: "dataset_id", omit: ["provenance"] },
   "train-config": { id: "train_config_id", omit: [] },
   "eval-report": { id: "report_id", omit: ["provenance"] },
+  "label-agreement": { id: "agreement_id", omit: ["provenance"] },
+  "qa-task-set": { id: "task_set_id", omit: ["provenance"] },
   // PipelineSpec has no id field of its own (the id lives in Provenance.pipeline_spec_id).
   "pipeline-spec": { id: undefined, omit: ["layout"] },
 } as const;

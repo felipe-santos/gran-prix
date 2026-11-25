@@ -1,0 +1,28 @@
+{
+  "format": "gran-prix.stage-kind-spec",
+  "format_version": "1.1.0",
+  "kind": "demo",
+  "impl": "ts:demo.echo@1.0.0",
+  "inputs": [
+    {
+      "name": "urls",
+      "type": "UrlList"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "echo",
+      "type": "UrlList"
+    }
+  ],
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string"
+      }
+    }
+  },
+  "runtime": "node",
+  "determinism": "pure"
+}

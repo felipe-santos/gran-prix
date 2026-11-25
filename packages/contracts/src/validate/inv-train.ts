@@ -54,6 +54,30 @@ export function datasetInvariants(m: DatasetManifest): Issues {
     }
   });
 
+  // v1.1: tags are sorted and unique per group; stats.by_tag is recomputable from them.
+  const tagStats = new Map<string, { groups: number; rows: number }>();
+  m.groups.forEach((g, i) => {
+    (g.tags ?? []).forEach((t, k) => {
+      if (k > 0) out.check(t > (g.tags as string[])[k - 1]!, `groups[${i}].tags[${k}]`, "tags must be sorted ascending, without duplicates");
+      const e = tagStats.get(t) ?? { groups: 0, rows: 0 };
+      e.groups++;
+      e.rows += g.n_rows;
+      tagStats.set(t, e);
+    });
+  });
+  if (m.stats.by_tag) {
+    for (const [t, v] of Object.entries(m.stats.by_tag)) {
+      out.check(/^[a-z][a-z0-9_]*(:[A-Za-z0-9_.-]+)?$/.test(t), `stats.by_tag.${t}`, "tag must be key or key:value");
+      const e = tagStats.get(t);
+      out.check(e !== undefined, `stats.by_tag.${t}`, `no group carries the tag "${t}"`);
+      if (e) {
+        out.check(v.groups === e.groups, `stats.by_tag.${t}.groups`, `${v.groups} groups declared, groups[] carries the tag ${e.groups} times`);
+        out.check(v.rows === e.rows, `stats.by_tag.${t}.rows`, `${v.rows} rows declared, tagged groups sum to ${e.rows}`);
+      }
+    }
+    for (const t of tagStats.keys()) out.check(t in m.stats.by_tag, `stats.by_tag`, `missing entry for tag "${t}"`);
+  }
+
   m.sources.forEach((s, i) => out.check(groupIds.has(s.group_id), `sources[${i}].group_id`, `"${s.group_id}" is not in groups`));
   for (const n of SPLITS) {
     out.check(m.files[n].rows === rowsBySplit[n], `files.${n}.rows`, `${m.files[n].rows} rows declared, but groups of split "${n}" sum to ${rowsBySplit[n]}`);

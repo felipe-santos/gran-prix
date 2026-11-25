@@ -1,0 +1,262 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:content-tree",
+  "x-gran-prix": {
+    "contract": "content-tree",
+    "format": "gran-prix.content-tree",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "ContentNode": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["src", "kind", "level", "runs"],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": { "minimum": 0, "type": "integer" }
+            },
+            "score": { "type": "number" },
+            "kind": { "const": "heading", "type": "string" },
+            "level": {
+              "anyOf": [
+                { "const": 1, "type": "number" },
+                { "const": 2, "type": "number" },
+                { "const": 3, "type": "number" },
+                { "const": 4, "type": "number" },
+                { "const": 5, "type": "number" },
+                { "const": 6, "type": "number" }
+              ]
+            },
+            "runs": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/Inline" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["src", "kind", "runs"],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": { "minimum": 0, "type": "integer" }
+            },
+            "score": { "type": "number" },
+            "kind": { "const": "paragraph", "type": "string" },
+            "runs": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/Inline" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["src", "kind", "ordered", "items"],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": { "minimum": 0, "type": "integer" }
+            },
+            "score": { "type": "number" },
+            "kind": { "const": "list", "type": "string" },
+            "ordered": { "type": "boolean" },
+            "items": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ContentNode" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["src", "kind", "headers", "rows"],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": { "minimum": 0, "type": "integer" }
+            },
+            "score": { "type": "number" },
+            "kind": { "const": "table", "type": "string" },
+            "headers": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "rows": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["src", "kind", "lang", "text"],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": { "minimum": 0, "type": "integer" }
+            },
+            "score": { "type": "number" },
+            "kind": { "const": "code", "type": "string" },
+            "lang": {
+              "anyOf": [
+                { "type": "string" },
+                { "type": "null" }
+              ]
+            },
+            "text": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["src", "kind", "children"],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": { "minimum": 0, "type": "integer" }
+            },
+            "score": { "type": "number" },
+            "kind": { "const": "quote", "type": "string" },
+            "children": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ContentNode" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["src", "kind", "alt", "url"],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": { "minimum": 0, "type": "integer" }
+            },
+            "score": { "type": "number" },
+            "kind": { "const": "media", "type": "string" },
+            "alt": { "type": "string" },
+            "url": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["src", "kind", "children"],
+          "properties": {
+            "src": {
+              "type": "array",
+              "items": { "minimum": 0, "type": "integer" }
+            },
+            "score": { "type": "number" },
+            "kind": { "const": "container", "type": "string" },
+            "children": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ContentNode" }
+            }
+          }
+        }
+      ]
+    },
+    "Inline": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["t", "text"],
+          "properties": {
+            "t": { "const": "text", "type": "string" },
+            "text": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["t", "text"],
+          "properties": {
+            "t": { "const": "code", "type": "string" },
+            "text": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["t", "href", "children"],
+          "properties": {
+            "t": { "const": "link", "type": "string" },
+            "href": { "type": "string" },
+            "children": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/Inline" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["t", "children"],
+          "properties": {
+            "t": {
+              "anyOf": [
+                { "const": "strong", "type": "string" },
+                { "const": "em", "type": "string" }
+              ]
+            },
+            "children": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/Inline" }
+            }
+          }
+        }
+      ]
+    },
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "content-tree",
+  "description": "Pruned content of a page: block tree with inline runs and back-references to snapshot units.",
+  "type": "object",
+  "required": ["format", "format_version", "source", "root", "stats"],
+  "properties": {
+    "format": { "const": "gran-prix.content-tree", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "source": {
+      "type": "object",
+      "required": ["url", "model_id", "feature_schema_id", "threshold", "mode"],
+      "properties": {
+        "url": { "minLength": 1, "type": "string" },
+        "snapshot_id": { "$ref": "#/$defs/Sha256" },
+        "model_id": { "$ref": "#/$defs/Sha256" },
+        "feature_schema_id": { "$ref": "#/$defs/Sha256" },
+        "threshold": { "minimum": 0, "maximum": 1, "type": "number" },
+        "mode": {
+          "anyOf": [
+            { "const": "aggressive", "type": "string" },
+            { "const": "balanced", "type": "string" },
+            { "const": "strict", "type": "string" },
+            { "const": "custom", "type": "string" }
+          ]
+        }
+      }
+    },
+    "root": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ContentNode" }
+    },
+    "stats": {
+      "type": "object",
+      "required": ["nodes_total", "nodes_candidates", "nodes_kept", "chars_in", "chars_out"],
+      "properties": {
+        "nodes_total": { "minimum": 0, "type": "integer" },
+        "nodes_candidates": { "minimum": 0, "type": "integer" },
+        "nodes_kept": { "minimum": 0, "type": "integer" },
+        "chars_in": { "minimum": 0, "type": "integer" },
+        "chars_out": { "minimum": 0, "type": "integer" }
+      }
+    }
+  }
+}

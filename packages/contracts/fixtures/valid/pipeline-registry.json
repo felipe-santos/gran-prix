@@ -198,17 +198,38 @@
       {
         "name": "dataset",
         "type": "Dataset"
+      },
+      {
+        "name": "baselines",
+        "type": "Bundle",
+        "many": true,
+        "optional": true
       }
     ],
     "outputs": [
       {
         "name": "report",
         "type": "EvalReport"
+      },
+      {
+        "name": "extras",
+        "type": "Bundle"
+      },
+      {
+        "name": "details",
+        "type": "Bundle"
       }
     ],
     "params_schema": {
       "type": "object",
+      "required": [
+        "seed"
+      ],
       "properties": {
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
         "split": {
           "enum": [
             "train",
@@ -226,7 +247,7 @@
       }
     },
     "runtime": "node+wasm",
-    "determinism": "pure",
+    "determinism": "seeded",
     "gates": [
       {
         "id": "f1_vs_baseline",

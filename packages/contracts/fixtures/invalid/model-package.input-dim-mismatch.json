@@ -1,7 +1,7 @@
 {
   "format": "gran-prix.model-package",
-  "format_version": "1.0.0",
-  "model_id": "sha256:c9d32f7cbc93b2f85052c3e250bfd062fd63c1189c834fe0075f22391458ba26",
+  "format_version": "1.1.0",
+  "model_id": "sha256:0f9d02f522026bc2243030c833f8a8f218b3eb0fbc2a74bf53bff4087d69cec6",
   "name": "dom-fixture-model",
   "description": "Tiny model used only by the contract fixtures.",
   "task": {
@@ -22,14 +22,14 @@
     },
     "golden": {
       "path": "golden.json",
-      "bytes": 926
+      "bytes": 961
     }
   },
   "digest": {
     "algorithm": "sha256",
     "network_def": "sha256:4f182767d72073ace6f2c308e1dfa138dcac5c36bf2418e29153f639f4acd1f5",
     "weights": "sha256:b8bb198b7bdb48f48ce12b7f3ed7a3add18b66cffa30cedffe32dce1b8e9436e",
-    "golden": "sha256:f5c5ae957781353432c74735dca7bb0856951cf3f9bc31604c2b21d7871a40a3"
+    "golden": "sha256:34016a3c14745ab011a011c7439231b686d616bfcf2b8fa734a0f3654a331c83"
   },
   "network": {
     "input_dim": 5,
@@ -74,7 +74,7 @@
     ]
   },
   "feature_spec": {
-    "schema_id": "sha256:f96fab2e444e45a20fc3a482f9790f64f82d913cb040a0ad6b7ccb25c93e6d65",
+    "schema_id": "sha256:1ee5428f83b192818529edcc949804efcb116e98db3385d0fb161c73a2db3d26",
     "name": "dom-node-fixture",
     "version": "1.0.0",
     "dim": 4,
@@ -82,7 +82,7 @@
       "log_text_len",
       "link_density",
       "is_heading",
-      "depth_norm"
+      "parent_link_density"
     ],
     "normalization": {
       "kind": "zscore",
@@ -148,7 +148,7 @@
       "run_id": "run-0001",
       "stage_id": "train",
       "kind": "train",
-      "impl": "ts:train.wasm-trainer@1.0.0",
+      "impl": "rust:train.gp-train@1.0.0",
       "params_sha256": "sha256:861ff61791234a2cdd3362fd8390ac4fdd1d6885024f006696eabbd0bd23e321",
       "cache_key": "sha256:3930d1fdcd6cd989514495fd896ab4c2e5c140d5872831959d7451ca9fee49cc"
     },
@@ -162,13 +162,14 @@
     "tool_versions": {
       "gp_cli": "0.1.0",
       "node": "v24.13.1",
-      "wasm_sha256": "sha256:50ac2f3c4e70c05dc50b06ba827c46cf3ee513432661ba323c468ffcf4d5e94b"
+      "wasm_sha256": "sha256:50ac2f3c4e70c05dc50b06ba827c46cf3ee513432661ba323c468ffcf4d5e94b",
+      "tool_sha256": "sha256:6d0cd0cedea8309df613b1e8556b29d71580ac5f438de372eb22962a57d67684"
     },
     "created_at": "2026-11-25T12:00:00Z",
     "duration_ms": 1234
   },
   "metrics": {
-    "eval_report_id": "sha256:c29821592c11093237a936b133ff0262033e5512c098ac4dda833512be10bb7f",
+    "eval_report_id": "sha256:60b98a7270aa11600c7f7abdecf91a4a69ddcf1cbfb92d319e612c0b5f51e4eb",
     "headline": {
       "f1": 0.8421052631578948
     }

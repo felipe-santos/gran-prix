@@ -1,0 +1,191 @@
+{
+  "format": "gran-prix.eval-report",
+  "format_version": "1.0.0",
+  "report_id": "sha256:0a8cca7df9e769027d36a603c8ebb86d1c76362ce3697913a2fd48566fc69736",
+  "mode": "downstream",
+  "model_id": "sha256:c9d32f7cbc93b2f85052c3e250bfd062fd63c1189c834fe0075f22391458ba26",
+  "dataset_id": "sha256:f3d0fce6f084fff490d7b558174fdf7632b5c23cb54f811a955764b111f92922",
+  "split": "test",
+  "threshold": 0.5,
+  "intrinsic": {
+    "overall": {
+      "n": 20,
+      "tp": 8,
+      "fp": 2,
+      "tn": 9,
+      "fn": 1,
+      "precision": 0.8,
+      "recall": 0.8888888888888888,
+      "f1": 0.8421052631578948,
+      "accuracy": 0.85,
+      "auc_roc": 0.93,
+      "pr_auc": 0.9,
+      "logloss": 0.31,
+      "brier": 0.09
+    },
+    "by_stratum": {
+      "article": {
+        "n": 11,
+        "tp": 5,
+        "fp": 1,
+        "tn": 5,
+        "fn": 0,
+        "precision": 0.8333333333333334,
+        "recall": 1,
+        "f1": 0.9090909090909091,
+        "accuracy": 0.9090909090909091,
+        "n_groups": 3
+      },
+      "docs": {
+        "n": 9,
+        "tp": 3,
+        "fp": 1,
+        "tn": 4,
+        "fn": 1,
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "accuracy": 0.7777777777777778,
+        "n_groups": 2
+      }
+    },
+    "by_label_source": {
+      "human": {
+        "n": 20,
+        "tp": 8,
+        "fp": 2,
+        "tn": 9,
+        "fn": 1,
+        "precision": 0.8,
+        "recall": 0.8888888888888888,
+        "f1": 0.8421052631578948,
+        "accuracy": 0.85
+      }
+    },
+    "baselines": {
+      "readability": {
+        "overall": {
+          "n": 20,
+          "tp": 7,
+          "fp": 3,
+          "tn": 8,
+          "fn": 2,
+          "precision": 0.7,
+          "recall": 0.7777777777777778,
+          "f1": 0.7368421052631577,
+          "accuracy": 0.75
+        },
+        "by_stratum": {
+          "article": {
+            "n": 11,
+            "tp": 4,
+            "fp": 2,
+            "tn": 4,
+            "fn": 1,
+            "precision": 0.6666666666666666,
+            "recall": 0.8,
+            "f1": 0.7272727272727272,
+            "accuracy": 0.7272727272727273
+          },
+          "docs": {
+            "n": 9,
+            "tp": 3,
+            "fp": 1,
+            "tn": 4,
+            "fn": 1,
+            "precision": 0.75,
+            "recall": 0.75,
+            "f1": 0.75,
+            "accuracy": 0.7777777777777778
+          }
+        }
+      }
+    },
+    "comparison": [
+      {
+        "stratum": "article",
+        "metric": "f1",
+        "model": 0.9090909090909091,
+        "baseline": "readability",
+        "baseline_value": 0.7272727272727272,
+        "delta": 0.18181818181818188,
+        "ci95": [
+          0.08181818181818187,
+          0.28181818181818186
+        ],
+        "n_groups": 3
+      }
+    ],
+    "token_stats": {
+      "tokenizer": "o200k_base",
+      "full_tokens": 52000,
+      "kept_tokens": 9100,
+      "ratio": 0.175
+    },
+    "per_group": [
+      {
+        "group_id": "g00_site0",
+        "stratum": "article",
+        "f1": 0.9,
+        "kept_ratio": 0.2
+      },
+      {
+        "group_id": "g01_site1",
+        "stratum": "docs",
+        "f1": 0.7,
+        "kept_ratio": 0.35
+      }
+    ],
+    "calibration": {
+      "ece": 0.04,
+      "bins": [
+        {
+          "lo": 0,
+          "hi": 0.5,
+          "n": 10,
+          "mean_p": 0.2,
+          "frac_pos": 0.1
+        },
+        {
+          "lo": 0.5,
+          "hi": 1,
+          "n": 10,
+          "mean_p": 0.8,
+          "frac_pos": 0.9
+        }
+      ]
+    }
+  },
+  "gates": [
+    {
+      "id": "f1_vs_readability",
+      "rule": "macro_f1_delta >= 0",
+      "value": 0.18181818181818188,
+      "passed": true
+    }
+  ],
+  "provenance": {
+    "produced_by": {
+      "run_id": "run-0001",
+      "stage_id": "eval",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params_sha256": "sha256:f05be969f8aaea73405eb35842179715ecd4cc49206a43f7eef11d46c70f889a",
+      "cache_key": "sha256:6d44140cd60b7e3e6a0f697ca820d561790d68e49f106c81f333902aa20fd460"
+    },
+    "inputs": [
+      {
+        "port": "dataset",
+        "artifact_id": "sha256:73012280d08122f0b49688994ac67c1dd284287c5c952dde88c9f38506d629c8"
+      }
+    ],
+    "pipeline_spec_id": "sha256:ae450a2ee9a8d118d5a2137fa52fd78536551e81d8a6107ac05862b079195843",
+    "tool_versions": {
+      "gp_cli": "0.1.0",
+      "node": "v24.13.1",
+      "wasm_sha256": "sha256:50ac2f3c4e70c05dc50b06ba827c46cf3ee513432661ba323c468ffcf4d5e94b"
+    },
+    "created_at": "2026-11-25T12:00:00Z",
+    "duration_ms": 1234
+  }
+}

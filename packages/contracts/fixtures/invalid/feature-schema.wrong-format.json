@@ -1,7 +1,7 @@
 {
   "format": "gran-prix.page-snapshot",
-  "format_version": "1.0.0",
-  "schema_id": "sha256:f96fab2e444e45a20fc3a482f9790f64f82d913cb040a0ad6b7ccb25c93e6d65",
+  "format_version": "1.1.0",
+  "schema_id": "sha256:1ee5428f83b192818529edcc949804efcb116e98db3385d0fb161c73a2db3d26",
   "name": "dom-node-fixture",
   "version": "1.0.0",
   "unit": "dom-node-own-content",
@@ -65,20 +65,23 @@
     },
     {
       "index": 3,
-      "name": "depth_norm",
+      "name": "parent_link_density",
       "kind": "scalar",
-      "group": "structure",
-      "doc": "depth / 32.",
+      "group": "context",
+      "doc": "link_density of the parent (0 for the root).",
       "transform": {
-        "op": "div",
-        "by": 32
+        "op": "none"
       },
       "range": [
         0,
         1
       ],
       "default": 0,
-      "since": "1.0.0"
+      "since": "1.1.0",
+      "context": {
+        "rel": "parent",
+        "source": "link_density"
+      }
     }
   ],
   "prefilter": {

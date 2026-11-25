@@ -1,13 +1,35 @@
 {
   "format": "gran-prix.eval-report",
-  "format_version": "1.0.0",
-  "report_id": "sha256:c29821592c11093237a936b133ff0262033e5512c098ac4dda833512be10bb7f",
+  "format_version": "1.1.0",
+  "report_id": "sha256:60b98a7270aa11600c7f7abdecf91a4a69ddcf1cbfb92d319e612c0b5f51e4eb",
   "mode": "intrinsic",
-  "model_id": "sha256:c9d32f7cbc93b2f85052c3e250bfd062fd63c1189c834fe0075f22391458ba26",
-  "dataset_id": "sha256:f3d0fce6f084fff490d7b558174fdf7632b5c23cb54f811a955764b111f92922",
+  "model_id": "sha256:0f9d02f522026bc2243030c833f8a8f218b3eb0fbc2a74bf53bff4087d69cec6",
+  "dataset_id": "sha256:3c809ea9792703034be555a07564018e53a7f07d7abc8259b77bb93eaa04b4e4",
   "split": "test",
   "threshold": 0.5,
+  "system": {
+    "kind": "model",
+    "family": "mlp",
+    "name": "gp-mlp-fixture",
+    "version": "0.1.0"
+  },
+  "names": {
+    "model": "gp-mlp-fixture (synthetic)",
+    "dataset": "fixture dataset (synthetic)"
+  },
   "intrinsic": {
+    "bootstrap": {
+      "resamples": 10000,
+      "seed": 20261125,
+      "cluster_by": "group_key",
+      "method": "percentile",
+      "stratified": true
+    },
+    "weighting": {
+      "unit": "chars",
+      "positive_class": "keep (main + support)",
+      "weight_source": "dataset-row.w (own-text chars)"
+    },
     "overall": {
       "n": 20,
       "tp": 8,
@@ -62,8 +84,35 @@
         "accuracy": 0.85
       }
     },
+    "by_tag": {
+      "lang:en": {
+        "n": 11,
+        "tp": 5,
+        "fp": 1,
+        "tn": 5,
+        "fn": 0,
+        "precision": 0.8333333333333334,
+        "recall": 1,
+        "f1": 0.9090909090909091,
+        "accuracy": 0.9090909090909091,
+        "n_groups": 3
+      },
+      "logged_in": {
+        "n": 9,
+        "tp": 3,
+        "fp": 1,
+        "tn": 4,
+        "fn": 1,
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75,
+        "accuracy": 0.7777777777777778,
+        "n_groups": 2
+      }
+    },
     "baselines": {
       "readability": {
+        "coverage": 0.97,
         "overall": {
           "n": 20,
           "tp": 7,
@@ -85,7 +134,8 @@
             "precision": 0.6666666666666666,
             "recall": 0.8,
             "f1": 0.7272727272727272,
-            "accuracy": 0.7272727272727273
+            "accuracy": 0.7272727272727273,
+            "n_groups": 3
           },
           "docs": {
             "n": 9,
@@ -96,11 +146,37 @@
             "precision": 0.75,
             "recall": 0.75,
             "f1": 0.75,
-            "accuracy": 0.7777777777777778
+            "accuracy": 0.7777777777777778,
+            "n_groups": 2
           }
         }
       }
     },
+    "aggregates": [
+      {
+        "name": "hard",
+        "strata": [
+          "docs"
+        ],
+        "micro": {
+          "n": 9,
+          "tp": 3,
+          "fp": 1,
+          "tn": 4,
+          "fn": 1,
+          "precision": 0.75,
+          "recall": 0.75,
+          "f1": 0.75,
+          "accuracy": 0.7777777777777778
+        },
+        "macro_page_f1": 0.72,
+        "macro_stratum_f1": 0.75,
+        "ci95": [
+          0.55,
+          0.88
+        ]
+      }
+    ],
     "comparison": [
       {
         "stratum": "article",
@@ -113,21 +189,201 @@
           0.08181818181818187,
           0.28181818181818186
         ],
+        "n_groups": 3,
+        "aggregation": "macro_page"
+      },
+      {
+        "stratum": "article",
+        "metric": "recall",
+        "model": 1,
+        "baseline": "readability",
+        "baseline_value": 0.8,
+        "delta": 0.19999999999999996,
+        "ci95": [
+          0,
+          0.4
+        ],
         "n_groups": 3
+      },
+      {
+        "stratum": "hard",
+        "metric": "token_f1",
+        "model": 0.8,
+        "baseline": "readability",
+        "baseline_value": 0.7,
+        "delta": 0.10000000000000009,
+        "ci95": [
+          -0.05,
+          0.25
+        ],
+        "n_groups": 2
       }
     ],
+    "metric_ci": {
+      "model": {
+        "overall": {
+          "precision": [
+            0.55,
+            0.95
+          ],
+          "recall": [
+            0.6,
+            0.99
+          ],
+          "f1": [
+            0.6,
+            0.96
+          ]
+        },
+        "article": {
+          "f1": [
+            0.7,
+            1
+          ]
+        },
+        "docs": {
+          "f1": [
+            0.3,
+            0.95
+          ]
+        }
+      },
+      "baselines": {
+        "readability": {
+          "overall": {
+            "f1": [
+              0.45,
+              0.85
+            ]
+          }
+        }
+      }
+    },
+    "pr_curve": {
+      "points": [
+        {
+          "threshold": 0.1,
+          "precision": 0.6,
+          "recall": 0.99
+        },
+        {
+          "threshold": 0.3,
+          "precision": 0.75,
+          "recall": 0.95
+        },
+        {
+          "threshold": 0.5,
+          "precision": 0.8,
+          "recall": 0.8889
+        },
+        {
+          "threshold": 0.7,
+          "precision": 0.9,
+          "recall": 0.7
+        },
+        {
+          "threshold": 0.9,
+          "precision": 1,
+          "recall": 0.4
+        }
+      ],
+      "operating_threshold": 0.5,
+      "operating_rule": "max threshold with char-weighted recall >= 0.85 on dev (fixture value)"
+    },
     "token_stats": {
       "tokenizer": "o200k_base",
       "full_tokens": 52000,
       "kept_tokens": 9100,
       "ratio": 0.175
     },
+    "token_reduction": {
+      "tokenizer": "cl100k_base",
+      "converter": "turndown@7.2.0+gfm",
+      "d1": {
+        "full_tokens": 520000,
+        "kept_tokens": 9100,
+        "n_pages": 5,
+        "median_ratio": 0.02,
+        "iqr_ratio": [
+          0.012,
+          0.03
+        ],
+        "median_reduction": 50,
+        "iqr_reduction": [
+          33.3,
+          83.3
+        ],
+        "pooled_ratio": 0.0175,
+        "by_stratum": {
+          "article": {
+            "n_pages": 3,
+            "median_ratio": 0.018,
+            "median_reduction": 55.5
+          },
+          "docs": {
+            "n_pages": 2,
+            "median_ratio": 0.03,
+            "median_reduction": 33.3
+          }
+        },
+        "description": "rendered outerHTML after settle, data-gp-* stripped"
+      },
+      "d2": {
+        "full_tokens": 52000,
+        "kept_tokens": 9100,
+        "n_pages": 5,
+        "median_ratio": 0.4,
+        "iqr_ratio": [
+          0.3,
+          0.5
+        ],
+        "median_reduction": 2.5,
+        "iqr_reduction": [
+          2,
+          3.3
+        ],
+        "pooled_ratio": 0.175,
+        "by_stratum": {
+          "article": {
+            "n_pages": 3,
+            "median_ratio": 0.38,
+            "median_reduction": 2.6
+          },
+          "docs": {
+            "n_pages": 2,
+            "median_ratio": 0.45,
+            "median_reduction": 2.2
+          }
+        }
+      }
+    },
+    "runtime": {
+      "p95_ms": 112.4,
+      "model_bytes": 84000,
+      "n_pages": 22,
+      "p50_ms": 61,
+      "cpu_throttle": 4,
+      "repetitions": 3,
+      "environment": "chromium-headless, 4x CPU throttle",
+      "page_elements": [
+        1500,
+        3000
+      ]
+    },
     "per_group": [
       {
         "group_id": "g00_site0",
         "stratum": "article",
         "f1": 0.9,
-        "kept_ratio": 0.2
+        "kept_ratio": 0.2,
+        "group_key": "site0.example",
+        "n_chars": 4200,
+        "f1_by_baseline": {
+          "readability": 0.7
+        },
+        "tokens_d1": 31000,
+        "tokens_d2": 5200,
+        "tokens_kept": 900
       },
       {
         "group_id": "g01_site1",
@@ -158,10 +414,63 @@
   },
   "gates": [
     {
+      "id": "g1a_f1_article",
+      "name": "G1a F1 gain over the best baseline",
+      "rule": "F1(model) - F1(readability) > 0 on article, decided on the CI lower bound",
+      "value": 0.08181818181818187,
+      "passed": true,
+      "comparator": ">",
+      "threshold": 0,
+      "unit": "f1",
+      "stratum": "article",
+      "observed": 0.18181818181818188,
+      "ci95": [
+        0.08181818181818187,
+        0.28181818181818186
+      ],
+      "use_ci_lower": true,
+      "metric": "f1",
+      "baseline": "readability",
+      "aggregation": "macro_page"
+    },
+    {
+      "id": "g4_token_reduction_d2",
+      "name": "G4 token reduction vs full-page markdown",
+      "rule": "median per-page tok(D2)/tok(output) >= 2x",
+      "value": 2.5,
+      "passed": true,
+      "comparator": ">=",
+      "threshold": 2,
+      "unit": "x",
+      "stratum": "overall",
+      "observed": 2.5
+    },
+    {
+      "id": "g5_p95_latency",
+      "name": "G5 p95 latency",
+      "rule": "p95 <= 150 ms",
+      "value": 112.4,
+      "passed": true,
+      "comparator": "<=",
+      "threshold": 150,
+      "unit": "ms",
+      "observed": 112.4
+    },
+    {
       "id": "f1_vs_readability",
       "rule": "macro_f1_delta >= 0",
       "value": 0.18181818181818188,
       "passed": true
+    }
+  ],
+  "notes": [
+    {
+      "kind": "note",
+      "text": "Synthetic report: every number is invented to exercise the contract."
+    },
+    {
+      "kind": "threat",
+      "text": "Baselines tuned with the same budget as the model; a stronger baseline could change the comparison."
     }
   ],
   "provenance": {

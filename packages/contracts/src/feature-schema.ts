@@ -7,13 +7,24 @@ import { NonNegInt, PosInt, SemVer, Sha256, SnakeName, contractObject, defineCon
  * Only STATIC normalization lives here; fitted z-score lives in the ModelPackage.
  */
 
+/**
+ * NORMATIVE (v1.1) transform semantics, applied to the RAW feature value `x`:
+ *  - `none`:  x
+ *  - `log1p`: log1p(x) / log1p(scale)   (so x = scale maps to 1; x >= 0 expected)
+ *  - `clip`:  min(hi, max(lo, x))
+ *  - `div`:   x / by
+ * Then NaN -> 0, clip to `range` (counted in NodeFeatures.sanitized), then float32 rounding.
+ */
 export const StaticTransform = Type.Union([
   Type.Object({ op: Type.Literal("none") }),
-  Type.Object({ op: Type.Literal("log1p"), scale: Type.Number({ exclusiveMinimum: 0 }) }),
+  Type.Object({ op: Type.Literal("log1p"), scale: Type.Number({ exclusiveMinimum: 0, description: "log1p(x) / log1p(scale)." }) }),
   Type.Object({ op: Type.Literal("clip"), lo: Type.Number(), hi: Type.Number() }),
   Type.Object({ op: Type.Literal("div"), by: Type.Number({ description: "Non-zero divisor." }) }),
 ]);
 export type StaticTransform = Static<typeof StaticTransform>;
+
+export const ContextRel = Type.Union([Type.Literal("parent"), Type.Literal("prev"), Type.Literal("next")]);
+export type ContextRel = Static<typeof ContextRel>;
 
 export const FeatureDef = Type.Object({
   index: NonNegInt,
@@ -29,9 +40,26 @@ export const FeatureDef = Type.Object({
   since: SemVer,
   onehot: Type.Optional(Type.Object({ of: Type.String(), value: Type.String() })),
   hash: Type.Optional(Type.Object({ fn: Type.Literal("fnv1a32"), buckets: PosInt })),
+  context: Type.Optional(
+    Type.Object(
+      { rel: ContextRel, source: SnakeName },
+      {
+        description:
+          "v1.1: a context feature copies the FINISHED value (after transform and sanitize) of feature `source` at a related node: the parent, the previous or the next non-prefiltered sibling. Value = `default` when that node does not exist. `source` must be a non-context feature of the same schema.",
+      },
+    ),
+  ),
 });
 export type FeatureDef = Static<typeof FeatureDef>;
 
+/**
+ * Prefilter rules decide which snapshot nodes are NOT rows of NodeFeatures. NORMATIVE (v1.1):
+ *  - a `style` / `display_none` rule is a SUBTREE rule: a node with `display: none` is not rendered and neither
+ *    is anything below it, so the whole subtree is dropped;
+ *  - `tag`, `visibility_hidden` and `zero_rect` rules drop only the node that matches;
+ *  - a prefiltered node is not a row and is not counted among its siblings (sibling features, context
+ *    features); each node is counted once, under the first rule that drops it, in `NodeFeatures.prefiltered`.
+ */
 export const PrefilterRule = Type.Union([
   Type.Object({ id: Type.String({ minLength: 1 }), kind: Type.Literal("tag"), tags: Type.Array(Type.String(), { minItems: 1 }) }),
   Type.Object({ id: Type.String({ minLength: 1 }), kind: Type.Literal("style"), display_none: Type.Literal(true) }),
@@ -45,7 +73,7 @@ export type PrefilterRule = Static<typeof PrefilterRule>;
 export const FeatureSchemaContract = defineContract(
   "feature-schema",
   "gran-prix.feature-schema",
-  "1.0.0",
+  "1.1.0",
   contractObject(
     "feature-schema",
     "gran-prix.feature-schema",

@@ -2,6 +2,17 @@ import { Type, type Static } from "@sinclair/typebox";
 import { NonNegInt, PosInt, Sha256, Unit01, contractObject, defineContract } from "./base.js";
 import { SplitName } from "./dataset.js";
 import { Provenance, ProvenanceDef } from "./provenance.js";
+import {
+  EvalNames,
+  EvalSystem,
+  EvidenceRetention,
+  MetricCiTable,
+  PrCurve,
+  RuntimeBlock,
+  TokenReduction,
+  Weighting,
+} from "./eval-parts.js";
+import { BootstrapBody, Ci95, Ci95Body, Gate, GateBody, NoteBody } from "./stats.js";
 
 /**
  * EvalReport (generic: unit / group / stratum). No timestamps in the hashed
@@ -24,18 +35,32 @@ export type Prf = Static<typeof PrfBody>;
 
 // Shared shapes live in `$defs` and are referenced, so the emitted schema stays small and the
 // Rust side gets named types (`Prf`, `Ci95`) instead of eight anonymous copies.
-const Ci95Body = Type.Tuple([Type.Number(), Type.Number()], { description: "[lo, hi], lo <= hi." });
 export const Prf = Type.Unsafe<Prf>({ $ref: "#/$defs/Prf" });
-const Ci95 = Type.Unsafe<[number, number]>({ $ref: "#/$defs/Ci95" });
 const Arm = Type.Object({
   n: NonNegInt,
   score_mean: Type.Number(),
   score_ci95: Ci95,
   tokens_in_mean: Type.Number({ minimum: 0 }),
   cost_usd: Type.Number({ minimum: 0 }),
+  evidence_retention: Type.Optional(EvidenceRetention),
 });
 
+/** C3: a named group of strata ('hard') with its micro and macro views. */
+const Aggregate = Type.Object({
+  name: Type.String({ minLength: 1 }),
+  strata: Type.Array(Type.String(), { minItems: 1 }),
+  micro: Type.Optional(Prf),
+  macro_page_f1: Type.Optional(Unit01),
+  macro_stratum_f1: Type.Optional(Unit01),
+  ci95: Type.Optional(Ci95),
+});
+
+export const AGGREGATIONS = ["micro", "macro_page", "macro_stratum"] as const;
+export const COMPARISON_METRICS = ["f1", "precision", "recall", "token_f1", "qa_accuracy"] as const;
+
 const Intrinsic = Type.Object({
+  weighting: Type.Optional(Weighting),
+  bootstrap: Type.Optional(BootstrapBody),
   overall: Type.Intersect([
     Prf,
     Type.Object({
@@ -51,20 +76,39 @@ const Intrinsic = Type.Object({
   }),
   baselines: Type.Record(
     Type.String(),
-    Type.Object({ overall: Prf, by_stratum: Type.Record(Type.String(), Prf) }),
+    Type.Object({
+      coverage: Type.Optional(Unit01),
+      overall: Prf,
+      by_stratum: Type.Record(Type.String(), Type.Intersect([Prf, Type.Object({ n_groups: Type.Optional(NonNegInt) })])),
+    }),
   ),
   comparison: Type.Array(
     Type.Object({
       stratum: Type.String(),
-      metric: Type.Literal("f1"),
+      metric: Type.Union(COMPARISON_METRICS.map((m) => Type.Literal(m)), {
+        description: "v1.0 only had f1. `stratum` may also be an aggregate name (intrinsic.aggregates) or 'overall'.",
+      }),
       model: Type.Number(),
       baseline: Type.String(),
       baseline_value: Type.Number(),
       delta: Type.Number(),
       ci95: Ci95,
       n_groups: NonNegInt,
+      aggregation: Type.Optional(
+        Type.Union(AGGREGATIONS.map((a) => Type.Literal(a)), { description: "How the per-page / per-stratum values were combined into model / baseline_value." }),
+      ),
     }),
   ),
+  by_tag: Type.Optional(
+    Type.Record(Type.String(), Type.Intersect([Prf, Type.Object({ n_groups: NonNegInt })]), {
+      description: "Slices by Dataset.groups[].tags (logged_in, lang:pt, ...). Keys are tags.",
+    }),
+  ),
+  aggregates: Type.Optional(Type.Array(Aggregate)),
+  metric_ci: Type.Optional(MetricCiTable),
+  pr_curve: Type.Optional(PrCurve),
+  token_reduction: Type.Optional(TokenReduction),
+  runtime: Type.Optional(RuntimeBlock),
   token_stats: Type.Optional(
     Type.Object({
       tokenizer: Type.String(),
@@ -74,7 +118,18 @@ const Intrinsic = Type.Object({
     }),
   ),
   per_group: Type.Array(
-    Type.Object({ group_id: Type.String(), stratum: Type.String(), f1: Unit01, kept_ratio: Unit01 }),
+    Type.Object({
+      group_id: Type.String(),
+      stratum: Type.String(),
+      f1: Unit01,
+      kept_ratio: Unit01,
+      group_key: Type.Optional(Type.String()),
+      n_chars: Type.Optional(NonNegInt),
+      f1_by_baseline: Type.Optional(Type.Record(Type.String(), Unit01)),
+      tokens_d1: Type.Optional(NonNegInt),
+      tokens_d2: Type.Optional(NonNegInt),
+      tokens_kept: Type.Optional(NonNegInt),
+    }),
   ),
   calibration: Type.Optional(
     Type.Object({
@@ -88,11 +143,13 @@ const Intrinsic = Type.Object({
 
 const Downstream = Type.Object({
   task_set_id: Sha256,
+  bootstrap: Type.Optional(BootstrapBody),
   llm: Type.Object({ model: Type.String(), prompt_sha256: Sha256 }),
   judge: Type.Object({
     kind: Type.Union([Type.Literal("llm"), Type.Literal("exact"), Type.Literal("human")]),
     model: Type.Optional(Type.String()),
     rubric_sha256: Type.Optional(Sha256),
+    human_agreement: Type.Optional(Unit01),
   }),
   arms: Type.Record(Type.String(), Arm, { description: "e.g. full_page, pruned_model, pruned_readability." }),
   paired_deltas: Type.Array(
@@ -109,7 +166,7 @@ const Downstream = Type.Object({
 export const EvalReportContract = defineContract(
   "eval-report",
   "gran-prix.eval-report",
-  "1.0.0",
+  "1.1.0",
   contractObject(
     "eval-report",
     "gran-prix.eval-report",
@@ -126,13 +183,14 @@ export const EvalReportContract = defineContract(
       threshold: Unit01,
       intrinsic: Type.Optional(Intrinsic),
       downstream: Type.Optional(Downstream),
-      gates: Type.Optional(
-        Type.Array(Type.Object({ id: Type.String({ minLength: 1 }), rule: Type.String(), value: Type.Number(), passed: Type.Boolean() })),
-      ),
+      gates: Type.Optional(Type.Array(Gate)),
+      system: Type.Optional(EvalSystem),
+      names: Type.Optional(EvalNames),
+      notes: Type.Optional(Type.Array(NoteBody)),
       provenance: Provenance,
     },
-    "Evaluation of a model on a dataset split: per-stratum metrics, baselines, group-bootstrap CIs, gates.",
-    { $defs: { Prf: PrfBody, Ci95: Ci95Body, Provenance: ProvenanceDef } },
+    "Evaluation of a system on a dataset split: per-stratum metrics with CIs, baselines, PR curve, token reduction, QA arms, structured gates. v1.1 adds the optional fields that the report package used to read from a sidecar.",
+    { $defs: { Prf: PrfBody, Ci95: Ci95Body, Gate: GateBody, Provenance: ProvenanceDef } },
   ),
 );
 export const EvalReportSchema = EvalReportContract.schema;

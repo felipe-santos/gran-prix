@@ -4,7 +4,7 @@
   "x-gran-prix": {
     "contract": "eval-report",
     "format": "gran-prix.eval-report",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "$defs": {
     "Ci95": {
@@ -17,6 +17,69 @@
       "additionalItems": false,
       "minItems": 2,
       "maxItems": 2
+    },
+    "Gate": {
+      "type": "object",
+      "required": ["id", "rule", "value", "passed"],
+      "properties": {
+        "id": { "minLength": 1, "type": "string" },
+        "rule": {
+          "description": "Human-readable rule, e.g. 'F1(MLP) - F1(best single) >= 0.05 and CI lower bound > 0'.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The number compared with `threshold`: the point estimate, or the CI bound when `use_ci_lower` is true.",
+          "type": "number"
+        },
+        "passed": { "type": "boolean" },
+        "name": {
+          "description": "Display name, e.g. 'G1a F1 gain on hard strata'.",
+          "type": "string"
+        },
+        "comparator": {
+          "description": "`value <comparator> threshold` is the passing condition.",
+          "anyOf": [
+            { "const": ">=", "type": "string" },
+            { "const": ">", "type": "string" },
+            { "const": "<=", "type": "string" },
+            { "const": "<", "type": "string" },
+            { "const": "==", "type": "string" }
+          ]
+        },
+        "threshold": { "type": "number" },
+        "unit": {
+          "description": "Unit of value / threshold / observed: 'f1', 'pp', 'ratio', 'x', 'ms', 'bytes', 'kappa', ...",
+          "type": "string"
+        },
+        "stratum": {
+          "description": "Stratum or aggregate name the gate is evaluated on (e.g. 'hard'); absent = overall.",
+          "type": "string"
+        },
+        "observed": {
+          "description": "Point estimate in `unit` (the number the reader sees).",
+          "type": "number"
+        },
+        "ci95": { "$ref": "#/$defs/Ci95" },
+        "metric": {
+          "description": "What `value` measures: f1, recall, token_f1, qa_accuracy, kappa, token_reduction_d2, p95_ms, ...",
+          "type": "string"
+        },
+        "baseline": {
+          "description": "Baseline the gate compares against, when it is a difference.",
+          "type": "string"
+        },
+        "aggregation": {
+          "anyOf": [
+            { "const": "micro", "type": "string" },
+            { "const": "macro_page", "type": "string" },
+            { "const": "macro_stratum", "type": "string" }
+          ]
+        },
+        "use_ci_lower": {
+          "description": "true: the gate is decided on the CI bound facing the threshold (ci95[0] for >= and >, ci95[1] for <= and <), and `value` equals that bound.",
+          "type": "boolean"
+        }
+      }
     },
     "Iso8601": {
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
@@ -77,6 +140,7 @@
             "git_dirty": { "type": "boolean" },
             "node": { "type": "string" },
             "wasm_sha256": { "$ref": "#/$defs/Sha256" },
+            "tool_sha256": { "$ref": "#/$defs/Sha256" },
             "extractor": {
               "type": "object",
               "required": ["name", "version", "bundle_sha256"],
@@ -90,7 +154,11 @@
         },
         "created_at": { "$ref": "#/$defs/Iso8601" },
         "host": { "type": "string" },
-        "duration_ms": { "minimum": 0, "type": "integer" }
+        "duration_ms": { "minimum": 0, "type": "integer" },
+        "placeholder": {
+          "description": "v1.1: true = this embedded provenance is a deterministic stand-in (e.g. run_id 'deterministic', zeroed pipeline_spec_id) written by a stage that cannot know its run; the authoritative provenance is the runner receipt of the artifact id. Provenance is outside every content id, so the swap never changes an id.",
+          "type": "boolean"
+        }
       }
     },
     "SemVer": {
@@ -105,7 +173,7 @@
     }
   },
   "title": "eval-report",
-  "description": "Evaluation of a model on a dataset split: per-stratum metrics, baselines, group-bootstrap CIs, gates.",
+  "description": "Evaluation of a system on a dataset split: per-stratum metrics with CIs, baselines, PR curve, token reduction, QA arms, structured gates. v1.1 adds the optional fields that the report package used to read from a sidecar.",
   "type": "object",
   "required": ["format", "format_version", "report_id", "mode", "model_id", "dataset_id", "split", "threshold", "provenance"],
   "properties": {
@@ -151,6 +219,48 @@
       "type": "object",
       "required": ["overall", "by_stratum", "by_label_source", "baselines", "comparison", "per_group"],
       "properties": {
+        "weighting": {
+          "type": "object",
+          "required": ["unit"],
+          "properties": {
+            "unit": {
+              "description": "What one count is.",
+              "anyOf": [
+                { "const": "chars", "type": "string" },
+                { "const": "elements", "type": "string" },
+                { "const": "tokens", "type": "string" }
+              ]
+            },
+            "positive_class": {
+              "description": "What 'positive' means, e.g. 'keep (main + support)' or 'main'.",
+              "type": "string"
+            },
+            "weight_source": {
+              "description": "Where the weights come from, e.g. 'dataset-row.w (own-text chars)'.",
+              "type": "string"
+            }
+          }
+        },
+        "bootstrap": {
+          "type": "object",
+          "required": ["resamples", "seed", "cluster_by", "method", "stratified"],
+          "properties": {
+            "resamples": { "minimum": 1, "type": "integer" },
+            "seed": { "minimum": 0, "type": "integer" },
+            "cluster_by": {
+              "description": "What is resampled: group_key (registrable domain, default of the protocol) or group_id (a page).",
+              "anyOf": [
+                { "const": "group_key", "type": "string" },
+                { "const": "group_id", "type": "string" }
+              ]
+            },
+            "method": { "const": "percentile", "type": "string" },
+            "stratified": {
+              "description": "true: resampling is done inside each stratum.",
+              "type": "boolean"
+            }
+          }
+        },
         "overall": {
           "allOf": [
             { "$ref": "#/$defs/Prf" },
@@ -197,11 +307,22 @@
               "type": "object",
               "required": ["overall", "by_stratum"],
               "properties": {
+                "coverage": { "minimum": 0, "maximum": 1, "type": "number" },
                 "overall": { "$ref": "#/$defs/Prf" },
                 "by_stratum": {
                   "type": "object",
                   "patternProperties": {
-                    "^(.*)$": { "$ref": "#/$defs/Prf" }
+                    "^(.*)$": {
+                      "allOf": [
+                        { "$ref": "#/$defs/Prf" },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "n_groups": { "minimum": 0, "type": "integer" }
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               }
@@ -215,13 +336,280 @@
             "required": ["stratum", "metric", "model", "baseline", "baseline_value", "delta", "ci95", "n_groups"],
             "properties": {
               "stratum": { "type": "string" },
-              "metric": { "const": "f1", "type": "string" },
+              "metric": {
+                "description": "v1.0 only had f1. `stratum` may also be an aggregate name (intrinsic.aggregates) or 'overall'.",
+                "anyOf": [
+                  { "const": "f1", "type": "string" },
+                  { "const": "precision", "type": "string" },
+                  { "const": "recall", "type": "string" },
+                  { "const": "token_f1", "type": "string" },
+                  { "const": "qa_accuracy", "type": "string" }
+                ]
+              },
               "model": { "type": "number" },
               "baseline": { "type": "string" },
               "baseline_value": { "type": "number" },
               "delta": { "type": "number" },
               "ci95": { "$ref": "#/$defs/Ci95" },
-              "n_groups": { "minimum": 0, "type": "integer" }
+              "n_groups": { "minimum": 0, "type": "integer" },
+              "aggregation": {
+                "description": "How the per-page / per-stratum values were combined into model / baseline_value.",
+                "anyOf": [
+                  { "const": "micro", "type": "string" },
+                  { "const": "macro_page", "type": "string" },
+                  { "const": "macro_stratum", "type": "string" }
+                ]
+              }
+            }
+          }
+        },
+        "by_tag": {
+          "description": "Slices by Dataset.groups[].tags (logged_in, lang:pt, ...). Keys are tags.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "allOf": [
+                { "$ref": "#/$defs/Prf" },
+                {
+                  "type": "object",
+                  "required": ["n_groups"],
+                  "properties": {
+                    "n_groups": { "minimum": 0, "type": "integer" }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "aggregates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "strata"],
+            "properties": {
+              "name": { "minLength": 1, "type": "string" },
+              "strata": {
+                "minItems": 1,
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "micro": { "$ref": "#/$defs/Prf" },
+              "macro_page_f1": { "minimum": 0, "maximum": 1, "type": "number" },
+              "macro_stratum_f1": { "minimum": 0, "maximum": 1, "type": "number" },
+              "ci95": { "$ref": "#/$defs/Ci95" }
+            }
+          }
+        },
+        "metric_ci": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "type": "object",
+                  "properties": {
+                    "precision": { "$ref": "#/$defs/Ci95" },
+                    "recall": { "$ref": "#/$defs/Ci95" },
+                    "f1": { "$ref": "#/$defs/Ci95" }
+                  }
+                }
+              }
+            },
+            "baselines": {
+              "type": "object",
+              "patternProperties": {
+                "^(.*)$": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "type": "object",
+                      "properties": {
+                        "precision": { "$ref": "#/$defs/Ci95" },
+                        "recall": { "$ref": "#/$defs/Ci95" },
+                        "f1": { "$ref": "#/$defs/Ci95" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "pr_curve": {
+          "type": "object",
+          "required": ["points"],
+          "properties": {
+            "points": {
+              "minItems": 2,
+              "description": "Sorted by threshold ascending.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["threshold", "precision", "recall"],
+                "properties": {
+                  "threshold": { "minimum": 0, "maximum": 1, "type": "number" },
+                  "precision": { "minimum": 0, "maximum": 1, "type": "number" },
+                  "recall": { "minimum": 0, "maximum": 1, "type": "number" }
+                }
+              }
+            },
+            "operating_threshold": { "minimum": 0, "maximum": 1, "type": "number" },
+            "operating_rule": {
+              "description": "How the operating point was chosen, e.g. 'max threshold with char-weighted recall >= 0.95 on dev OOF'.",
+              "type": "string"
+            }
+          }
+        },
+        "token_reduction": {
+          "type": "object",
+          "required": ["tokenizer"],
+          "properties": {
+            "tokenizer": { "minLength": 1, "type": "string" },
+            "converter": {
+              "description": "Markdown converter + version used for D2 and the kept text, e.g. 'turndown@7.2.0+gfm'.",
+              "type": "string"
+            },
+            "d1": {
+              "type": "object",
+              "required": ["full_tokens", "kept_tokens"],
+              "properties": {
+                "full_tokens": { "minimum": 0, "type": "integer" },
+                "kept_tokens": { "minimum": 0, "type": "integer" },
+                "n_pages": { "minimum": 0, "type": "integer" },
+                "median_ratio": {
+                  "minimum": 0,
+                  "description": "Median over pages of kept/full (the fraction kept).",
+                  "type": "number"
+                },
+                "iqr_ratio": { "$ref": "#/$defs/Ci95" },
+                "median_reduction": {
+                  "minimum": 0,
+                  "description": "Median over pages of full/kept (the 'x times fewer tokens' of gate G4).",
+                  "type": "number"
+                },
+                "iqr_reduction": { "$ref": "#/$defs/Ci95" },
+                "pooled_ratio": {
+                  "minimum": 0,
+                  "description": "sum(kept) / sum(full): secondary, dominated by large pages.",
+                  "type": "number"
+                },
+                "by_stratum": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "type": "object",
+                      "properties": {
+                        "n_pages": { "minimum": 0, "type": "integer" },
+                        "median_ratio": {
+                          "minimum": 0,
+                          "description": "Median over pages of kept/full (the fraction kept).",
+                          "type": "number"
+                        },
+                        "iqr_ratio": { "$ref": "#/$defs/Ci95" },
+                        "median_reduction": {
+                          "minimum": 0,
+                          "description": "Median over pages of full/kept (the 'x times fewer tokens' of gate G4).",
+                          "type": "number"
+                        },
+                        "iqr_reduction": { "$ref": "#/$defs/Ci95" },
+                        "pooled_ratio": {
+                          "minimum": 0,
+                          "description": "sum(kept) / sum(full): secondary, dominated by large pages.",
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": { "type": "string" }
+              }
+            },
+            "d2": {
+              "type": "object",
+              "required": ["full_tokens", "kept_tokens"],
+              "properties": {
+                "full_tokens": { "minimum": 0, "type": "integer" },
+                "kept_tokens": { "minimum": 0, "type": "integer" },
+                "n_pages": { "minimum": 0, "type": "integer" },
+                "median_ratio": {
+                  "minimum": 0,
+                  "description": "Median over pages of kept/full (the fraction kept).",
+                  "type": "number"
+                },
+                "iqr_ratio": { "$ref": "#/$defs/Ci95" },
+                "median_reduction": {
+                  "minimum": 0,
+                  "description": "Median over pages of full/kept (the 'x times fewer tokens' of gate G4).",
+                  "type": "number"
+                },
+                "iqr_reduction": { "$ref": "#/$defs/Ci95" },
+                "pooled_ratio": {
+                  "minimum": 0,
+                  "description": "sum(kept) / sum(full): secondary, dominated by large pages.",
+                  "type": "number"
+                },
+                "by_stratum": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": {
+                      "type": "object",
+                      "properties": {
+                        "n_pages": { "minimum": 0, "type": "integer" },
+                        "median_ratio": {
+                          "minimum": 0,
+                          "description": "Median over pages of kept/full (the fraction kept).",
+                          "type": "number"
+                        },
+                        "iqr_ratio": { "$ref": "#/$defs/Ci95" },
+                        "median_reduction": {
+                          "minimum": 0,
+                          "description": "Median over pages of full/kept (the 'x times fewer tokens' of gate G4).",
+                          "type": "number"
+                        },
+                        "iqr_reduction": { "$ref": "#/$defs/Ci95" },
+                        "pooled_ratio": {
+                          "minimum": 0,
+                          "description": "sum(kept) / sum(full): secondary, dominated by large pages.",
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                },
+                "description": { "type": "string" }
+              }
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["p95_ms", "model_bytes", "n_pages"],
+          "properties": {
+            "p95_ms": { "minimum": 0, "type": "number" },
+            "model_bytes": { "minimum": 0, "type": "integer" },
+            "n_pages": { "minimum": 1, "type": "integer" },
+            "p50_ms": { "minimum": 0, "type": "number" },
+            "cpu_throttle": {
+              "minimum": 1,
+              "description": "CPU slowdown factor, e.g. 4.",
+              "type": "number"
+            },
+            "repetitions": { "minimum": 1, "type": "integer" },
+            "environment": {
+              "description": "e.g. 'chromium-headless 130, 4x CPU throttle'.",
+              "type": "string"
+            },
+            "page_elements": {
+              "description": "[min, max] elements of the measured pages.",
+              "type": "array",
+              "items": [
+                { "minimum": 0, "type": "integer" },
+                { "minimum": 0, "type": "integer" }
+              ],
+              "additionalItems": false,
+              "minItems": 2,
+              "maxItems": 2
             }
           }
         },
@@ -244,7 +632,18 @@
               "group_id": { "type": "string" },
               "stratum": { "type": "string" },
               "f1": { "minimum": 0, "maximum": 1, "type": "number" },
-              "kept_ratio": { "minimum": 0, "maximum": 1, "type": "number" }
+              "kept_ratio": { "minimum": 0, "maximum": 1, "type": "number" },
+              "group_key": { "type": "string" },
+              "n_chars": { "minimum": 0, "type": "integer" },
+              "f1_by_baseline": {
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": { "minimum": 0, "maximum": 1, "type": "number" }
+                }
+              },
+              "tokens_d1": { "minimum": 0, "type": "integer" },
+              "tokens_d2": { "minimum": 0, "type": "integer" },
+              "tokens_kept": { "minimum": 0, "type": "integer" }
             }
           }
         },
@@ -276,6 +675,26 @@
       "required": ["task_set_id", "llm", "judge", "arms", "paired_deltas"],
       "properties": {
         "task_set_id": { "$ref": "#/$defs/Sha256" },
+        "bootstrap": {
+          "type": "object",
+          "required": ["resamples", "seed", "cluster_by", "method", "stratified"],
+          "properties": {
+            "resamples": { "minimum": 1, "type": "integer" },
+            "seed": { "minimum": 0, "type": "integer" },
+            "cluster_by": {
+              "description": "What is resampled: group_key (registrable domain, default of the protocol) or group_id (a page).",
+              "anyOf": [
+                { "const": "group_key", "type": "string" },
+                { "const": "group_id", "type": "string" }
+              ]
+            },
+            "method": { "const": "percentile", "type": "string" },
+            "stratified": {
+              "description": "true: resampling is done inside each stratum.",
+              "type": "boolean"
+            }
+          }
+        },
         "llm": {
           "type": "object",
           "required": ["model", "prompt_sha256"],
@@ -296,7 +715,8 @@
               ]
             },
             "model": { "type": "string" },
-            "rubric_sha256": { "$ref": "#/$defs/Sha256" }
+            "rubric_sha256": { "$ref": "#/$defs/Sha256" },
+            "human_agreement": { "minimum": 0, "maximum": 1, "type": "number" }
           }
         },
         "arms": {
@@ -311,7 +731,30 @@
                 "score_mean": { "type": "number" },
                 "score_ci95": { "$ref": "#/$defs/Ci95" },
                 "tokens_in_mean": { "minimum": 0, "type": "number" },
-                "cost_usd": { "minimum": 0, "type": "number" }
+                "cost_usd": { "minimum": 0, "type": "number" },
+                "evidence_retention": {
+                  "type": "object",
+                  "required": ["mean"],
+                  "properties": {
+                    "mean": { "minimum": 0, "maximum": 1, "type": "number" },
+                    "ci95": { "$ref": "#/$defs/Ci95" },
+                    "n_questions": { "minimum": 0, "type": "integer" },
+                    "token_fraction_mean": { "minimum": 0, "maximum": 1, "type": "number" },
+                    "by_stratum": {
+                      "type": "object",
+                      "patternProperties": {
+                        "^(.*)$": {
+                          "type": "object",
+                          "required": ["mean", "n_questions"],
+                          "properties": {
+                            "mean": { "minimum": 0, "maximum": 1, "type": "number" },
+                            "n_questions": { "minimum": 0, "type": "integer" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -334,14 +777,47 @@
     },
     "gates": {
       "type": "array",
+      "items": { "$ref": "#/$defs/Gate" }
+    },
+    "system": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "anyOf": [
+            { "const": "model", "type": "string" },
+            { "const": "baseline", "type": "string" },
+            { "const": "oracle", "type": "string" }
+          ]
+        },
+        "family": {
+          "description": "Free label: mlp | gbdt | extractor | router | readability | ...",
+          "type": "string"
+        },
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "names": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "dataset": { "type": "string" }
+      }
+    },
+    "notes": {
+      "type": "array",
       "items": {
         "type": "object",
-        "required": ["id", "rule", "value", "passed"],
+        "required": ["kind", "text"],
         "properties": {
-          "id": { "minLength": 1, "type": "string" },
-          "rule": { "type": "string" },
-          "value": { "type": "number" },
-          "passed": { "type": "boolean" }
+          "kind": {
+            "anyOf": [
+              { "const": "note", "type": "string" },
+              { "const": "threat", "type": "string" }
+            ]
+          },
+          "text": { "minLength": 1, "type": "string" }
         }
       }
     },

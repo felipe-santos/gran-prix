@@ -1,8 +1,8 @@
 {
   "format": "gran-prix.node-labels",
   "format_version": "1.0.0",
-  "labels_id": "sha256:2c3afa7ddab2bdbe7b54298903a29d0d3ed1c773fa9fad00289f25fbaeb8d30e",
-  "snapshot_id": "sha256:7bea1d7cb7d85e9f430c9fe2fa73c2e97acdc9e409c4957b3b3728fa61a149dd",
+  "labels_id": "sha256:a64afc4128690fa6b3403ae1b17514b178185aec01d526ecfb43f969f5e49866",
+  "snapshot_id": "sha256:296397bcaa836eb9b15b5af8795cd92cd1a4d958dd8ec9f03a2a6d0264c19b64",
   "label_space": {
     "kind": "multiclass",
     "classes": [
@@ -42,10 +42,17 @@
       "confidence": 0.8,
       "source": "heuristic",
       "reason": "short-link-in-paragraph"
+    },
+    {
+      "unit_id": 7,
+      "y": 1,
+      "confidence": 0.5,
+      "source": "llm",
+      "reason": "doubt,collapsed"
     }
   ],
   "coverage": {
-    "n_labeled": 3,
-    "n_candidates": 3
+    "n_labeled": 4,
+    "n_candidates": 4
   }
 }

@@ -85,9 +85,13 @@ export function buildStageKinds(): StageKindSpec[] {
     }),
     kind({
       kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0",
-      inputs: [port("model", "ModelPackage"), port("dataset", "Dataset")], outputs: [port("report", "EvalReport")],
-      params_schema: { type: "object", properties: { split: { enum: ["train", "val", "test", "all"] }, baselines: { type: "array", items: { type: "string" } } } },
-      runtime: "node+wasm", determinism: "pure",
+      inputs: [port("model", "ModelPackage"), port("dataset", "Dataset"), port("baselines", "Bundle", { many: true, optional: true })],
+      outputs: [port("report", "EvalReport"), port("extras", "Bundle"), port("details", "Bundle")],
+      params_schema: {
+        type: "object", required: ["seed"],
+        properties: { seed: { type: "integer", minimum: 0 }, split: { enum: ["train", "val", "test", "all"] }, baselines: { type: "array", items: { type: "string" } } },
+      },
+      runtime: "node+wasm", determinism: "seeded",
       gates: [{ id: "f1_vs_baseline", description: "Macro F1 delta against the baseline is >= 0." }],
     }),
   ];
@@ -118,10 +122,35 @@ export function buildPipeline(): PipelineSpec {
       },
       { id: "train", kind: "train", impl: "ts:train.wasm-trainer@1.0.0", params: { seed: "${vars.seed}", epochs: 30 }, inputs: { dataset: out("dataset", "dataset") } },
       {
-        id: "eval", kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0", params: { split: "test", baselines: ["readability"] },
+        id: "eval", kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0", params: { seed: "${vars.seed}", split: "test", baselines: ["readability"] },
         inputs: { model: out("train", "model"), dataset: out("dataset", "dataset") }, gate: true,
       },
     ],
     layout: { collect: { x: 0, y: 0 }, extract: { x: 200, y: 0 } },
+  };
+}
+
+/** v1.1: a `demo` stage kind (the runner's own demo stages stop borrowing real kinds). Declared 1.1.0 because it uses `demo`. */
+export function buildDemoStageKind(): StageKindSpec {
+  return {
+    format: "gran-prix.stage-kind-spec",
+    format_version: "1.1.0",
+    kind: "demo",
+    impl: "ts:demo.echo@1.0.0",
+    inputs: [port("urls", "UrlList")],
+    outputs: [port("echo", "UrlList")],
+    params_schema: { type: "object", properties: { message: { type: "string" } } },
+    runtime: "node",
+    determinism: "pure",
+  };
+}
+
+export function buildDemoPipeline(): PipelineSpec {
+  return {
+    format: "gran-prix.pipeline-spec",
+    format_version: "1.1.0",
+    name: "fixture-demo-pipeline",
+    externals: { urls: { type: "UrlList", path: "data/urls.csv" } },
+    stages: [{ id: "echo", kind: "demo", impl: "ts:demo.echo@1.0.0", params: { message: "hello" }, inputs: { urls: ext("urls") } }],
   };
 }
