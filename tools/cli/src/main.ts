@@ -8,7 +8,7 @@ import { lineageOf, type LineageNode } from "./lineage.js";
 import { dataPaths, shortId } from "./paths.js";
 import { checkPipeline, runPipeline } from "./runner.js";
 import { StageRegistry } from "./stage.js";
-import { DEMO_STAGES } from "./stages/demo.js";
+import { ALL_STAGES } from "./stages/index.js";
 import { ArtifactStore } from "./store.js";
 import { PipelineValidationError, type StageResult } from "./types.js";
 import { GP_VERSION } from "./version.js";
@@ -199,7 +199,7 @@ async function runCommand(p: Parsed, io: Io): Promise<number> {
 
 function validateCommand(p: Parsed, io: Io): number {
   const specPath = positional(p, 0, "pipeline.json");
-  const r = checkPipeline(readSpec(specPath, io), new StageRegistry(DEMO_STAGES));
+  const r = checkPipeline(readSpec(specPath, io), new StageRegistry(ALL_STAGES));
   if (!r.ok) {
     io.err(`gp: ${specPath} is not valid (${r.issues.length} issue(s))`);
     printIssues(io, r.issues);
