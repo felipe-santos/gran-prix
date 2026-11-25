@@ -13,6 +13,7 @@ import { LABELING_STAGES } from "./labeling.js";
 import { LLM_LABEL_STAGES } from "./label-llm.js";
 import { packageStage } from "./package.js";
 import { trainStage } from "./train.js";
+import { TRAIN_CV_STAGES } from "./train-cv/index.js";
 
 export const ALL_STAGES: StagePlugin[] = [
   ...DEMO_STAGES,
@@ -28,4 +29,6 @@ export const ALL_STAGES: StagePlugin[] = [
   // L5 (science): evaluate.intrinsic + baseline labelers (label.trafilatura, label.defuddle, label.router)
   ...BASELINE_LABEL_STAGES,
   ...EVALUATE_STAGES,
+  // L5e (decision chain): train.cv (nested grouped CV of the MLP: OOF bundle, tau*, final model)
+  ...TRAIN_CV_STAGES,
 ];
