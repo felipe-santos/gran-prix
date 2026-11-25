@@ -101,12 +101,33 @@ impl Trainer {
             .collect()
     }
 
-    /// Returns the total number of registered parameters. Use with
-    /// [`param_name`] / [`is_frozen_by_index`] to enumerate without
-    /// pulling the full name list across the JS↔WASM boundary.
+    /// Number of parameter **tensors** (weight matrices and bias vectors),
+    /// i.e. `paramNames().length`; the index range of [`param_name`] and
+    /// [`is_frozen_by_index`]. A `Linear` layer contributes two (weight and
+    /// bias). This is NOT the number of floats in `get_weights()`: for that
+    /// use [`weight_count`].
+    #[wasm_bindgen(js_name = paramTensorCount)]
+    pub fn param_tensor_count(&self) -> usize {
+        self.graph.borrow().params().len()
+    }
+
+    /// Alias of [`param_tensor_count`], kept for existing JS callers.
+    ///
+    /// @deprecated The name is ambiguous (tensors, not floats; the
+    /// `weightCount` of `validateNetworkDef` used to be called `paramCount`
+    /// and counts floats). Use `paramTensorCount()` or `weightCount()`.
     #[wasm_bindgen(js_name = paramCount)]
     pub fn param_count(&self) -> usize {
-        self.graph.borrow().params().len()
+        self.param_tensor_count()
+    }
+
+    /// Total number of scalar weights (floats) of the network:
+    /// `get_weights().length` and the expected length of `import_weights` input,
+    /// without copying them across the boundary. Equals the `weightCount` that
+    /// `validateNetworkDef` reports for the same NetworkDef.
+    #[wasm_bindgen(js_name = weightCount)]
+    pub fn weight_count(&self) -> usize {
+        self.graph.borrow().params().total_params()
     }
 
     /// Returns the registered name of the parameter at `index`.
@@ -115,7 +136,7 @@ impl Trainer {
     /// erroring — this matches the convention `wasm-bindgen` uses
     /// for getters, where a `null`/empty value is more ergonomic than
     /// a thrown exception. Callers that need bound-checked access can
-    /// gate on [`param_count`].
+    /// gate on [`param_tensor_count`].
     #[wasm_bindgen(js_name = paramName)]
     pub fn param_name(&self, index: usize) -> String {
         let g = self.graph.borrow();
@@ -125,7 +146,7 @@ impl Trainer {
 
     /// Returns the registered names of all parameters as a
     /// `string[]`. **Allocates and clones each name on every call.**
-    /// For hot paths, prefer [`param_count`] + [`param_name`] or
+    /// For hot paths, prefer [`param_tensor_count`] + [`param_name`] or
     /// cache the result on the JS side.
     #[wasm_bindgen(js_name = paramNames)]
     pub fn param_names(&self) -> Vec<String> {

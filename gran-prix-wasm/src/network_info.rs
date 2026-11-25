@@ -23,7 +23,7 @@ pub struct NetworkSummary {
     pub errors: Vec<String>,
     pub input_dim: Option<usize>,
     pub output_dim: Option<usize>,
-    pub param_count: Option<usize>,
+    pub weight_count: Option<usize>,
 }
 
 impl NetworkSummary {
@@ -32,7 +32,7 @@ impl NetworkSummary {
     }
 
     fn invalid(error: String) -> Self {
-        Self { errors: vec![error], input_dim: None, output_dim: None, param_count: None }
+        Self { errors: vec![error], input_dim: None, output_dim: None, weight_count: None }
     }
 }
 
@@ -57,7 +57,7 @@ pub fn summarize_network_def(json: &str) -> NetworkSummary {
         errors: Vec::new(),
         input_dim: Some(net.input_dim),
         output_dim: Some(net.output_dim()),
-        param_count: Some(compiled.graph.params().total_params()),
+        weight_count: Some(compiled.graph.params().total_params()),
     }
 }
 
@@ -102,7 +102,10 @@ fn number(n: usize) -> JsValue {
 }
 
 /// Checks a `NetworkDef` JSON string. Returns
-/// `{ ok: boolean, errors: string[], inputDim?: number, outputDim?: number, paramCount?: number }`.
+/// `{ ok: boolean, errors: string[], inputDim?: number, outputDim?: number, weightCount?: number, paramCount?: number }`.
+/// `weightCount` is the number of scalar weights (floats), the length of
+/// `Trainer.get_weights()`; `paramCount` is a deprecated alias of it (NOT of
+/// `Trainer.paramCount()`, which counts parameter tensors).
 /// Invalid JSON and architecture errors (dimension mismatches, zero sizes,
 /// bad dropout rates, ...) are reported in `errors`; this function does not
 /// throw for them.
@@ -122,7 +125,10 @@ pub fn validate_network_def(json: &str) -> JsValue {
     if let Some(v) = summary.output_dim {
         set(&obj, "outputDim", &number(v));
     }
-    if let Some(v) = summary.param_count {
+    if let Some(v) = summary.weight_count {
+        set(&obj, "weightCount", &number(v));
+        // Deprecated alias of `weightCount` (this field counts floats, unlike
+        // `Trainer.paramCount()`, which counts tensors); kept for JS callers.
         set(&obj, "paramCount", &number(v));
     }
     obj.into()
@@ -160,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_def_reports_dims_and_param_count() {
+    fn valid_def_reports_dims_and_weight_count() {
         let j = json(
             2,
             vec![
@@ -174,7 +180,7 @@ mod tests {
         assert_eq!(s.input_dim, Some(2));
         assert_eq!(s.output_dim, Some(1));
         // 2*8 + 8 + 8*1 + 1
-        assert_eq!(s.param_count, Some(33));
+        assert_eq!(s.weight_count, Some(33));
     }
 
     #[test]
@@ -182,7 +188,7 @@ mod tests {
         let s = summarize_network_def("{ not json");
         assert!(!s.ok());
         assert_eq!(s.errors.len(), 1);
-        assert!(s.input_dim.is_none() && s.output_dim.is_none() && s.param_count.is_none());
+        assert!(s.input_dim.is_none() && s.output_dim.is_none() && s.weight_count.is_none());
     }
 
     #[test]
@@ -191,7 +197,7 @@ mod tests {
         let s = summarize_network_def(&j);
         assert!(!s.ok());
         assert!(s.errors[0].contains("layer 1"), "got: {:?}", s.errors);
-        assert!(s.param_count.is_none());
+        assert!(s.weight_count.is_none());
     }
 
     #[test]

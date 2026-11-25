@@ -56,3 +56,5 @@ fn js_err(e: GPError) -> JsValue {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_batch_api;

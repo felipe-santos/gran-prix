@@ -5,6 +5,31 @@ use super::{js_err, LossKind, Trainer};
 use gran_prix::NodeId;
 use wasm_bindgen::prelude::*;
 
+/// Validates a flat row-major batch: `inputs.len() == batch_size * input_dim`
+/// and every value finite. `what` names the calling method in the message.
+/// Returns a `String` (not a `JsValue`) so the failure paths are testable
+/// natively.
+pub(super) fn check_batch_inputs(
+    what: &str,
+    inputs: &[f32],
+    batch_size: usize,
+    input_dim: usize,
+) -> Result<(), String> {
+    let expected_len = batch_size
+        .checked_mul(input_dim)
+        .ok_or_else(|| format!("{what}: batch_size={batch_size} * input_dim={input_dim} overflows usize"))?;
+    if inputs.len() != expected_len {
+        return Err(format!(
+            "{what}: inputs length {} != batch_size {batch_size} * input_dim {input_dim}",
+            inputs.len()
+        ));
+    }
+    if let Some((i, v)) = inputs.iter().enumerate().find(|(_, v)| !v.is_finite()) {
+        return Err(format!("{what}: input[{i}] is non-finite ({v})"));
+    }
+    Ok(())
+}
+
 #[wasm_bindgen]
 impl Trainer {
     /// Batched inference over a flat input buffer.
@@ -64,28 +89,8 @@ impl Trainer {
         if batch_size == 0 {
             return Ok(Vec::new());
         }
-        let expected_len = batch_size.checked_mul(self.input_dim).ok_or_else(|| {
-            JsValue::from_str(&format!(
-                "predict_batch: batch_size={} * input_dim={} overflows usize",
-                batch_size, self.input_dim
-            ))
-        })?;
-        if inputs.len() != expected_len {
-            return Err(JsValue::from_str(&format!(
-                "predict_batch: inputs length {} != batch_size {} * input_dim {}",
-                inputs.len(),
-                batch_size,
-                self.input_dim
-            )));
-        }
-        for (i, v) in inputs.iter().enumerate() {
-            if !v.is_finite() {
-                return Err(JsValue::from_str(&format!(
-                    "predict_batch: input[{}] is non-finite ({})",
-                    i, v
-                )));
-            }
-        }
+        check_batch_inputs("predict_batch", &inputs, batch_size, self.input_dim)
+            .map_err(|e| JsValue::from_str(&e))?;
 
         let mut graph = self.graph.borrow_mut();
         graph.set_training(false); // predictions never run in training mode
@@ -272,28 +277,8 @@ impl Trainer {
         if batch_size == 0 {
             return Ok(Vec::new());
         }
-        let expected_len = batch_size.checked_mul(self.input_dim).ok_or_else(|| {
-            JsValue::from_str(&format!(
-                "predict_probs_batch: batch_size={} * input_dim={} overflows usize",
-                batch_size, self.input_dim
-            ))
-        })?;
-        if inputs.len() != expected_len {
-            return Err(JsValue::from_str(&format!(
-                "predict_probs_batch: inputs length {} != batch_size {} * input_dim {}",
-                inputs.len(),
-                batch_size,
-                self.input_dim
-            )));
-        }
-        for (i, v) in inputs.iter().enumerate() {
-            if !v.is_finite() {
-                return Err(JsValue::from_str(&format!(
-                    "predict_probs_batch: input[{}] is non-finite ({})",
-                    i, v
-                )));
-            }
-        }
+        check_batch_inputs("predict_probs_batch", &inputs, batch_size, self.input_dim)
+            .map_err(|e| JsValue::from_str(&e))?;
 
         let mut graph = self.graph.borrow_mut();
         graph.set_training(false); // predictions never run in training mode
@@ -306,6 +291,40 @@ impl Trainer {
             inputs,
         )?;
         Ok(apply_output_activation(&logits, self.output_dim, self.loss_kind))
+    }
+
+    /// Raw network output (logits, BEFORE any sigmoid / softmax) for `batch_size`
+    /// row-major samples: `output[i * output_dim + c]` is output `c` of sample `i`.
+    /// Length is `batch_size * output_dim`.
+    ///
+    /// Use it when the final score needs more than the plain output head, e.g. a
+    /// ModelPackage applies calibration (Platt / temperature) to the logit:
+    /// recovering the logit from `predictProbsBatch` by inverting the head loses
+    /// precision for saturated probabilities, this does not.
+    ///
+    /// Same single-forward batched semantics (and eval mode) as
+    /// [`predict_probs_batch`]; works for binary and multi-class trainers.
+    #[wasm_bindgen(js_name = predictLogitsBatch)]
+    pub fn predict_logits_batch(
+        &self,
+        inputs: Vec<f32>,
+        batch_size: usize,
+    ) -> Result<Vec<f32>, JsValue> {
+        if batch_size == 0 {
+            return Ok(Vec::new());
+        }
+        check_batch_inputs("predict_logits_batch", &inputs, batch_size, self.input_dim)
+            .map_err(|e| JsValue::from_str(&e))?;
+        let mut graph = self.graph.borrow_mut();
+        graph.set_training(false); // predictions never run in training mode
+        batched_forward_logits(
+            &mut graph,
+            self.input_node,
+            NodeId(self.output_node),
+            self.input_dim,
+            batch_size,
+            inputs,
+        )
     }
 
     pub fn get_decision_boundary(&self, resolution: usize, feature_map: js_sys::Function) -> Result<Vec<f32>, JsValue> {
