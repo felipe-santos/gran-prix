@@ -60,19 +60,29 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack@0.14.0
-      - name: Build WASM (web and nodejs)
-        run: node scripts/build-wasm.mjs --target both
+      - name: Build WASM (web and nodejs) into packages/wasm/dist
+        run: >
+          node scripts/build-wasm.mjs --target both
+          --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
       - name: Check WASM size budget
-        run: node scripts/check-wasm-size.mjs
-      - name: Upload nodejs package for the smoke test
+        run: node scripts/check-wasm-size.mjs packages/wasm/dist/web/gran_prix_wasm_bg.wasm
+      - name: Upload web package for demo-web
         uses: actions/upload-artifact@v4
         with:
-          name: wasm-pkg-node
-          path: gran-prix-wasm/pkg-node
+          name: wasm-dist-web
+          path: packages/wasm/dist/web
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload nodejs package for the smoke tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-dist-node
+          path: packages/wasm/dist/node
           if-no-files-found: error
           retention-days: 7
 
-  # Runs the bridge from Node against the package built by the wasm job.
+  # Runs the bridge from Node against the package built by the wasm job
+  # (smoke-test.mjs and seeded-init-check.mjs read packages/wasm/dist/node by default).
   node-smoke:
     name: Node smoke test
     needs: wasm
@@ -87,17 +97,26 @@ jobs:
       - name: Download nodejs package
         uses: actions/download-artifact@v4
         with:
-          name: wasm-pkg-node
-          path: gran-prix-wasm/pkg-node
+          name: wasm-dist-node
+          path: packages/wasm/dist/node
       - name: Smoke test
         run: node demo-web/scripts/smoke-test.mjs
+      - name: Seeded initialization check
+        run: node demo-web/scripts/seeded-init-check.mjs
 
+  # demo-web imports `@gran-prix/wasm`, resolved to packages/wasm/dist/web (built by the wasm job).
   demo-web:
     name: demo-web build
+    needs: wasm
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Download web package
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-dist-web
+          path: packages/wasm/dist/web
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
