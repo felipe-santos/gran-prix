@@ -194,6 +194,9 @@ importers:
       '@gran-prix/features':
         specifier: workspace:*
         version: link:../../packages/features
+      '@gran-prix/infer-ts':
+        specifier: workspace:*
+        version: link:../../packages/infer-ts
       '@gran-prix/model':
         specifier: workspace:*
         version: link:../../packages/model
