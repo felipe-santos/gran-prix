@@ -34,7 +34,12 @@ export interface PageMeta {
   group_key: string;
   /** Stratum for reporting (article, docs, ...). */
   category: string;
+  /** Capture flags of the page (`capture.flags`: http-error, error-page, captcha, paywall, tiny-dom). */
+  flags?: readonly string[];
 }
+
+/** Flagged pages are not training material unless a run says otherwise. */
+export const DEFAULT_EXCLUDE_FLAGS: readonly string[] = ["http-error", "error-page", "captcha", "paywall", "tiny-dom"];
 
 export interface DatasetSource {
   page: PageMeta;
@@ -56,6 +61,8 @@ export interface DatasetParams {
   test_allowed_sources?: readonly LabelSource[];
   keep_classes?: readonly string[];
   dedupe?: "none" | "exact_x_per_group";
+  /** Pages carrying any of these capture flags are left out and listed in `excluded_pages`. Default: all five flags; [] keeps everything. */
+  exclude_flags?: readonly string[];
 }
 
 export interface BuiltDataset {
@@ -99,8 +106,15 @@ export function buildDataset(schema: FeatureSchema, sources: readonly DatasetSou
   const projected = space !== undefined && space.kind !== "binary";
   const seenIds = new Set<string>();
   const groups: GroupBuild[] = [];
+  const excludeFlags = new Set(params.exclude_flags ?? DEFAULT_EXCLUDE_FLAGS);
+  const excluded: Array<{ source_id: string; group_key: string; flags: string[] }> = [];
   for (const src of sources) {
     const { features, labels, page } = src;
+    const hit = (page.flags ?? []).filter((f) => excludeFlags.has(f));
+    if (hit.length > 0) {
+      excluded.push({ source_id: page.snapshot_id, group_key: page.group_key, flags: [...hit].sort() });
+      continue;
+    }
     if (features.feature_schema_id !== schema.schema_id) {
       throw new Error(`features ${features.features_id} use schema ${features.feature_schema_id}, not ${schema.schema_id}`);
     }
@@ -118,6 +132,7 @@ export function buildDataset(schema: FeatureSchema, sources: readonly DatasetSou
     groups.push(g);
   }
   groups.sort((a, b) => cmp(a.group_id, b.group_id));
+  excluded.sort((a, b) => cmp(a.source_id, b.source_id));
 
   const lines: Record<SplitName, string[]> = { train: [], val: [], test: [] };
   const counts: Record<SplitName, { rows: number; pos: number }> = {
@@ -187,6 +202,7 @@ export function buildDataset(schema: FeatureSchema, sources: readonly DatasetSou
       ranges: { train: [...ranges.train] as [number, number], val: [...ranges.val] as [number, number], test: [...ranges.test] as [number, number] },
       overrides,
     },
+    excluded_pages: excluded,
     files: { train: fileStats("train"), val: fileStats("val"), test: fileStats("test") },
     stats: {
       by_split: Object.fromEntries(SPLITS.map((s) => [s, { rows: counts[s].rows, pos_rate: rate(counts[s].pos, counts[s].rows) }])),

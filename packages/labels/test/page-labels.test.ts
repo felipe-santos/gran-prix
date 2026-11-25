@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { inject, describe, expect, it } from "vitest";
 import { sha256Of, validate, type FileRef } from "@gran-prix/contracts";
-import { eligibleUnits, labelPageReadability, loadSnapshotHtml, readSetDocs, readabilityLabel, textSimilarity } from "../src/index.js";
+import { eligibleUnits, indexBySnapshot, labelPageReadability, loadSnapshotHtml, readSetDocs, readabilityLabel, textSimilarity } from "../src/index.js";
 import { readTree } from "../src/testing/index.js";
 import { loadCorpus } from "./helpers.js";
 
@@ -11,6 +9,13 @@ const corpus = loadCorpus(dir);
 const byName = (n: string) => corpus.find((p) => p.name === n)!;
 
 describe("Readability labels of a page", () => {
+  it("run on contract-valid snapshots and features of the collect layout", () => {
+    for (const p of corpus) {
+      expect(validate("page-snapshot", p.snapshot).issues, p.name).toEqual([]);
+      expect(validate("node-features", p.features).issues, p.name).toEqual([]);
+    }
+  });
+
   it("are contract-valid 3-class labels over the feature rows that own text, with the alignment record", () => {
     for (const p of corpus) {
       const doc = labelPageReadability(p);
@@ -72,16 +77,18 @@ describe("Readability labels of a page", () => {
 });
 
 describe("snapshot sets", () => {
-  const set = readTree(dir, "snapshots");
+  const set = readTree(dir, "snapshot-set");
+  const docs1 = byName("docs-1").snapshot;
+  const docs1Path = `snapshots/${docs1.snapshot_id.slice(7)}.json`;
   const files = { files: () => Object.keys(set), file: (p: string) => set[p] as Uint8Array };
 
   it("finds members by their format, wherever they are, and loads the gzipped HTML next to them", () => {
     const members = readSetDocs<{ snapshot_id: string; html: FileRef }>({ ...files, json: () => null }, "gran-prix.page-snapshot");
-    expect(members).toHaveLength(12);
-    const m = members.find((x) => x.path === "docs-1/snapshot.json")!;
+    expect(members).toHaveLength(12); // manifest.json is not a member: it has another format
+    const m = members.find((x) => x.path === docs1Path)!;
     const html = loadSnapshotHtml(files, m.path, m.doc.html);
     expect(html).toContain('data-gp-id="n0"');
-    expect(html).not.toMatch(/<script/i);
+    expect(html).not.toMatch(/<script[^>]+(src|type)=/i); // scripts are kept but emptied
     expect(html).toBe(byName("docs-1").html);
   });
 
@@ -94,12 +101,18 @@ describe("snapshot sets", () => {
   });
 
   it("checks the FileRef hash and reports a missing file", () => {
-    const m = readSetDocs<{ html: FileRef }>({ ...files, json: () => null }, "gran-prix.page-snapshot").find((x) => x.path === "docs-1/snapshot.json")!;
+    const m = readSetDocs<{ html: FileRef }>({ ...files, json: () => null }, "gran-prix.page-snapshot").find((x) => x.path === docs1Path)!;
     expect(() => loadSnapshotHtml(files, m.path, { ...m.doc.html, sha256: sha256Of("other") })).toThrow(/does not match/);
-    expect(() => loadSnapshotHtml(files, m.path, { ...m.doc.html, path: "nope.gz" })).toThrow(/not in the SnapshotSet/);
+    expect(() => loadSnapshotHtml(files, m.path, { ...m.doc.html, path: "nope.gz", sha256: sha256Of("x") })).toThrow(/not in the SnapshotSet/);
+    // a wrong path is recovered through the hash-named file of the collect layout
+    expect(loadSnapshotHtml(files, m.path, { ...m.doc.html, path: "nope.gz" })).toBe(byName("docs-1").html);
     // the hash of the DECODED html is accepted too
-    const raw = readFileSync(join(dir, "snapshots", "docs-1", "page.html.gz"));
-    expect(raw.length).toBeGreaterThan(0);
     expect(loadSnapshotHtml(files, m.path, { ...m.doc.html, sha256: sha256Of(byName("docs-1").html) })).toBe(byName("docs-1").html);
+  });
+
+  it("indexBySnapshot refuses two documents for one snapshot", () => {
+    const a = { path: "a.json", doc: { snapshot_id: "sha256:1" } };
+    expect(indexBySnapshot([a], "NodeLabels").get("sha256:1")).toBe(a);
+    expect(() => indexBySnapshot([a, { ...a, path: "b.json" }], "NodeLabels")).toThrow(/two NodeLabels documents/);
   });
 });

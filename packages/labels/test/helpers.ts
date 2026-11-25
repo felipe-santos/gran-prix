@@ -18,14 +18,19 @@ export interface CorpusPage {
 const readJson = <T>(p: string): T => JSON.parse(readFileSync(p, "utf8")) as T;
 
 export function loadCorpus(dir: string, names: readonly string[] = fixtureNames()): CorpusPage[] {
-  return names.map((name) => ({
-    name,
-    snapshot: readJson<PageSnapshot>(join(dir, "snapshots", name, "snapshot.json")),
-    features: readJson<NodeFeatures>(join(dir, "features", `${name}.json`)),
-    html: gunzipSync(readFileSync(join(dir, "snapshots", name, "page.html.gz"))).toString("utf8"),
-    truth: readJson<FixtureTruth>(join(dir, "truth", `${name}.json`)),
-    browserTruth: readJson<Array<TruthClass | null>>(join(dir, "browser-truth", `${name}.json`)),
-  }));
+  const index = readJson<Array<{ name: string; hex: string }>>(join(dir, "index.json"));
+  return names.map((name) => {
+    const hex = (index.find((e) => e.name === name) as { hex: string }).hex;
+    const snapshot = readJson<PageSnapshot>(join(dir, "snapshot-set", "snapshots", `${hex}.json`));
+    return {
+      name,
+      snapshot,
+      features: readJson<NodeFeatures>(join(dir, "features-set", "features", `${hex}.json`)),
+      html: gunzipSync(readFileSync(join(dir, "snapshot-set", snapshot.html.path))).toString("utf8"),
+      truth: readJson<FixtureTruth>(join(dir, "truth", `${name}.json`)),
+      browserTruth: readJson<Array<TruthClass | null>>(join(dir, "browser-truth", `${name}.json`)),
+    };
+  });
 }
 
 export const loadSchema = (dir: string): FeatureSchema => readJson<FeatureSchema>(join(dir, "schema.json"));

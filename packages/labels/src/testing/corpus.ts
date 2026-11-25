@@ -3,19 +3,23 @@
  * `fixtures/pages/` the way the collect and extract stages do, so labelers and stages can be tested
  * without a network. Needs the `@gran-prix/features` bundle (`gp-features.iife.js`) and Chromium.
  *
- * Layout written under `outDir`:
- *   snapshots/<name>/snapshot.json   PageSnapshot (html FileRef -> page.html.gz, relative to this folder)
- *   snapshots/<name>/page.html.gz    gzip of the FLATTENED HTML: open shadow roots inlined, scripts removed
- *   features/<name>.json             NodeFeatures under FeatureSchema v0
- *   schema.json                      FeatureSchema v0
- *   truth/<name>.json                the fixture's truth rules ({ category, rules })
- *   browser-truth/<name>.json        truth label per node idx evaluated in the LIVE page (oracle)
+ * Layout written under `outDir` (the real collect/extract layout, plus oracle files for the tests):
+ *   snapshot-set/manifest.json            entries in order: { name, snapshot_id }
+ *   snapshot-set/snapshots/<hex>.json     PageSnapshot (<hex> = snapshot_id without "sha256:")
+ *   snapshot-set/html/<hex>.html.gz       gzip of the FLATTENED HTML (open shadow roots inlined, scripts emptied);
+ *                                         <hex> = sha256 of the DECODED html, which is what the FileRef hashes
+ *   features-set/manifest.json            same entries
+ *   features-set/features/<hex>.json      NodeFeatures under FeatureSchema v0 (<hex> = snapshot id)
+ *   schema.json                           FeatureSchema v0
+ *   truth/<name>.json                     the fixture's truth rules ({ category, rules })
+ *   browser-truth/<name>.json             truth label per node idx evaluated in the LIVE page (oracle)
+ *   index.json                            [{ name, snapshot_id, hex }]
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
-import { sha256Of, type FileRef } from "@gran-prix/contracts";
+import { sha256Hex, sha256Of, type FileRef } from "@gran-prix/contracts";
 import { buildPageSnapshot, featureSchemaV0, launch, probeLoadedPage, vectorize } from "@gran-prix/features";
 
 type Page = Parameters<typeof probeLoadedPage>[0];
@@ -60,7 +64,11 @@ async function flattenedHtml(page: Page): Promise<string> {
       for (const child of Array.from((host.shadowRoot as ShadowRoot).childNodes)) frag.append(clone.importNode(child, true));
       target.prepend(frag);
     }
-    for (const s of Array.from(clone.querySelectorAll("script"))) s.remove();
+    // scripts stay, emptied: removing them would shift the ids
+    for (const s of Array.from(clone.querySelectorAll("script"))) {
+      for (const a of Array.from(s.attributes)) if (a.name !== "data-gp-id") s.removeAttribute(a.name);
+      s.textContent = "";
+    }
     return clone.documentElement.outerHTML;
   });
 }
@@ -120,9 +128,10 @@ export interface BuildCorpusOptions {
 
 export async function buildCorpus(opts: BuildCorpusOptions): Promise<string[]> {
   const names = opts.names ?? fixtureNames();
-  const dirs = ["snapshots", "features", "truth", "browser-truth"].map((d) => join(opts.outDir, d));
+  const dirs = ["snapshot-set/snapshots", "snapshot-set/html", "features-set/features", "truth", "browser-truth"].map((d) => join(opts.outDir, d));
   for (const d of dirs) mkdirSync(d, { recursive: true });
   writeFileSync(join(opts.outDir, "schema.json"), JSON.stringify(featureSchemaV0));
+  const index: Array<{ name: string; snapshot_id: string; hex: string }> = [];
   const { browser, context } = await launch();
   try {
     // Sequential on purpose: background tabs get throttled timers, which would distort the settle windows.
@@ -132,8 +141,16 @@ export async function buildCorpus(opts: BuildCorpusOptions): Promise<string[]> {
       try {
         const response = await page.goto(pathToFileURL(join(FIXTURE_DIR, `${name}.html`)).href, { waitUntil: "load" });
         const probed = await probeLoadedPage(page);
-        const gz = new Uint8Array(gzipSync(Buffer.from(await flattenedHtml(page), "utf8")));
-        const html: FileRef = { path: "page.html.gz", sha256: sha256Of(gz), bytes: gz.length, media_type: "application/gzip" };
+        const decoded = Buffer.from(await flattenedHtml(page), "utf8");
+        const htmlHex = sha256Hex(decoded);
+        const gz = new Uint8Array(gzipSync(decoded));
+        const html = {
+          path: `html/${htmlHex}.html.gz`,
+          sha256: sha256Of(decoded),
+          bytes: decoded.length,
+          media_type: "text/html",
+          content_encoding: "gzip",
+        } as FileRef;
         const snapshot = buildPageSnapshot(probed.raw, {
           category: truth.category,
           group_key: groupKeyOf(name),
@@ -146,11 +163,11 @@ export async function buildCorpus(opts: BuildCorpusOptions): Promise<string[]> {
             captured_at: "2026-01-01T00:00:00Z",
           },
         });
-        const sdir = join(opts.outDir, "snapshots", name);
-        mkdirSync(sdir, { recursive: true });
-        writeFileSync(join(sdir, "snapshot.json"), JSON.stringify(snapshot));
-        writeFileSync(join(sdir, "page.html.gz"), gz);
-        writeFileSync(join(opts.outDir, "features", `${name}.json`), JSON.stringify(vectorize(snapshot, featureSchemaV0)));
+        const hex = snapshot.snapshot_id.slice("sha256:".length);
+        writeFileSync(join(opts.outDir, "snapshot-set", "snapshots", `${hex}.json`), JSON.stringify(snapshot));
+        writeFileSync(join(opts.outDir, "snapshot-set", "html", `${htmlHex}.html.gz`), gz);
+        writeFileSync(join(opts.outDir, "features-set", "features", `${hex}.json`), JSON.stringify(vectorize(snapshot, featureSchemaV0)));
+        index.push({ name, snapshot_id: snapshot.snapshot_id, hex });
         writeFileSync(join(opts.outDir, "truth", `${name}.json`), JSON.stringify(truth));
         writeFileSync(join(opts.outDir, "browser-truth", `${name}.json`), JSON.stringify(await browserTruth(page, truth.rules, snapshot.nodes.length)));
       } finally {
@@ -160,6 +177,9 @@ export async function buildCorpus(opts: BuildCorpusOptions): Promise<string[]> {
   } finally {
     await browser.close();
   }
+  const entries = index.map(({ name, snapshot_id }) => ({ name, snapshot_id }));
+  for (const set of ["snapshot-set", "features-set"]) writeFileSync(join(opts.outDir, set, "manifest.json"), JSON.stringify({ entries, failures: [] }));
+  writeFileSync(join(opts.outDir, "index.json"), JSON.stringify(index));
   return [...names];
 }
 

@@ -167,4 +167,19 @@ describe("dataset from features + labels of the 12 fixtures", () => {
     expect(validate("dataset-manifest", empty.manifest).issues).toEqual([]);
     expect(empty.manifest.split.salt).toBe("1");
   });
+
+  it("leaves out pages flagged at capture by default and records them in the manifest", () => {
+    const src = sources();
+    const flagged = src[3]!; // any page
+    src[3] = { ...flagged, page: { ...flagged.page, flags: ["captcha", "tiny-dom", "not-a-known-flag"] } };
+    const d = buildDataset(schema, src, { seed });
+    expect(d.manifest.groups).toHaveLength(manifest.groups.length - 1);
+    expect(d.manifest.sources.map((s) => s.source_id)).not.toContain(flagged.page.snapshot_id);
+    expect((d.manifest as Record<string, unknown>)["excluded_pages"]).toEqual([{ source_id: flagged.page.snapshot_id, group_key: flagged.page.group_key, flags: ["captcha", "tiny-dom"] }]);
+    expect(validate("dataset-manifest", d.manifest).issues).toEqual([]);
+    expect((manifest as Record<string, unknown>)["excluded_pages"]).toEqual([]);
+    // configurable: other flags only, or none
+    expect(buildDataset(schema, src, { seed, exclude_flags: ["paywall"] }).manifest.groups).toHaveLength(manifest.groups.length);
+    expect(buildDataset(schema, src, { seed, exclude_flags: [] }).manifest.dataset_id).toBe(manifest.dataset_id);
+  });
 });

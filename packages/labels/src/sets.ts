@@ -9,7 +9,8 @@ import { sha256Of, type FileRef } from "@gran-prix/contracts";
  * members of different sets are joined by `snapshot_id`, never by file name. A Set stored as a JSON
  * artifact (one document, or an array of documents) is accepted as well. The HTML of a snapshot is the
  * gzip (or plain file) its `html` FileRef points to; the path is resolved next to the snapshot file
- * first, then from the root of the set.
+ * first, then from the root of the set, then as `html/<sha256 hex>.html.gz`. The collect stage writes one
+ * `manifest.json`, `snapshots/<hex>.json` and `html/<hex>.html.gz`; the extract stage `features/<hex>.json`.
  */
 
 /** What both an `ArtifactHandle` and a plain in-memory set offer. */
@@ -70,7 +71,9 @@ const join = (dir: string, p: string): string => (dir === "" ? p : `${dir}/${p}`
  */
 export function loadSnapshotHtml(set: FileSetLike, memberPath: string, ref: FileRef): string {
   const all = new Set(set.files());
-  const candidates = [join(dirOf(memberPath), ref.path), ref.path].filter((p) => all.has(p));
+  // Layout of the collect stage: html/<hex>.html.gz at the root of the set, <hex> = sha256 of the decoded html.
+  const byHash = `html/${ref.sha256.slice("sha256:".length)}.html.gz`;
+  const candidates = [join(dirOf(memberPath), ref.path), ref.path, byHash].filter((p) => all.has(p));
   const path = candidates[0];
   if (path === undefined) {
     throw new Error(`snapshot html "${ref.path}" (referenced by "${memberPath}") is not in the SnapshotSet`);
@@ -82,4 +85,14 @@ export function loadSnapshotHtml(set: FileSetLike, memberPath: string, ref: File
     throw new Error(`snapshot html "${path}" does not match its FileRef sha256 ${ref.sha256}`);
   }
   return decoder.decode(decoded);
+}
+
+/** Members by `snapshot_id`; two members for one snapshot is an error (merge labels of a snapshot first). */
+export function indexBySnapshot<T extends { snapshot_id: string }>(members: readonly SetMember<T>[], what: string): Map<string, SetMember<T>> {
+  const out = new Map<string, SetMember<T>>();
+  for (const m of members) {
+    if (out.has(m.doc.snapshot_id)) throw new Error(`two ${what} documents for snapshot ${m.doc.snapshot_id}`);
+    out.set(m.doc.snapshot_id, m);
+  }
+  return out;
 }

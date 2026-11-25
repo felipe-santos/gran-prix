@@ -9,5 +9,6 @@
     "baseUrl": null,
     "paths": null
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/testing/**"]
 }
