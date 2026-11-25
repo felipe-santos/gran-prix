@@ -570,6 +570,119 @@ async function main() {
     softmaxRejected
   );
 
+  // ── Convergence (regression guard for the batch-gradient leak) ───────────
+  // Before the fix, per-sample forward+backward inside train_batch let node
+  // gradients of sample i leak into sample i+1, and the Trainer learned the
+  // INVERSE of a separable task (3-13% accuracy). Deterministic LCG data,
+  // fresh-data accuracy >= 95% and a falling loss pin the correct behavior.
+  // Exact 32-bit LCG (Numerical Recipes constants), uniform in [-1, 1).
+  const makeLcg = (seed) => {
+    let s = seed >>> 0;
+    return () => {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      return (s / 4294967296) * 2 - 1;
+    };
+  };
+  const meanOf = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+
+  // Binary: y = (x0 > x1), batch of 64.
+  {
+    const rnd = makeLcg(12345);
+    const t = new Trainer(2, new Uint32Array([8]));
+    const lossesBin = [];
+    for (let s = 0; s < 300; s += 1) {
+      const x = new Float32Array(128);
+      const y = new Float32Array(64);
+      for (let i = 0; i < 64; i += 1) {
+        x[2 * i] = rnd();
+        x[2 * i + 1] = rnd();
+        y[i] = x[2 * i] > x[2 * i + 1] ? 1 : 0;
+      }
+      lossesBin.push(t.train_batch(x, y, 0.05));
+    }
+    const fresh = makeLcg(987654321);
+    let ok = 0;
+    for (let i = 0; i < 500; i += 1) {
+      const a = fresh();
+      const b = fresh();
+      ok += (t.predict(new Float32Array([a, b])) > 0.5) === (a > b) ? 1 : 0;
+    }
+    const first = meanOf(lossesBin.slice(0, 20));
+    const last = meanOf(lossesBin.slice(-20));
+    check('binary train_batch converges: accuracy >= 95% on fresh data',
+      ok / 500 >= 0.95, `acc=${(ok / 5).toFixed(1)}%`);
+    check('binary train_batch: mean loss of last 20 steps < first 20',
+      last < first, `first20=${first.toFixed(4)}, last20=${last.toFixed(4)}`);
+  }
+
+  // Multi-class: 3 separable 2-D clusters, batch of 32.
+  {
+    const centers = [[-0.6, -0.6], [0.6, -0.6], [0.0, 0.7]];
+    const sample = (rnd) => {
+      const c = Math.min(2, Math.floor((rnd() + 1) * 1.5));
+      return [c, centers[c][0] + 0.25 * rnd(), centers[c][1] + 0.25 * rnd()];
+    };
+    const rnd = makeLcg(2024);
+    const t = Trainer.fromNetworkDef(JSON.stringify({
+      input_dim: 2,
+      layers: [
+        { type: 'linear', in_features: 2, out_features: 16 },
+        { type: 'activation', function: 'relu' },
+        { type: 'linear', in_features: 16, out_features: 3 },
+      ],
+    }));
+    const lossesMc = [];
+    for (let s = 0; s < 150; s += 1) {
+      const x = new Float32Array(64);
+      const y = new Uint32Array(32);
+      for (let i = 0; i < 32; i += 1) {
+        const [c, px, py] = sample(rnd);
+        x[2 * i] = px;
+        x[2 * i + 1] = py;
+        y[i] = c;
+      }
+      lossesMc.push(t.trainBatchMultiClass(x, y, 0.05));
+    }
+    const fresh = makeLcg(777777);
+    let ok = 0;
+    for (let i = 0; i < 500; i += 1) {
+      const [c, px, py] = sample(fresh);
+      ok += t.predictClass(new Float32Array([px, py])) === c ? 1 : 0;
+    }
+    const first = meanOf(lossesMc.slice(0, 20));
+    const last = meanOf(lossesMc.slice(-20));
+    check('multi-class trainBatchMultiClass converges: accuracy >= 95% on fresh data',
+      ok / 500 >= 0.95, `acc=${(ok / 5).toFixed(1)}%`);
+    check('multi-class trainBatchMultiClass: mean loss of last 20 steps < first 20',
+      last < first, `first20=${first.toFixed(4)}, last20=${last.toFixed(4)}`);
+  }
+
+  // ── Dropout is only active while training ───────────────────────────────
+  // predict* must be deterministic even for a network with Dropout, before
+  // and after training steps (training mode must never leak into inference).
+  {
+    const t = Trainer.fromNetworkDef(JSON.stringify({
+      input_dim: 2,
+      layers: [
+        { type: 'linear', in_features: 2, out_features: 16 },
+        { type: 'activation', function: 'tanh' },
+        { type: 'dropout', rate: 0.5 },
+        { type: 'linear', in_features: 16, out_features: 1 },
+      ],
+    }));
+    const probe = new Float32Array([0.3, -0.6]);
+    const same = () => {
+      const a = t.predictBatch(batchInputs, 4);
+      const b = t.predictBatch(batchInputs, 4);
+      return t.predict(probe) === t.predict(probe)
+        && a.every((v, i) => v === b[i] && Number.isFinite(v));
+    };
+    const before = same();
+    for (let i = 0; i < 5; i += 1) t.train_batch(batchInputs, batchTargets, 0.01);
+    check('predictions with Dropout are deterministic before and after training',
+      before && same());
+  }
+
   // ── Long-running training stability ──────────────────────────────────────
   // We don't assert convergence here because it's RNG-dependent and
   // would make this smoke test flaky. The senior assertion is
