@@ -31,7 +31,8 @@ export interface StageReceipt {
   error?: { name: string; message: string };
   /** Why a stage was skipped. */
   reason?: string;
-  tool_versions: { gp_cli: string; node: string; wasm_sha256?: Sha256 };
+  /** `tools`: sha256 of the external binaries the stage ran (e.g. `gp-train`), part of its cache key. */
+  tool_versions: { gp_cli: string; node: string; wasm_sha256?: Sha256; tools?: Record<string, Sha256> };
 }
 
 /** `<data-dir>/cache/<cache_key>.json`: maps a stage cache key to the artifacts it produced. */

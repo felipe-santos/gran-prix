@@ -1,4 +1,4 @@
-import type { StageKindSpec } from "@gran-prix/contracts";
+import type { Sha256, StageKindSpec } from "@gran-prix/contracts";
 import type { Reservation } from "./ledger.js";
 import type { ArtifactHandle, StageValue } from "./store.js";
 
@@ -15,6 +15,10 @@ export interface StageContext {
   readonly stageId: string;
   readonly kind: StageKindSpec["kind"];
   readonly impl: string;
+  /** Cache key of this execution (identical for identical params, inputs, wasm and tool binaries). */
+  readonly cacheKey: Sha256;
+  /** Id of the PipelineSpec being run. */
+  readonly pipelineSpecId: Sha256;
   /** `params` of the stage instance after `${vars.*}` substitution; validated against `params_schema`. */
   readonly params: Readonly<Record<string, unknown>>;
   /** Input artifacts by port (an array for `many` ports; optional unconnected ports are absent). */
@@ -35,9 +39,17 @@ export type StageOutputs = Record<string, StageValue | StageValue[]>;
  * `node+wasm`): the cache key assumes nothing else matters. Stages that call
  * paid or external services must declare `determinism: "cached-external"` or
  * `"external"` and reserve every paid call from `ctx.ledger`.
+ *
+ * `toolDigests` is for stages that run an external binary (`runtime: "rust"`):
+ * it returns the sha256 of every binary the output depends on, by tool name.
+ * The runner folds them into the cache key (under the reserved input names
+ * `$tool.<name>`, which no port can have) and records them in the receipt and
+ * the provenance, so rebuilding the binary invalidates the stage and everything
+ * downstream. It runs before the cache lookup and may throw (binary missing).
  */
 export interface StagePlugin {
   readonly spec: StageKindSpec;
+  toolDigests?(): Record<string, Sha256>;
   run(ctx: StageContext): Promise<StageOutputs> | StageOutputs;
 }
 

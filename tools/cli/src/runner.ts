@@ -72,6 +72,8 @@ interface Prepared {
   inputIds: PortIds;
   cacheKey: Sha256;
   wasmSha?: Sha256;
+  /** sha256 of the external binaries of a `rust` stage, by tool name. */
+  tools?: Record<string, Sha256>;
 }
 
 export async function runPipeline(raw: unknown, opts: RunOptions): Promise<RunSummary> {
@@ -292,8 +294,16 @@ class Run {
       inputIds[port] = Array.isArray(v) ? ids : (ids[0] as Sha256);
     }
     const wasmSha = plugin.spec.runtime === "node+wasm" ? (this.wasm ??= (this.opts.wasmSha ?? wasmSha256)()) : undefined;
-    const cacheKey = stageCacheKey({ impl: stage.impl, kind: stage.kind, params, inputIds, ...(wasmSha ? { wasmSha } : {}) });
-    return { stage, plugin, params, paramsSha: artifactId(params), inputIds, cacheKey, ...(wasmSha ? { wasmSha } : {}) };
+    const tools = plugin.toolDigests?.();
+    // Tool binaries enter the key as pseudo-inputs: a name starting with "$" cannot be a port name.
+    const keyInputs: PortIds = { ...inputIds };
+    for (const [name, sha] of Object.entries(tools ?? {})) keyInputs[`$tool.${name}`] = sha;
+    const cacheKey = stageCacheKey({ impl: stage.impl, kind: stage.kind, params, inputIds: keyInputs, ...(wasmSha ? { wasmSha } : {}) });
+    return {
+      stage, plugin, params, paramsSha: artifactId(params), inputIds, cacheKey,
+      ...(wasmSha ? { wasmSha } : {}),
+      ...(tools && Object.keys(tools).length > 0 ? { tools } : {}),
+    };
   }
 
   private upstream(stageId: string, port: string): Sha256 {
@@ -354,6 +364,8 @@ class Run {
       stageId: stage.id,
       kind: stage.kind,
       impl: stage.impl,
+      cacheKey: p.cacheKey,
+      pipelineSpecId: this.specId,
       params: p.params,
       inputs,
       ledger,
@@ -394,7 +406,8 @@ class Run {
       },
       inputs: flatten(p.inputIds).map(({ port, artifact_id }) => ({ port, artifact_id })),
       pipeline_spec_id: this.specId,
-      tool_versions: { gp_cli: GP_VERSION, node: process.version, ...(p.wasmSha ? { wasm_sha256: p.wasmSha } : {}) },
+      // `tools` is not in the Provenance contract yet (proposed): the schema is open, so it is carried as an extra.
+      tool_versions: { gp_cli: GP_VERSION, node: process.version, ...(p.wasmSha ? { wasm_sha256: p.wasmSha } : {}), ...(p.tools ? { tools: p.tools } : {}) },
       created_at: this.now().toISOString(),
       duration_ms: durationMs,
     };
@@ -444,7 +457,7 @@ class Run {
       impl_version: implVersion(stage.impl),
       ...(p ? { cache_key: p.cacheKey, params_sha256: p.paramsSha } : {}),
       inputs: p ? flatten(p.inputIds) : [],
-      tool_versions: { gp_cli: GP_VERSION, node: process.version, ...(p?.wasmSha ? { wasm_sha256: p.wasmSha } : {}) },
+      tool_versions: { gp_cli: GP_VERSION, node: process.version, ...(p?.wasmSha ? { wasm_sha256: p.wasmSha } : {}), ...(p?.tools ? { tools: p.tools } : {}) },
       ...r,
     };
     writeJsonAtomic(join(this.runDir, stage.id, "stage.json"), receipt);
