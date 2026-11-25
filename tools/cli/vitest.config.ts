@@ -10,6 +10,7 @@ export default defineConfig({
       "@gran-prix/contracts": src("packages/contracts"),
       "@gran-prix/infer-ts": src("packages/infer-ts"),
       "@gran-prix/model": src("packages/model"),
+      "@gran-prix/report": src("packages/report"),
     },
   },
   test: {
