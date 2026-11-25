@@ -1,0 +1,175 @@
+{
+  "format": "gran-prix.model-package",
+  "format_version": "1.0.0",
+  "model_id": "sha256:c9d32f7cbc93b2f85052c3e250bfd062fd63c1189c834fe0075f22391458ba26",
+  "name": "dom-fixture-model",
+  "description": "Tiny model used only by the contract fixtures.",
+  "task": {
+    "name": "dom-content-classifier",
+    "unit": "dom-node-own-content",
+    "stateless": true
+  },
+  "files": {
+    "network_def": {
+      "path": "network_def.json",
+      "bytes": 168
+    },
+    "weights": {
+      "path": "weights.f32le",
+      "bytes": 76,
+      "dtype": "f32le",
+      "count": 19
+    },
+    "golden": {
+      "path": "golden.json",
+      "bytes": 926
+    }
+  },
+  "digest": {
+    "algorithm": "sha256",
+    "network_def": "sha256:4f182767d72073ace6f2c308e1dfa138dcac5c36bf2418e29153f639f4acd1f5",
+    "weights": "sha256:b8bb198b7bdb48f48ce12b7f3ed7a3add18b66cffa30cedffe32dce1b8e9436e",
+    "golden": "sha256:f5c5ae957781353432c74735dca7bb0856951cf3f9bc31604c2b21d7871a40a3"
+  },
+  "network": {
+    "input_dim": 4,
+    "output_dim": 1,
+    "param_layout": [
+      {
+        "name": "layers[0].weight",
+        "shape": [
+          4,
+          3
+        ],
+        "offset": 0,
+        "length": 12
+      },
+      {
+        "name": "layers[0].bias",
+        "shape": [
+          1,
+          3
+        ],
+        "offset": 12,
+        "length": 3
+      },
+      {
+        "name": "layers[2].weight",
+        "shape": [
+          3,
+          1
+        ],
+        "offset": 15,
+        "length": 3
+      },
+      {
+        "name": "layers[2].bias",
+        "shape": [
+          1,
+          1
+        ],
+        "offset": 18,
+        "length": 1
+      }
+    ]
+  },
+  "feature_spec": {
+    "schema_id": "sha256:f96fab2e444e45a20fc3a482f9790f64f82d913cb040a0ad6b7ccb25c93e6d65",
+    "name": "dom-node-fixture",
+    "version": "1.0.0",
+    "dim": 4,
+    "names": [
+      "log_text_len",
+      "link_density",
+      "is_heading",
+      "depth_norm"
+    ],
+    "normalization": {
+      "kind": "zscore",
+      "mean": [
+        0.5,
+        0.3,
+        0.3,
+        0.1
+      ],
+      "std": [
+        0.2,
+        0.4,
+        0.5,
+        0.05
+      ],
+      "eps": 0.000001
+    },
+    "ood": {
+      "lo": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "hi": [
+        1,
+        1,
+        1,
+        0.5
+      ],
+      "tolerance": 0.1
+    }
+  },
+  "output_spec": {
+    "activation": "sigmoid",
+    "labels": [
+      "only-one"
+    ],
+    "calibration": {
+      "kind": "platt",
+      "a": 1,
+      "b": 0
+    }
+  },
+  "thresholds": {
+    "accept": 0.7,
+    "escalate": 0.4,
+    "margin": 0.1
+  },
+  "requires": {
+    "runtime": {
+      "wasm_abi": "gran-prix-wasm@0.1"
+    },
+    "layer_types": [
+      "linear",
+      "activation"
+    ],
+    "extensions": []
+  },
+  "provenance": {
+    "produced_by": {
+      "run_id": "run-0001",
+      "stage_id": "train",
+      "kind": "train",
+      "impl": "ts:train.wasm-trainer@1.0.0",
+      "params_sha256": "sha256:861ff61791234a2cdd3362fd8390ac4fdd1d6885024f006696eabbd0bd23e321",
+      "cache_key": "sha256:3930d1fdcd6cd989514495fd896ab4c2e5c140d5872831959d7451ca9fee49cc"
+    },
+    "inputs": [
+      {
+        "port": "dataset",
+        "artifact_id": "sha256:73012280d08122f0b49688994ac67c1dd284287c5c952dde88c9f38506d629c8"
+      }
+    ],
+    "pipeline_spec_id": "sha256:ae450a2ee9a8d118d5a2137fa52fd78536551e81d8a6107ac05862b079195843",
+    "tool_versions": {
+      "gp_cli": "0.1.0",
+      "node": "v24.13.1",
+      "wasm_sha256": "sha256:50ac2f3c4e70c05dc50b06ba827c46cf3ee513432661ba323c468ffcf4d5e94b"
+    },
+    "created_at": "2026-11-25T12:00:00Z",
+    "duration_ms": 1234
+  },
+  "metrics": {
+    "eval_report_id": "sha256:c29821592c11093237a936b133ff0262033e5512c098ac4dda833512be10bb7f",
+    "headline": {
+      "f1": 0.8421052631578948
+    }
+  }
+}

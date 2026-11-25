@@ -1,0 +1,30 @@
+{
+  "format": "gran-prix.pipeline-spec",
+  "format_version": "1.0.0",
+  "name": "fixture-dom-pipeline",
+  "description": "Synthetic pipeline used by the contract fixtures.",
+  "vars": {
+    "seed": 42
+  },
+  "externals": {
+    "urls": {
+      "type": "UrlList",
+      "path": "data/urls.csv"
+    },
+    "schema": {
+      "type": "FeatureSchema",
+      "id": "sha256:8d1aee97199968bcf69558ff925fd7538602b58098cf8edd9eaa4542674f722b"
+    }
+  },
+  "stages": [],
+  "layout": {
+    "collect": {
+      "x": 0,
+      "y": 0
+    },
+    "extract": {
+      "x": 200,
+      "y": 0
+    }
+  }
+}

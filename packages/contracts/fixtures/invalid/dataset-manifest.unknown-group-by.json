@@ -1,0 +1,181 @@
+{
+  "format": "gran-prix.dataset-manifest",
+  "format_version": "1.0.0",
+  "dataset_id": "sha256:f3d0fce6f084fff490d7b558174fdf7632b5c23cb54f811a955764b111f92922",
+  "feature_schema_id": "sha256:f96fab2e444e45a20fc3a482f9790f64f82d913cb040a0ad6b7ccb25c93e6d65",
+  "dim": 4,
+  "label_space": {
+    "kind": "binary",
+    "classes": [
+      "drop",
+      "keep"
+    ]
+  },
+  "label_projection": {
+    "from": {
+      "kind": "multiclass",
+      "classes": [
+        "main",
+        "support",
+        "noise"
+      ]
+    },
+    "keep_classes": [
+      "main",
+      "support"
+    ]
+  },
+  "sources": [
+    {
+      "group_id": "g00_site0",
+      "features_id": "sha256:0644d9aeb60ea20ce6336e2a04a4cd2923930a8f90f0d490afb75ffe0c34739b",
+      "labels_id": "sha256:97cddf98bbbd5902354c6da14fa9b3aa939e770b9768fee3a9cff90b0b2796fd"
+    },
+    {
+      "group_id": "g01_site1",
+      "features_id": "sha256:c20ae1452710d6d0d0763a6ef9156b75ded24b04c4681b703b8c3587abb3836f",
+      "labels_id": "sha256:86a3349ff4650abec88e4b1c28ea5cab44dcd71da58edcdf5e94d49d0dfe477e"
+    },
+    {
+      "group_id": "g02_site10",
+      "features_id": "sha256:e2d018e7453c628fca39f1bcae5e2e380dc20845b2db1e0942d0e8df4e1fdcd8",
+      "labels_id": "sha256:550c36ef50ede8b33bf3e678fb2814428134bcf6df1c96e1a2d9da8b5467d03a"
+    },
+    {
+      "group_id": "g03_site20",
+      "features_id": "sha256:00ff5f095d2db9e1618c255731f6484547d9850462b628bfedf9ee26064aba09",
+      "labels_id": "sha256:985e63e208fa9335e66a4f3b88027f4addf931f3fd66da57e52215b2c265ef60"
+    }
+  ],
+  "filters": {
+    "drop_unlabeled": true,
+    "min_confidence": 0.5,
+    "allowed_sources": [
+      "human",
+      "llm",
+      "heuristic"
+    ],
+    "test_allowed_sources": [
+      "human",
+      "llm",
+      "heuristic"
+    ],
+    "dedupe": "exact_x_per_group"
+  },
+  "groups": [
+    {
+      "group_id": "g00_site0",
+      "group_key": "site0.example",
+      "stratum": "article",
+      "split": "train",
+      "bucket": 21,
+      "n_rows": 3,
+      "n_pos": 3
+    },
+    {
+      "group_id": "g01_site1",
+      "group_key": "site1.example",
+      "stratum": "docs",
+      "split": "train",
+      "bucket": 27,
+      "n_rows": 3,
+      "n_pos": 3
+    },
+    {
+      "group_id": "g02_site10",
+      "group_key": "site10.example",
+      "stratum": "article",
+      "split": "test",
+      "bucket": 89,
+      "n_rows": 3,
+      "n_pos": 3
+    },
+    {
+      "group_id": "g03_site20",
+      "group_key": "site20.example",
+      "stratum": "docs",
+      "split": "val",
+      "bucket": 78,
+      "n_rows": 3,
+      "n_pos": 3
+    }
+  ],
+  "split": {
+    "scheme": "hash-bucket-v1",
+    "group_by": "domain",
+    "salt": "fixture-v1",
+    "n_buckets": 100,
+    "ranges": {
+      "train": [
+        0,
+        70
+      ],
+      "val": [
+        70,
+        85
+      ],
+      "test": [
+        85,
+        100
+      ]
+    },
+    "overrides": {},
+    "kfold": {
+      "k": 5
+    }
+  },
+  "files": {
+    "train": {
+      "path": "train.jsonl",
+      "sha256": "sha256:1ea6fee2492ea0e199517f6b756d191e2894bcf8d64cc92546ac25b5dd21a101",
+      "bytes": 592,
+      "media_type": "application/x-ndjson",
+      "rows": 6,
+      "pos_rate": 1
+    },
+    "val": {
+      "path": "val.jsonl",
+      "sha256": "sha256:d68666d107b18fa3c65abf701a805b09977d3c167350862d36189557011b4f6c",
+      "bytes": 299,
+      "media_type": "application/x-ndjson",
+      "rows": 3,
+      "pos_rate": 1
+    },
+    "test": {
+      "path": "test.jsonl",
+      "sha256": "sha256:d3e914c9192465c568ead6ed0d92f833a8a4c629ec688863e1d7920de8916d5b",
+      "bytes": 299,
+      "media_type": "application/x-ndjson",
+      "rows": 3,
+      "pos_rate": 1
+    }
+  },
+  "stats": {
+    "by_split": {
+      "train": {
+        "rows": 6,
+        "pos_rate": 1
+      },
+      "val": {
+        "rows": 3,
+        "pos_rate": 1
+      },
+      "test": {
+        "rows": 3,
+        "pos_rate": 1
+      }
+    },
+    "by_stratum": {
+      "article": {
+        "groups": 2,
+        "rows": 6,
+        "pos_rate": 1
+      },
+      "docs": {
+        "groups": 2,
+        "rows": 6,
+        "pos_rate": 1
+      }
+    }
+  }
+}
