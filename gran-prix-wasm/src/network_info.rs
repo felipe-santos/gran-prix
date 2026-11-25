@@ -3,7 +3,7 @@
 //! - [`validate_network_def`] (`validateNetworkDef`): checks a `NetworkDef`
 //!   JSON string without constructing a `Trainer`, and **never throws** for
 //!   an invalid architecture: every problem is reported in `errors`.
-//! - `Trainer.paramShapes()` (see `trainer.rs`): per-parameter name, shape
+//! - `Trainer.paramShapes()` (see `trainer/params.rs`): per-parameter name, shape
 //!   and offset into the flat `getWeights()` vector, so a consumer can slice
 //!   the weights without knowing the layout rules.
 //!

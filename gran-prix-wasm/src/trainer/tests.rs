@@ -5,7 +5,11 @@
 //! Only success paths are exercised: on native targets `JsValue` cannot be
 //! constructed, so an error path would panic instead of returning `Err`.
 
-use super::*;
+use super::training::with_training_mode;
+use super::{LossKind, Trainer};
+use gran_prix::layers::ActivationType;
+use gran_prix::network_def::{LayerDef, NetworkDef};
+use gran_prix::{GPError, NodeId, Tensor};
 
 /// Deterministic LCG (same constants as the Node evidence scripts).
 struct Lcg(u64);
