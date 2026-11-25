@@ -1,0 +1,27 @@
+{
+  "page": "article-1.html",
+  "category": "article",
+  "note": "Hand-written. Label of an element = label of the nearest ancestor-or-self matched by a rule; on a tie the later rule wins. Selectors are evaluated in the live page.",
+  "rules": [
+    { "selector": "article.story > h1", "label": "main" },
+    { "selector": "article.story .dek", "label": "main" },
+    { "selector": "article.story > p", "label": "main" },
+    { "selector": "article.story > h2", "label": "main" },
+    { "selector": "article.story blockquote", "label": "main" },
+    { "selector": ".crumbs", "label": "support" },
+    { "selector": ".byline", "label": "support" },
+    { "selector": "figcaption", "label": "support" },
+    { "selector": ".tags", "label": "support" },
+    { "selector": ".author-bio", "label": "support" },
+    { "selector": ".comments", "label": "support" },
+    { "selector": "#cookie-banner", "label": "noise" },
+    { "selector": ".site-header", "label": "noise" },
+    { "selector": ".ad", "label": "noise" },
+    { "selector": ".share", "label": "noise" },
+    { "selector": ".sidebar", "label": "noise" },
+    { "selector": ".related", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" },
+    { "selector": "#subscribe-modal", "label": "noise" },
+    { "selector": ".sr-only", "label": "noise" }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "page": "product-1.html",
+  "category": "product",
+  "rules": [
+    { "selector": ".product-title", "label": "main" },
+    { "selector": ".price", "label": "main" },
+    { "selector": ".stock", "label": "support" },
+    { "selector": ".variants", "label": "support" },
+    { "selector": ".rating", "label": "support" },
+    { "selector": ".description", "label": "main" },
+    { "selector": ".specs", "label": "main" },
+    { "selector": ".reviews", "label": "support" },
+    { "selector": ".crumbs", "label": "support" },
+    { "selector": ".add", "label": "noise" },
+    { "selector": ".wish", "label": "noise" },
+    { "selector": ".trust", "label": "noise" },
+    { "selector": ".promo-bar", "label": "noise" },
+    { "selector": ".site-header", "label": "noise" },
+    { "selector": ".related-products", "label": "noise" },
+    { "selector": ".hidden", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" },
+    { "selector": ".cookie", "label": "noise" }
+  ]
+}

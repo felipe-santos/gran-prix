@@ -1,0 +1,22 @@
+{
+  "page": "article-2.html",
+  "category": "article",
+  "note": "Contains an open shadow-DOM newsletter component (noise) and a visibility:hidden element.",
+  "rules": [
+    { "selector": "article.post h1", "label": "main" },
+    { "selector": "article.post > p", "label": "main" },
+    { "selector": "article.post > h2", "label": "main" },
+    { "selector": "article.post > ul", "label": "main" },
+    { "selector": "article.post figure pre", "label": "main" },
+    { "selector": "article.post figcaption", "label": "support" },
+    { "selector": ".post-head .meta", "label": "support" },
+    { "selector": ".toc", "label": "support" },
+    { "selector": ".post-foot", "label": "support" },
+    { "selector": ".topbar", "label": "noise" },
+    { "selector": ".promo", "label": "noise" },
+    { "selector": ".related-posts", "label": "noise" },
+    { "selector": "newsletter-box", "label": "noise" },
+    { "selector": ".stealth", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" }
+  ]
+}

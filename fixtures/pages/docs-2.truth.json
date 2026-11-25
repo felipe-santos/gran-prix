@@ -1,0 +1,18 @@
+{
+  "page": "docs-2.html",
+  "category": "docs",
+  "rules": [
+    { "selector": "article.ref > h1", "label": "main" },
+    { "selector": "article.ref > p", "label": "main" },
+    { "selector": "article.ref > h2", "label": "main" },
+    { "selector": "article.ref > table", "label": "main" },
+    { "selector": "article.ref > pre", "label": "main" },
+    { "selector": "article.ref > ul", "label": "main" },
+    { "selector": "article.ref .deprecated", "label": "support" },
+    { "selector": ".see-also", "label": "noise" },
+    { "selector": ".nav", "label": "noise" },
+    { "selector": ".cookie-notice", "label": "noise" },
+    { "selector": ".site-header", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" }
+  ]
+}

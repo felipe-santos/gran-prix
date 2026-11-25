@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Notes on Slow Software - Pebblebrook Notes</title>
+<meta property="og:type" content="article">
+<style>
+body{font:17px/1.6 system-ui,sans-serif;margin:0;background:#fbfbf8}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px}
+.topbar{background:#1b3a4b;color:#fff;padding:10px}
+.topbar a{color:#fff;margin-right:12px}
+.promo{background:#ffe8a3;padding:8px;text-align:center}
+.toc{border-left:3px solid #ccc;padding-left:12px}
+.stealth{visibility:hidden}
+pre{background:#f0f0ea;padding:10px;overflow:auto}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <a href="/" class="brand">Pebblebrook Notes</a><a href="/archive">Archive</a><a href="/projects">Projects</a><a href="/uses">Uses</a><a href="/rss.xml">RSS</a>
+</div></div>
+<div class="promo">New: my small book on calm engineering is out. <a href="/book">Get the first chapter</a></div>
+
+<div class="wrap">
+<article class="post" itemscope>
+  <header class="post-head">
+    <h1 itemprop="headline">Notes on Slow Software</h1>
+    <p class="meta"><span class="author">Posted by Idris Calloway</span> &middot; <time datetime="2026-01-09">9 January 2026</time> &middot; <span>11 minute read</span></p>
+  </header>
+
+  <aside class="toc" aria-label="Contents">
+    <strong>On this page</strong>
+    <ol><li><a href="#why">Why slow</a></li><li><a href="#small">Small batches</a></li><li><a href="#tools">Tools I keep</a></li><li><a href="#close">Closing thought</a></li></ol>
+  </aside>
+
+  <p>For most of a decade I measured my work in how quickly a change reached strangers. A faster pipeline felt like a better pipeline, and a week without a release felt like a small failure. This essay is about why I stopped counting that way.</p>
+
+  <h2 id="why">Why slow</h2>
+  <p>Slow does not mean idle. It means that every step has room to be understood before the next one begins. When a team compresses design, building and review into a single afternoon, the compression has to land somewhere, and it usually lands on the person who maintains the result a year later.</p>
+  <p>I noticed the pattern first in my own repositories. The files I enjoyed returning to were rarely the ones I wrote quickly. They were the ones where I had paused, deleted a clever abstraction, and left a plain function with an honest name.</p>
+
+  <h2 id="small">Small batches</h2>
+  <p>The practical habit that changed things was shrinking the unit of work. Instead of a branch that lived for two weeks, I kept changes small enough to explain in a single paragraph. If I could not describe the change plainly, it was not ready to be written.</p>
+  <figure>
+    <pre><code>def settle(value, limit=3):
+    # keep the change small enough to explain
+    return min(value, limit)</code></pre>
+    <figcaption>A deliberately boring helper; the comment is the real documentation.</figcaption>
+  </figure>
+  <p>Small batches also made disagreement cheaper. A reviewer can accept or reject a ten-line change in the time it takes to drink a cup of tea, and nobody has to defend a month of work in a single meeting.</p>
+
+  <h2 id="tools">Tools I keep</h2>
+  <p>My toolbox has shrunk. A plain text editor, a terminal, a notebook with a soft pencil, and a calendar with long empty stretches. I have tried more elaborate setups, and each one eventually asked me to serve it rather than the other way around.</p>
+  <ul>
+    <li>A single script that builds the site in under a second.</li>
+    <li>A weekly review where I delete more than I add.</li>
+    <li>A rule that no tool is adopted before its predecessor is retired.</li>
+  </ul>
+
+  <h2 id="close">Closing thought</h2>
+  <p>None of this is an argument against speed where speed is cheap. It is an argument for noticing what the speed is costing, and for being willing, now and then, to let a good idea sit until it stops being merely exciting.</p>
+
+  <footer class="post-foot">
+    <p class="tags">Tagged: <a href="/t/craft">craft</a>, <a href="/t/process">process</a></p>
+    <div class="author-card"><strong>Idris Calloway</strong> writes about maintainable systems from a small town with unreliable trains.</div>
+  </footer>
+</article>
+
+<section class="related-posts"><h2>You might also like</h2>
+  <ul><li><a href="#">Deleting code on purpose</a></li><li><a href="#">A year without a roadmap</a></li><li><a href="#">Reading logs like letters</a></li></ul>
+</section>
+
+<newsletter-box></newsletter-box>
+<div class="stealth">Tracking pixel fallback text that should never be read aloud.</div>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Pebblebrook Notes is written by hand and hosted on a modest server.</p>
+  <p><a href="/colophon">Colophon</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/rss.xml">Feed</a></p>
+</div></footer>
+
+<script>
+customElements.define('newsletter-box', class extends HTMLElement {
+  connectedCallback() {
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = '<style>div{border:1px solid #bbb;padding:12px;margin:24px 0}</style>' +
+      '<div class="box"><h3>Join the occasional letter</h3><p>One essay a month, no tracking, unsubscribe any time.</p>' +
+      '<input type="email" placeholder="your address"><button>Subscribe</button></div>';
+  }
+});
+</script>
+</body>
+</html>

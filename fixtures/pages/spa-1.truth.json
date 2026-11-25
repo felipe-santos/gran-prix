@@ -1,0 +1,16 @@
+{
+  "page": "spa-1.html",
+  "category": "spa",
+  "note": "Truth describes the final DOM after both render waves (about 250 ms and 700 ms).",
+  "rules": [
+    { "selector": "article.story > h1", "label": "main" },
+    { "selector": "article.story > p", "label": "main" },
+    { "selector": ".byline", "label": "support" },
+    { "selector": ".reader-notes", "label": "support" },
+    { "selector": ".appbar", "label": "noise" },
+    { "selector": ".app-footer", "label": "noise" },
+    { "selector": ".drawer", "label": "noise" },
+    { "selector": ".more-stories", "label": "noise" },
+    { "selector": ".toast", "label": "noise" }
+  ]
+}

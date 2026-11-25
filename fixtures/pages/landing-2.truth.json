@@ -1,0 +1,17 @@
+{
+  "page": "landing-2.html",
+  "category": "landing",
+  "rules": [
+    { "selector": ".headline", "label": "main" },
+    { "selector": ".lede", "label": "main" },
+    { "selector": "#how", "label": "main" },
+    { "selector": "#library", "label": "main" },
+    { "selector": "#faq", "label": "support" },
+    { "selector": ".stores", "label": "noise" },
+    { "selector": ".alert", "label": "noise" },
+    { "selector": ".bar", "label": "noise" },
+    { "selector": ".newsletter", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" },
+    { "selector": "#rating-popup", "label": "noise" }
+  ]
+}

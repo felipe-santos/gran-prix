@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hollowmere Desk Lamp, Model D2 - Northfield Home</title>
+<meta property="og:type" content="product">
+<style>
+body{font:15px/1.5 Helvetica,Arial,sans-serif;margin:0;background:#fafafa}
+.page{max-width:1000px;margin:0 auto;padding:12px}
+.hidden{display:none}
+.banner{background:#16324f;color:#fff;padding:8px;text-align:center}
+.chat{position:fixed;right:12px;bottom:12px;background:#fff;border:1px solid #aaa;padding:8px}
+.cols{display:flex;gap:20px}
+.cols>*{flex:1}
+</style>
+</head>
+<body>
+<div class="banner">Winter sale: up to 30 percent off lighting. Ends Sunday.</div>
+<div class="page">
+<header class="top">
+  <a href="/" class="logo">Northfield Home</a>
+  <nav><a href="/living">Living</a> <a href="/lighting">Lighting</a> <a href="/office">Office</a> <a href="/gifts">Gifts</a></nav>
+  <form><input placeholder="Search products"><button>Search</button></form>
+</header>
+
+<div id="product" class="cols">
+  <div class="media">
+    <img src="/lamp.jpg" alt="Desk lamp on a walnut desk">
+    <iframe title="Product video placeholder" src="about:blank" width="320" height="180"></iframe>
+    <p class="video-note">Watch the assembly video</p>
+  </div>
+  <div class="info">
+    <h1 class="title">Hollowmere Desk Lamp, Model D2</h1>
+    <p class="sku">Item code: HM-D2-0417</p>
+    <p class="price-line"><strong class="amount">$64.00</strong> <span class="tax">tax included</span></p>
+    <p class="tagline">A warm, dimmable lamp with a weighted base and a long, quiet arm.</p>
+    <fieldset class="options">
+      <legend>Finish</legend>
+      <label><input type="radio" name="f" checked> Brass</label>
+      <label><input type="radio" name="f"> Matte black</label>
+      <label><input type="radio" name="f"> Chalk white</label>
+    </fieldset>
+    <button class="buy">Add to basket</button>
+    <p class="delivery">Delivery in 3 to 5 days. Free returns within 30 days.</p>
+  </div>
+</div>
+
+<product-specs class="spec-card"></product-specs>
+
+<section class="story">
+  <h2>Why we made it</h2>
+  <p>Most desk lamps are built to be cheap and then replaced. The Hollowmere was drawn the other way round: a heavy base so the arm never drifts, a dimmer that moves in small, even steps, and a shade that can be removed and cleaned in the sink.</p>
+  <p>The lamp ships with a warm bulb rated for ten thousand hours. When it finally fades, the socket takes any standard bulb of the same fitting, so there is no special part to hunt for.</p>
+</section>
+
+<section class="qa">
+  <h2>Questions and answers</h2>
+  <div class="qa-item"><p><strong>Q:</strong> Does the arm stay in place when fully extended?</p><p><strong>A:</strong> Yes, the weighted base holds it steady up to the full 58 centimetre reach.</p></div>
+  <div class="qa-item"><p><strong>Q:</strong> Is a bulb included?</p><p><strong>A:</strong> One warm bulb is included in the box.</p></div>
+</section>
+
+<section class="reviews">
+  <h2>Reviews (2)</h2>
+  <div class="review"><strong>Carrow</strong><p>Beautiful light for reading at night. The dimmer is smooth.</p></div>
+  <div class="review"><strong>Edda</strong><p>Heavier than I expected, which is exactly why it does not wobble.</p></div>
+</section>
+
+<section class="recs"><h2>Pair it with</h2><ul><li>Walnut desk tray, $22.00</li><li>Linen cable sleeve, $8.00</li></ul></section>
+</div>
+
+<div class="chat">Need help? Chat with our team</div>
+<div class="hidden" id="promo-popup"><p>Subscribe and get 5 dollars off.</p></div>
+
+<footer class="site-footer"><div class="page"><p>Northfield Home, 14 Orchard Lane. Open daily 9 to 6.</p><p><a href="#">Terms</a> <a href="#">Privacy</a> <a href="#">Accessibility</a></p></div></footer>
+
+<script>
+customElements.define('product-specs', class extends HTMLElement {
+  connectedCallback() {
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = '<style>table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px}</style>' +
+      '<section class="specs"><h2>Technical details</h2><table>' +
+      '<tr><th>Height</th><td>58 centimetres at full reach</td></tr>' +
+      '<tr><th>Light source</th><td>Warm white bulb, 8 watts</td></tr>' +
+      '<tr><th>Cable length</th><td>1.8 metres with inline dimmer</td></tr>' +
+      '<tr><th>Base weight</th><td>1.1 kilograms</td></tr></table></section>';
+  }
+});
+</script>
+</body>
+</html>
