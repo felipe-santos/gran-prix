@@ -36,14 +36,20 @@
  * so the .wasm does not depend on the user's home directory or checkout location.
  * Note: setting RUSTFLAGS through the environment overrides `build.rustflags` of any
  * .cargo/config.toml (cargo uses only one source); this repo defines none.
+ * Build stamp: every package directory also gets a BUILD_INFO.json ({ schema, target,
+ * source_hash, rustc, wasm_sha256 }; no timestamps, so it is reproducible too). Consumers such
+ * as tools/train/scripts/cross-runtime-check.mjs compare `source_hash` (scripts/lib/wasm-stamp.mjs)
+ * with the current sources to detect a dist built before an API change.
+ * The Rust toolchain is pinned by rust-toolchain.toml at the repo root.
  * Requires `wasm-pack` on PATH and the wasm32-unknown-unknown Rust target.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { measure, fmt } from './lib/size.mjs';
+import { STAMP_FILE, STAMP_SCHEMA, fileSha256, sourceHash } from './lib/wasm-stamp.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CRATE = join(ROOT, 'gran-prix-wasm');
@@ -148,7 +154,21 @@ function build(target, outDir) {
     console.error(`build finished but ${wasm} is missing`);
     process.exit(1);
   }
+  writeStamp(target, outDir, wasm);
   return wasm;
+}
+
+/** BUILD_INFO.json next to the package: which sources and compiler produced this .wasm. */
+function writeStamp(target, outDir, wasm) {
+  const rustc = spawnSync('rustc', ['--version'], { encoding: 'utf8', cwd: CRATE });
+  const info = {
+    schema: STAMP_SCHEMA,
+    target,
+    source_hash: sourceHash(ROOT).hash,
+    rustc: rustc.status === 0 ? rustc.stdout.trim() : 'unknown',
+    wasm_sha256: fileSha256(wasm),
+  };
+  writeFileSync(join(outDir, STAMP_FILE), `${JSON.stringify(info, null, 2)}\n`);
 }
 
 const opts = parseArgs(process.argv.slice(2));

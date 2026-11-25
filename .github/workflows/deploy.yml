@@ -45,8 +45,12 @@ jobs:
           cache: pnpm
       # demo-web depends on the workspace package `@gran-prix/wasm` (packages/wasm/dist/web).
       # Nothing generated is committed, so the WASM is built here (same steps as the CI `wasm` job).
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
+      # rust-toolchain.toml pins the compiler. Install exactly that version (rustup does not
+      # reliably auto-install it) together with the wasm32 target the file lists.
+      - name: Install pinned Rust toolchain
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-unknown-unknown
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:

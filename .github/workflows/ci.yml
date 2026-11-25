@@ -26,6 +26,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # rust-toolchain.toml pins the compiler. Install exactly that version (rustup does not
+      # reliably auto-install it) together with the wasm32 target the file lists.
+      - name: Install pinned Rust toolchain
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-unknown-unknown
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -34,6 +40,7 @@ jobs:
         run: cargo test --workspace
 
   # Size-optimized WASM build with a size budget (scripts/check-wasm-size.mjs).
+  # The packages carry a BUILD_INFO.json stamp (source hash) that the js-tests job checks.
   wasm:
     name: WASM build and size budget
     runs-on: ubuntu-latest
@@ -44,8 +51,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
+      # rust-toolchain.toml pins the compiler. Install exactly that version (rustup does not
+      # reliably auto-install it) together with the wasm32 target the file lists.
+      - name: Install pinned Rust toolchain
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-unknown-unknown
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -124,3 +135,78 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build
         run: pnpm --filter demo-web build
+
+  # The JS package tests, which need the WASM packages, the Chromium that playwright-core
+  # drives (features, labels, cli) and the gp-train binary (cli `train` stage and the
+  # cross-runtime check). Nothing here is built by the other jobs except the WASM artifacts.
+  js-tests:
+    name: JS tests (Chromium, WASM, gp-train)
+    needs: wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download web package
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-dist-web
+          path: packages/wasm/dist/web
+      - name: Download nodejs package
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-dist-node
+          path: packages/wasm/dist/node
+      # pnpm version comes from "packageManager" in the root package.json (single source of truth).
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # rust-toolchain.toml pins the compiler. Install exactly that version (rustup does not
+      # reliably auto-install it) together with the wasm32 target the file lists.
+      - name: Install pinned Rust toolchain
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --target wasm32-unknown-unknown
+      # gp-train is built here instead of being passed as an artifact: the `rust` job only builds
+      # the debug profile (cargo test), so its target dir has no release binary to upload, and a
+      # second job would pay for its own checkout, toolchain install and cache restore plus an
+      # artifact round trip. With the cache warm this step is incremental.
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: js-tests
+      - name: Build gp-train (release)
+        run: cargo build --release -p gp-train
+      # features, labels and cli launch Chromium through playwright-core. packages/features finds
+      # ~/.cache/ms-playwright/chromium-<revision>/chrome-linux64/chrome (newest revision wins),
+      # which is where `playwright-core install` puts the revision pinned by the locked
+      # playwright-core version. The cache is keyed on the lockfile, so a version bump reinstalls.
+      - name: Cache Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - name: Install Chromium
+        run: pnpm --filter @gran-prix/features exec playwright-core install --with-deps chromium
+      - name: Check that the Chromium is where packages/features looks
+        run: ls -l ~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome
+      # @gran-prix/wasm is excluded: its dist comes from the artifacts above (no wasm-pack here).
+      - name: Build packages and tools
+        run: pnpm -r --filter "./packages/*" --filter "./tools/*" --filter "!@gran-prix/wasm" build
+      - name: Test JS packages
+        run: pnpm test:js
+      # Cross-runtime parity (gp-train package vs WASM Trainer vs infer-ts) and the stale-WASM
+      # detection. GP_TRAIN_REQUIRE_NODE=1 turns "prerequisites missing or WASM build stale"
+      # from a skip into a failure.
+      - name: Cross-runtime check (Rust, WASM, TS)
+        env:
+          GP_TRAIN_REQUIRE_NODE: "1"
+        run: |
+          cargo test --release -p gp-train --test package_e2e golden_reproduces_in_wasm_and_infer_ts -- --nocapture
+          cargo test --release -p gp-train --test stale_wasm

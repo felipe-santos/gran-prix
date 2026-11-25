@@ -9,27 +9,79 @@
 // the contracts validator (JSON Schema + invariants).
 //
 // Usage:   node tools/train/scripts/cross-runtime-check.mjs <package-dir>
+//          node tools/train/scripts/cross-runtime-check.mjs --preflight   (only check the WASM build)
+// Exit:    0 ok, 1 a check failed, 2 usage, 3 the WASM build is stale or incompatible (rebuild it).
 // Build:   node scripts/build-wasm.mjs --target both --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 //          pnpm install && pnpm --filter @gran-prix/infer-ts build && pnpm --filter @gran-prix/contracts build
 // Env:     GRAN_PRIX_WASM_NODE (dir of the nodejs wasm build), GRAN_PRIX_INFER_TS (dist/index.js),
-//          GRAN_PRIX_CONTRACTS (dist/index.js)
+//          GRAN_PRIX_CONTRACTS (dist/index.js); GP_TRAIN_REQUIRE_NODE=1 makes a missing
+//          contracts build a failure instead of a skipped identity check.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { STAMP_FILE, fileSha256, sourceHash } from '../../../scripts/lib/wasm-stamp.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../../..');
-const pkgDir = path.resolve(process.argv[2] ?? '');
+const preflightOnly = process.argv[2] === '--preflight';
 if (!process.argv[2]) {
-  console.error('usage: cross-runtime-check.mjs <package-dir>');
+  console.error('usage: cross-runtime-check.mjs <package-dir> | --preflight');
   process.exit(2);
 }
+const pkgDir = preflightOnly ? '' : path.resolve(process.argv[2]);
+const STALE_EXIT = 3;
+const REBUILD = 'node scripts/build-wasm.mjs --target both --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node';
 
 const wasmDir = path.resolve(process.env.GRAN_PRIX_WASM_NODE ?? path.join(root, 'packages/wasm/dist/node'));
 const inferEntry = path.resolve(process.env.GRAN_PRIX_INFER_TS ?? path.join(root, 'packages/infer-ts/dist/index.js'));
 const contractsEntry = path.resolve(process.env.GRAN_PRIX_CONTRACTS ?? path.join(root, 'packages/contracts/dist/index.js'));
+
+// ---- 0. Is the WASM build the one this checkout needs? ----------------------------------
+// A dist built before an API change fails deep inside the run with "x is not a function".
+// Detect it first, by build stamp and by the Trainer API this script uses, and say how to fix it.
+const REQUIRED_TRAINER_API = [
+  'fromNetworkDefSeeded', 'import_weights', 'get_weights', 'networkDefJson', 'paramShapes',
+  'paramTensorCount', 'weightCount', 'predictBatch', 'predictProbsBatch', 'predictLogitsBatch', 'free',
+];
+
+function wasmBuildProblems() {
+  const problems = [];
+  const entry = path.join(wasmDir, 'gran_prix_wasm.js');
+  if (!existsSync(entry)) return [`${entry} does not exist`];
+  const stampFile = path.join(wasmDir, STAMP_FILE);
+  if (!existsSync(stampFile)) {
+    problems.push(`${STAMP_FILE} is missing in ${wasmDir}: built by an older build-wasm.mjs, so its sources are unknown`);
+  } else {
+    const stamp = JSON.parse(readFileSync(stampFile, 'utf8'));
+    const now = sourceHash(root).hash;
+    if (stamp.source_hash !== now) {
+      problems.push(`built from other Rust sources (stamp ${String(stamp.source_hash).slice(0, 19)}..., checkout ${now.slice(0, 19)}...)`);
+    }
+    const wasm = path.join(wasmDir, 'gran_prix_wasm_bg.wasm');
+    if (existsSync(wasm) && fileSha256(wasm) !== stamp.wasm_sha256) problems.push('gran_prix_wasm_bg.wasm does not match its BUILD_INFO.json');
+  }
+  let Trainer;
+  try {
+    ({ Trainer } = createRequire(import.meta.url)(entry));
+  } catch (e) {
+    return [...problems, `the module does not load: ${e.message}`];
+  }
+  const missing = REQUIRED_TRAINER_API.filter((m) => typeof Trainer?.prototype?.[m] !== 'function' && typeof Trainer?.[m] !== 'function');
+  if (missing.length > 0) problems.push(`the Trainer API lacks: ${missing.join(', ')}`);
+  return problems;
+}
+
+const problems = wasmBuildProblems();
+if (problems.length > 0) {
+  console.error(`STALE OR INCOMPATIBLE WASM BUILD in ${wasmDir}:\n${problems.map((p) => `  - ${p}`).join('\n')}\nRebuild it: ${REBUILD}`);
+  process.exit(STALE_EXIT);
+}
+if (preflightOnly) {
+  console.log(`ok   WASM build in ${wasmDir} matches the sources and exposes the Trainer API`);
+  process.exit(0);
+}
 
 const readText = (f) => readFileSync(path.join(pkgDir, f), 'utf8');
 const modelText = readText('model.json');
@@ -73,6 +125,7 @@ if (existsSync(contractsEntry)) {
   assert.equal(C.sha256Of(new Uint8Array(goldenBytes)), model.digest.golden, 'digest.golden');
   console.log('ok   model_id and the three digests recomputed by @gran-prix/contracts match Rust');
 } else {
+  assert.ok(!process.env.GP_TRAIN_REQUIRE_NODE, `GP_TRAIN_REQUIRE_NODE is set but ${contractsEntry} is not built (pnpm --filter @gran-prix/contracts build)`);
   console.log(`skip contracts identity checks (build ${contractsEntry})`);
 }
 assert.equal(golden.weights_sha256, model.digest.weights, 'golden.weights_sha256 is bound to the weights');

@@ -301,8 +301,10 @@ fn refuses_corrupt_or_unsupported_inputs() {
 }
 
 /// Cross-runtime parity: the package must produce its golden in the WASM Trainer and in
-/// `@gran-prix/infer-ts`. Skipped (with a message) when the JS side is not built; set
-/// `GP_TRAIN_REQUIRE_NODE=1` to make the absence a failure (CI).
+/// `@gran-prix/infer-ts`. Skipped (with a message) when the JS side is not built, or when
+/// `packages/wasm/dist` is stale or incompatible with this checkout (detected by
+/// `cross-runtime-check.mjs --preflight`: build stamp and Trainer API); set
+/// `GP_TRAIN_REQUIRE_NODE=1` to make either a failure (CI).
 #[test]
 fn golden_reproduces_in_wasm_and_infer_ts() {
     let root = repo_root();
@@ -317,6 +319,13 @@ fn golden_reproduces_in_wasm_and_infer_ts() {
     if !missing.is_empty() || Command::new("node").arg("--version").output().is_err() {
         assert!(std::env::var("GP_TRAIN_REQUIRE_NODE").is_err(), "cross-runtime prerequisites missing: {missing:?}");
         eprintln!("SKIPPED cross-runtime check, missing: {missing:?}");
+        return;
+    }
+    let pre = Command::new("node").arg(&script).arg("--preflight").output().expect("node runs");
+    if !pre.status.success() {
+        let why = String::from_utf8_lossy(&pre.stderr);
+        assert!(pre.status.code() == Some(3) && std::env::var("GP_TRAIN_REQUIRE_NODE").is_err(), "cross-runtime preflight failed:\n{why}");
+        eprintln!("SKIPPED cross-runtime check, the WASM build is stale:\n{why}");
         return;
     }
     let tmp = tempfile::tempdir().expect("tmp");
