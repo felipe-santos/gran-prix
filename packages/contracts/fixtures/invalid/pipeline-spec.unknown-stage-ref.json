@@ -1,0 +1,165 @@
+{
+  "format": "gran-prix.pipeline-spec",
+  "format_version": "1.0.0",
+  "name": "fixture-dom-pipeline",
+  "description": "Synthetic pipeline used by the contract fixtures. Same shape as pipelines/dom-v0.json, over the real stage implementations.",
+  "vars": {
+    "seed": 42
+  },
+  "externals": {
+    "urls": {
+      "type": "UrlList",
+      "path": "data/urls.csv"
+    },
+    "schema": {
+      "type": "FeatureSchema",
+      "id": "sha256:8d1aee97199968bcf69558ff925fd7538602b58098cf8edd9eaa4542674f722b"
+    },
+    "train_config": {
+      "type": "TrainConfig",
+      "id": "sha256:342de4027cf226d9e739799ab71b4d3d8b61c6085e5e1d2b61c96e637e9813ab"
+    }
+  },
+  "stages": [
+    {
+      "id": "collect",
+      "kind": "collect",
+      "impl": "ts:collect.playwright@1.0.0",
+      "params": {
+        "viewport": [
+          1366,
+          900
+        ],
+        "wait": "networkidle+2s"
+      },
+      "inputs": {
+        "urls": {
+          "external": "urls"
+        }
+      }
+    },
+    {
+      "id": "extract",
+      "kind": "extract",
+      "impl": "ts:extract.dom-node@1.0.0",
+      "params": {},
+      "inputs": {
+        "snapshots": {
+          "stage": "collect",
+          "output": "snapshots"
+        },
+        "schema": {
+          "external": "schema"
+        }
+      }
+    },
+    {
+      "id": "label",
+      "kind": "label",
+      "impl": "ts:label.heuristic@1.0.0",
+      "params": {
+        "labeler": "readability",
+        "confidence": 0.8
+      },
+      "inputs": {
+        "snapshots": {
+          "stage": "collect",
+          "output": "snapshots"
+        },
+        "features": {
+          "stage": "nope",
+          "output": "features"
+        }
+      }
+    },
+    {
+      "id": "dataset",
+      "kind": "dataset",
+      "impl": "ts:dataset.jsonl@1.0.0",
+      "params": {
+        "split": {
+          "seed": "fixture-v1",
+          "group_by": "group_key"
+        },
+        "min_confidence": 0.5
+      },
+      "inputs": {
+        "features": {
+          "stage": "extract",
+          "output": "features"
+        },
+        "labels": {
+          "stage": "label",
+          "output": "labels"
+        },
+        "schema": {
+          "external": "schema"
+        },
+        "snapshots": {
+          "stage": "collect",
+          "output": "snapshots"
+        }
+      }
+    },
+    {
+      "id": "train",
+      "kind": "train",
+      "impl": "rust:train.gp-train@1.0.0",
+      "params": {
+        "seed": "${vars.seed}"
+      },
+      "inputs": {
+        "dataset": {
+          "stage": "dataset",
+          "output": "dataset"
+        },
+        "config": {
+          "external": "train_config"
+        }
+      }
+    },
+    {
+      "id": "eval",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.intrinsic@1.0.0",
+      "params": {
+        "seed": "${vars.seed}",
+        "split": "test",
+        "gates": []
+      },
+      "inputs": {
+        "model": {
+          "stage": "train",
+          "output": "model"
+        },
+        "dataset": {
+          "stage": "dataset",
+          "output": "dataset"
+        }
+      },
+      "gate": true
+    },
+    {
+      "id": "package",
+      "kind": "package",
+      "impl": "ts:package.bundle@1.0.0",
+      "params": {},
+      "inputs": {
+        "model": {
+          "stage": "train",
+          "output": "model"
+        }
+      }
+    }
+  ],
+  "layout": {
+    "collect": {
+      "x": 0,
+      "y": 0
+    },
+    "extract": {
+      "x": 200,
+      "y": 0
+    }
+  }
+}

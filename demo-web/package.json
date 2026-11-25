@@ -1,5 +1,5 @@
 {
-  "name": "gran-prix-demo-web",
+  "name": "demo-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
+    "@gran-prix/wasm": "workspace:*",
     "@tailwindcss/postcss": "^4.1.18",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

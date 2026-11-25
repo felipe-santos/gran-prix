@@ -1,0 +1,21 @@
+{
+  "page": "docs-1.html",
+  "category": "docs",
+  "rules": [
+    { "selector": "article.doc > h1", "label": "main" },
+    { "selector": "article.doc > .lead", "label": "main" },
+    { "selector": "article.doc > h2", "label": "main" },
+    { "selector": "article.doc > p", "label": "main" },
+    { "selector": "article.doc > table", "label": "main" },
+    { "selector": "article.doc > pre", "label": "main" },
+    { "selector": "article.doc > ul", "label": "main" },
+    { "selector": ".breadcrumbs", "label": "support" },
+    { "selector": ".toc-right", "label": "support" },
+    { "selector": ".feedback", "label": "noise" },
+    { "selector": ".pager", "label": "noise" },
+    { "selector": ".topbar", "label": "noise" },
+    { "selector": ".side", "label": "noise" },
+    { "selector": "#version-banner", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" }
+  ]
+}

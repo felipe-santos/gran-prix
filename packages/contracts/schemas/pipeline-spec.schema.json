@@ -1,0 +1,190 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:pipeline-spec",
+  "x-gran-prix": {
+    "contract": "pipeline-spec",
+    "format": "gran-prix.pipeline-spec",
+    "version": "1.1.0"
+  },
+  "$defs": {
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "pipeline-spec",
+  "description": "Pipeline instance: stages, typed refs between them, external inputs, variables.",
+  "type": "object",
+  "required": ["format", "format_version", "name", "stages"],
+  "properties": {
+    "format": { "const": "gran-prix.pipeline-spec", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "name": { "minLength": 1, "type": "string" },
+    "description": { "type": "string" },
+    "vars": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "boolean" }
+          ]
+        }
+      }
+    },
+    "externals": {
+      "description": "Input files / ids supplied from outside the pipeline.",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "anyOf": [
+                { "const": "UrlList", "type": "string" },
+                { "const": "SnapshotSet", "type": "string" },
+                { "const": "FeatureSchema", "type": "string" },
+                { "const": "NodeFeaturesSet", "type": "string" },
+                { "const": "NodeLabelsSet", "type": "string" },
+                { "const": "Dataset", "type": "string" },
+                { "const": "NetworkDef", "type": "string" },
+                { "const": "TrainConfig", "type": "string" },
+                { "const": "ModelPackage", "type": "string" },
+                { "const": "EvalReport", "type": "string" },
+                { "const": "Bundle", "type": "string" },
+                { "const": "ContentTree", "type": "string" },
+                { "const": "LabelAgreement", "type": "string" },
+                { "const": "QaTaskSet", "type": "string" }
+              ]
+            },
+            "path": { "type": "string" },
+            "id": { "$ref": "#/$defs/Sha256" }
+          }
+        }
+      }
+    },
+    "stages": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "impl", "params", "inputs"],
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Unique in the spec.",
+            "type": "string"
+          },
+          "kind": {
+            "anyOf": [
+              { "const": "collect", "type": "string" },
+              { "const": "extract", "type": "string" },
+              { "const": "label", "type": "string" },
+              { "const": "dataset", "type": "string" },
+              { "const": "train", "type": "string" },
+              { "const": "evaluate", "type": "string" },
+              { "const": "package", "type": "string" },
+              { "const": "infer", "type": "string" },
+              { "const": "demo", "type": "string" }
+            ]
+          },
+          "impl": {
+            "minLength": 1,
+            "description": "Exact impl version; part of the cache key.",
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {}
+            }
+          },
+          "inputs": {
+            "description": "port name -> origin(s).",
+            "type": "object",
+            "patternProperties": {
+              "^(.*)$": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": ["stage", "output"],
+                        "properties": {
+                          "stage": { "minLength": 1, "type": "string" },
+                          "output": { "minLength": 1, "type": "string" }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "required": ["external"],
+                        "properties": {
+                          "external": { "minLength": 1, "type": "string" }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "required": ["stage", "output"],
+                          "properties": {
+                            "stage": { "minLength": 1, "type": "string" },
+                            "output": { "minLength": 1, "type": "string" }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": ["external"],
+                          "properties": {
+                            "external": { "minLength": 1, "type": "string" }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "cache": {
+            "anyOf": [
+              { "const": "use", "type": "string" },
+              { "const": "refresh", "type": "string" },
+              { "const": "off", "type": "string" }
+            ]
+          },
+          "gate": {
+            "description": "true: a failed stage or failed gate aborts the run.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "layout": {
+      "description": "Editor positions only. Excluded from the spec id.",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "type": "object",
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" }
+          }
+        }
+      }
+    }
+  }
+}

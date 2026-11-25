@@ -1,0 +1,38 @@
+[package]
+name = "gp-train"
+version = "0.1.0"
+edition = "2021"
+description = "Offline trainer of Gran-Prix: dataset directory + TrainConfig -> ModelPackage directory (ADR-003, ADR-007)."
+license = "MIT"
+publish = false
+
+[lib]
+name = "gp_train"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gp-train"
+path = "src/main.rs"
+
+[dependencies]
+# Default features of the core are empty (no rayon, no cuda): single-threaded and deterministic.
+gran-prix = { path = "../..", default-features = false }
+rand = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+# float_roundtrip: without it serde_json may parse a printed double one ulp off, which would
+# break digests (model_id hashes the parsed numbers of model.json) on read-back.
+# float_roundtrip: without it serde_json may parse a printed double one ulp off, which breaks
+# the digests (model_id hashes the numbers parsed back from model.json). Found with a release
+# build of a 40-feature model; dev-dependencies (jsonschema) enable it for `cargo test`, which
+# is why it is declared here explicitly.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
+sha2 = "0.10"
+thiserror = "1.0"
+anyhow = "1.0"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+# Validates the produced model.json / golden.json against the committed JSON Schemas of
+# packages/contracts (the source of truth). No network features: schemas are read from disk.
+jsonschema = { version = "0.54", default-features = false }
+tempfile = "3"

@@ -1,0 +1,19 @@
+# JS workspace (migration step M4). A glob that matches no directory is ignored by pnpm,
+# so `tools/*` can be listed before any tool exists.
+packages:
+  - "packages/*"
+  - "demo-web"
+  - "tools/*"
+  - "experiments/spikes/*"
+
+# pnpm 11 does not run dependency install scripts unless allowed here (the legacy
+# `pnpm.onlyBuiltDependencies` field of package.json is ignored), and an unreviewed
+# script makes `pnpm install` fail with ERR_PNPM_IGNORED_BUILDS. Narrow allowlist;
+# these are the only two packages in the tree with an install script:
+#  - esbuild (Vite, Vitest): postinstall validates the platform binary and, where
+#    possible, swaps it in for the JS shim (startup optimization and fallback path).
+#  - @swc/core (vite-plugin-top-level-await): postinstall is only a sanity check, the
+#    native binary comes from platform optionalDependencies, so it stays off.
+allowBuilds:
+  esbuild: true
+  "@swc/core": false

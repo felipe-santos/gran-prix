@@ -1,0 +1,39 @@
+{
+  "name": "@gran-prix/model",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ModelPackage v1 loader (ADR-003): nine fail-loud checks, then a typed handle that predicts through infer-ts or the WASM Trainer.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@gran-prix/contracts": "workspace:*",
+    "@gran-prix/infer-ts": "workspace:*",
+    "@gran-prix/wasm": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}

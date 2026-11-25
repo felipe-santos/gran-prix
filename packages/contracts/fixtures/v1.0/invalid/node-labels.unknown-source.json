@@ -1,0 +1,51 @@
+{
+  "format": "gran-prix.node-labels",
+  "format_version": "1.0.0",
+  "labels_id": "sha256:03be1f3836377de481ca13703d09eb67428bc6a44454c87a6fe847d51a28eb1e",
+  "snapshot_id": "sha256:7bea1d7cb7d85e9f430c9fe2fa73c2e97acdc9e409c4957b3b3728fa61a149dd",
+  "label_space": {
+    "kind": "multiclass",
+    "classes": [
+      "main",
+      "support",
+      "noise"
+    ]
+  },
+  "labeler": {
+    "id": "merge@1.0.0",
+    "kind": "merge",
+    "version": "1.0.0",
+    "params_sha256": "sha256:481dddebef41001e4314d67fcc73ab49bab4c40b1f5d4c948f2f37b967af1fec",
+    "inputs": [
+      "sha256:5623d3daf2711b7c9b47936ee2daf025b987d04e8a87b4958febabb49036f554",
+      "sha256:10c4a7f85c2aa65d30ad7b668ac3aa67cff70247a06a6638f52f5ccf54bdc407"
+    ]
+  },
+  "items": [
+    {
+      "unit_id": 2,
+      "y": 0,
+      "confidence": 1,
+      "source": "oracle",
+      "reason": "tag:h1"
+    },
+    {
+      "unit_id": 3,
+      "y": 0,
+      "confidence": 0.85,
+      "source": "llm",
+      "reason": "llm:[KEEP]"
+    },
+    {
+      "unit_id": 4,
+      "y": 1,
+      "confidence": 0.8,
+      "source": "heuristic",
+      "reason": "short-link-in-paragraph"
+    }
+  ],
+  "coverage": {
+    "n_labeled": 3,
+    "n_candidates": 3
+  }
+}

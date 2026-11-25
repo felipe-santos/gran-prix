@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:node-features",
+  "x-gran-prix": {
+    "contract": "node-features",
+    "format": "gran-prix.node-features",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "node-features",
+  "description": "Feature matrix of one snapshot under one feature schema.",
+  "type": "object",
+  "required": ["format", "format_version", "features_id", "snapshot_id", "feature_schema_id", "extractor", "n_nodes_total", "prefiltered", "sanitized", "unit_ids", "x"],
+  "properties": {
+    "format": { "const": "gran-prix.node-features", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "features_id": { "$ref": "#/$defs/Sha256" },
+    "snapshot_id": { "$ref": "#/$defs/Sha256" },
+    "feature_schema_id": { "$ref": "#/$defs/Sha256" },
+    "extractor": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "minLength": 1, "type": "string" },
+        "version": { "$ref": "#/$defs/SemVer" }
+      }
+    },
+    "n_nodes_total": { "minimum": 0, "type": "integer" },
+    "prefiltered": {
+      "description": "Count of nodes dropped per prefilter rule id.",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": { "minimum": 0, "type": "integer" }
+      }
+    },
+    "sanitized": {
+      "type": "object",
+      "required": ["nan_replaced", "clipped"],
+      "properties": {
+        "nan_replaced": { "minimum": 0, "type": "integer" },
+        "clipped": { "minimum": 0, "type": "integer" }
+      }
+    },
+    "unit_ids": {
+      "description": "Snapshot node idx per row, strictly increasing.",
+      "type": "array",
+      "items": { "minimum": 0, "type": "integer" }
+    },
+    "x": {
+      "description": "x[r].length === schema.dim; finite float32 values.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": { "type": "number" }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "names": { "model": "legacy-model (sidecar)", "dataset": "legacy-dataset (sidecar)" },
+  "metric_ci": {
+    "model": {
+      "overall": { "precision": [0.55, 0.95], "recall": [0.6, 0.99], "f1": [0.6, 0.96] },
+      "article": { "f1": [0.7, 1] },
+      "docs": { "f1": [0.3, 0.95] }
+    },
+    "baselines": { "readability": { "overall": { "f1": [0.45, 0.85] } } }
+  },
+  "pr_curve": {
+    "points": [
+      { "threshold": 0.9, "precision": 1, "recall": 0.4 },
+      { "threshold": 0.7, "precision": 0.9, "recall": 0.7 },
+      { "threshold": 0.5, "precision": 0.8, "recall": 0.8889 },
+      { "threshold": 0.3, "precision": 0.75, "recall": 0.95 },
+      { "threshold": 0.1, "precision": 0.6, "recall": 0.99 }
+    ]
+  },
+  "token_reduction": {
+    "tokenizer": "cl100k_base",
+    "d1": { "full_tokens": 520000, "kept_tokens": 9100, "median_ratio": 0.02, "iqr_ratio": [0.012, 0.03] },
+    "d2": { "full_tokens": 52000, "kept_tokens": 9100, "median_ratio": 0.4, "iqr_ratio": [0.3, 0.5] }
+  },
+  "gate_details": {
+    "f1_vs_readability": { "name": "G1 F1 gain over readability (sidecar)", "threshold": ">= 0 F1 difference", "ci95": [0.082, 0.282] }
+  },
+  "notes": [{ "kind": "threat", "text": "Sidecar note: the baselines were tuned with the same budget as the model." }]
+}

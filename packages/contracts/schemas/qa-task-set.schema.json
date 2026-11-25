@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:qa-task-set",
+  "x-gran-prix": {
+    "contract": "qa-task-set",
+    "format": "gran-prix.qa-task-set",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "Iso8601": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "RFC 3339 / ISO 8601 date-time. Provenance only.",
+      "type": "string"
+    },
+    "Provenance": {
+      "description": "Where an artifact came from. Outside every content id.",
+      "type": "object",
+      "required": ["produced_by", "inputs", "pipeline_spec_id", "tool_versions", "created_at", "duration_ms"],
+      "properties": {
+        "produced_by": {
+          "type": "object",
+          "required": ["run_id", "stage_id", "kind", "impl", "params_sha256", "cache_key"],
+          "properties": {
+            "run_id": { "minLength": 1, "type": "string" },
+            "stage_id": { "minLength": 1, "type": "string" },
+            "kind": { "minLength": 1, "type": "string" },
+            "impl": { "minLength": 1, "type": "string" },
+            "params_sha256": { "$ref": "#/$defs/Sha256" },
+            "cache_key": { "$ref": "#/$defs/Sha256" }
+          }
+        },
+        "inputs": {
+          "description": "Edges of the lineage DAG.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["port", "artifact_id"],
+            "properties": {
+              "port": { "type": "string" },
+              "artifact_id": { "$ref": "#/$defs/Sha256" }
+            }
+          }
+        },
+        "pipeline_spec_id": { "$ref": "#/$defs/Sha256" },
+        "tool_versions": {
+          "type": "object",
+          "required": ["gp_cli", "node"],
+          "properties": {
+            "gp_cli": { "type": "string" },
+            "git_commit": { "type": "string" },
+            "git_dirty": { "type": "boolean" },
+            "node": { "type": "string" },
+            "wasm_sha256": { "$ref": "#/$defs/Sha256" },
+            "tool_sha256": { "$ref": "#/$defs/Sha256" },
+            "extractor": {
+              "type": "object",
+              "required": ["name", "version", "bundle_sha256"],
+              "properties": {
+                "name": { "type": "string" },
+                "version": { "$ref": "#/$defs/SemVer" },
+                "bundle_sha256": { "$ref": "#/$defs/Sha256" }
+              }
+            }
+          }
+        },
+        "created_at": { "$ref": "#/$defs/Iso8601" },
+        "host": { "type": "string" },
+        "duration_ms": { "minimum": 0, "type": "integer" },
+        "placeholder": {
+          "description": "v1.1: true = this embedded provenance is a deterministic stand-in (e.g. run_id 'deterministic', zeroed pipeline_spec_id) written by a stage that cannot know its run; the authoritative provenance is the runner receipt of the artifact id. Provenance is outside every content id, so the swap never changes an id.",
+          "type": "boolean"
+        }
+      }
+    },
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "qa-task-set",
+  "description": "Question set of the downstream QA study: question, short answer and variants, evidence (units + literal quote, never noise), kind, validation, rejection rate.",
+  "type": "object",
+  "required": ["format", "format_version", "task_set_id", "generator", "pages", "tasks", "review", "provenance"],
+  "properties": {
+    "format": { "const": "gran-prix.qa-task-set", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "task_set_id": { "$ref": "#/$defs/Sha256" },
+    "dataset_id": { "$ref": "#/$defs/Sha256" },
+    "generator": {
+      "type": "object",
+      "required": ["model", "prompt_sha256", "source"],
+      "properties": {
+        "model": { "minLength": 1, "type": "string" },
+        "prompt_sha256": { "$ref": "#/$defs/Sha256" },
+        "source": {
+          "minLength": 1,
+          "description": "What the generator read, e.g. 'D2 full-page markdown'.",
+          "type": "string"
+        },
+        "converter": { "type": "string" }
+      }
+    },
+    "pages": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["group_id", "snapshot_id", "stratum", "split", "prediction"],
+        "properties": {
+          "group_id": { "minLength": 1, "type": "string" },
+          "snapshot_id": { "$ref": "#/$defs/Sha256" },
+          "stratum": { "minLength": 1, "type": "string" },
+          "split": {
+            "anyOf": [
+              { "const": "train", "type": "string" },
+              { "const": "val", "type": "string" },
+              { "const": "test", "type": "string" }
+            ]
+          },
+          "prediction": {
+            "description": "frozen_model = test page scored by the final model; oof = dev page scored out-of-fold (the model never saw the domain).",
+            "anyOf": [
+              { "const": "frozen_model", "type": "string" },
+              { "const": "oof", "type": "string" }
+            ]
+          }
+        }
+      }
+    },
+    "tasks": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "group_id", "stratum", "kind", "question", "answer", "answer_variants", "evidence", "validation"],
+        "properties": {
+          "id": { "minLength": 1, "type": "string" },
+          "group_id": {
+            "minLength": 1,
+            "description": "A pages[].group_id.",
+            "type": "string"
+          },
+          "stratum": { "minLength": 1, "type": "string" },
+          "kind": {
+            "description": "main = about the main content; category = specific to the page category (price, parameter, ...); support = answerable from support content (date, author, breadcrumb).",
+            "anyOf": [
+              { "const": "main", "type": "string" },
+              { "const": "category", "type": "string" },
+              { "const": "support", "type": "string" }
+            ]
+          },
+          "question": { "minLength": 1, "type": "string" },
+          "answer": {
+            "minLength": 1,
+            "description": "Short answer, at most 20 words.",
+            "type": "string"
+          },
+          "answer_variants": {
+            "description": "Other accepted surface forms of the answer.",
+            "type": "array",
+            "items": { "minLength": 1, "type": "string" }
+          },
+          "evidence": {
+            "type": "object",
+            "required": ["unit_ids", "quote", "class"],
+            "properties": {
+              "unit_ids": {
+                "minItems": 1,
+                "description": "Snapshot node idx of the elements holding the evidence, strictly increasing.",
+                "type": "array",
+                "items": { "minimum": 0, "type": "integer" }
+              },
+              "quote": {
+                "minLength": 1,
+                "description": "Literal excerpt of the page text (appears exactly once in the D2 markdown).",
+                "type": "string"
+              },
+              "class": {
+                "description": "Gold class of the evidence. `noise` is forbidden.",
+                "anyOf": [
+                  { "const": "main", "type": "string" },
+                  { "const": "support", "type": "string" }
+                ]
+              }
+            }
+          },
+          "validation": {
+            "type": "object",
+            "required": ["status", "by"],
+            "properties": {
+              "status": { "const": "accepted", "type": "string" },
+              "by": {
+                "anyOf": [
+                  { "const": "human", "type": "string" },
+                  { "const": "auto", "type": "string" }
+                ]
+              },
+              "candidate_rank": { "minimum": 1, "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["n_candidates", "n_accepted", "n_rejected", "rejection_rate", "human_reviewed"],
+      "properties": {
+        "n_candidates": { "minimum": 1, "type": "integer" },
+        "n_accepted": { "minimum": 0, "type": "integer" },
+        "n_rejected": { "minimum": 0, "type": "integer" },
+        "rejection_rate": { "minimum": 0, "maximum": 1, "type": "number" },
+        "human_reviewed": {
+          "description": "true: every accepted task was seen by a human (protocol: 100%).",
+          "type": "boolean"
+        }
+      }
+    },
+    "provenance": { "$ref": "#/$defs/Provenance" }
+  }
+}

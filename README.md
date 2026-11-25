@@ -174,12 +174,12 @@ node scripts/build-wasm.mjs --target both \
   --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 ```
 
-Run the visual demo app:
+Run the visual demo app (JS tooling uses [pnpm](https://pnpm.io); see "Development notes"):
 
 ```bash
-cd demo-web
-npm install
-npm run dev
+pnpm install
+pnpm build:wasm        # once, and again whenever the Rust/WASM API changes
+pnpm --filter demo-web dev
 ```
 
 Then open the local Vite URL, usually `http://localhost:5173`.
@@ -246,27 +246,31 @@ cargo build
 Run the web build:
 
 ```bash
-cd demo-web
-npm run build
+pnpm install
+pnpm build:wasm
+pnpm --filter demo-web build
 ```
 
-No generated WASM is committed. `demo-web` imports `@gran-prix/wasm`, which resolves to `packages/wasm/dist/web`, so build the WASM (see below) before `npm run dev` or `npm run build`, and again whenever the Rust/WASM API changes. CI and the GitHub Pages deploy build it the same way.
+The JavaScript side is a [pnpm](https://pnpm.io) workspace (`pnpm-workspace.yaml`: `packages/*`, `demo-web`, `tools/*`) with a single `pnpm-lock.yaml` at the root. It needs Node.js 22.13 or newer; the pnpm version is pinned by the `packageManager` field of the root `package.json` (use `corepack enable` or install that version). Root scripts: `pnpm build:wasm`, `pnpm build:demo`, `pnpm test:js` (the `test` script of every workspace package that has one) and `pnpm smoke` (the two Node scripts below). Dependency install scripts are not run (`allowBuilds` in `pnpm-workspace.yaml`); esbuild and `@swc/core` get their binaries from platform packages and do not need them.
+
+No generated WASM is committed. `demo-web` depends on the workspace package `@gran-prix/wasm` (`packages/wasm`), whose entry point is `packages/wasm/dist/web`, so build the WASM (see below) before `pnpm --filter demo-web dev` or `build`, and again whenever the Rust/WASM API changes. CI and the GitHub Pages deploy build it the same way.
 
 ### Building WASM
 
-Requires [`wasm-pack`](https://rustwasm.github.io/wasm-pack/) and the `wasm32-unknown-unknown` Rust target.
+Requires [`wasm-pack`](https://rustwasm.github.io/wasm-pack/) and the `wasm32-unknown-unknown` Rust target. `rust-toolchain.toml` pins the exact compiler (`channel = "1.99.1"`, minimal profile, the wasm32 target), so `rustup` selects and installs it for every `cargo` and `wasm-pack` call in the repository. The size budget and the WASM sha256 depend on the rustc version: the pin makes the sha reproducible between local machines and CI. Bump it deliberately (edit `channel`, rebuild, re-run the size check).
 
 ```bash
-node scripts/build-wasm.mjs --target both \
-  --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node   # same as `npm run build` in packages/wasm
+pnpm build:wasm      # = node scripts/build-wasm.mjs --target both \
+                     #     --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 node scripts/check-wasm-size.mjs packages/wasm/dist/web/gran_prix_wasm_bg.wasm   # fails if raw > 480,000 B or gzip > 200,000 B
-node demo-web/scripts/smoke-test.mjs          # runs the bridge from Node (reads packages/wasm/dist/node)
-node demo-web/scripts/seeded-init-check.mjs   # seeded initialization is reproducible
+pnpm smoke           # runs the bridge from Node (reads packages/wasm/dist/node) and checks seeded initialization
 ```
 
 The Node scripts read `packages/wasm/dist/node` by default; set `GRAN_PRIX_WASM_NODE` to use another directory. Without options, `scripts/build-wasm.mjs` still writes to `gran-prix-wasm/pkg` (web) and `gran-prix-wasm/pkg-node` (Node).
 
-The build script applies the size profile (`opt-level=z`, LTO, `codegen-units=1`, `panic=abort`, `wasm-opt -Oz`) through `CARGO_PROFILE_RELEASE_*` environment variables, so it keeps working if the crates move into a Cargo workspace. `scripts/check-wasm-parity.mjs <node-package-A> <node-package-B>` checks that two builds produce bit-identical outputs. The CI workflow (`.github/workflows/ci.yml`) runs the Rust tests, this build with the size check, the Node smoke tests and the demo-web build (which consumes the WASM built by the `wasm` job) on pull requests and on pushes to branches other than `main`.
+The build script applies the size profile (`opt-level=z`, LTO, `codegen-units=1`, `panic=abort`, `wasm-opt -Oz`) through `CARGO_PROFILE_RELEASE_*` environment variables, so it keeps working if the crates move into a Cargo workspace. It also appends `--remap-path-prefix` flags (Cargo registry and git checkouts, the Rust toolchain sysroot and the repository root) to any `RUSTFLAGS` you have set, so panic locations in the `.wasm` do not embed your home directory or checkout path: the same sources and toolchain give a bit-identical binary regardless of the checkout path or `CARGO_HOME`. `scripts/check-wasm-parity.mjs <node-package-A> <node-package-B>` checks that two builds produce bit-identical outputs. Each package directory also gets a `BUILD_INFO.json` (a hash of the Rust sources, the rustc version and the sha256 of the `.wasm`; no timestamps). `tools/train/scripts/cross-runtime-check.mjs --preflight` uses it, and the Trainer API it needs, to detect a `packages/wasm/dist` built before an API change: it exits 3 with a message and the rebuild command, the Rust test `golden_reproduces_in_wasm_and_infer_ts` then skips with that message (or fails when `GP_TRAIN_REQUIRE_NODE=1`).
+
+The CI workflow (`.github/workflows/ci.yml`) runs on pull requests and on pushes to branches other than `main`: the Rust tests, this build with the size check, the Node smoke tests, the demo-web build (which consumes the WASM built by the `wasm` job) and the `js-tests` job. `js-tests` downloads the WASM artifacts, builds `gp-train` (release), installs the Chromium that `playwright-core` pins, builds the packages, runs `pnpm test:js` and the cross-runtime check with `GP_TRAIN_REQUIRE_NODE=1`. To run the same locally: build the WASM and `cargo build --release -p gp-train`, install a Chromium (`pnpm --filter @gran-prix/features exec playwright-core install chromium`, or point `GP_CHROMIUM` at one), `pnpm -r --filter "./packages/*" --filter "./tools/*" --filter "!@gran-prix/wasm" build`, then `pnpm test:js`.
 
 ---
 

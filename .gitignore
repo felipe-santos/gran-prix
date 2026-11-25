@@ -21,9 +21,9 @@
 /PROMPT
 /origin
 
-model.json
+/model.json
 
-demo-web/node_modules
+node_modules/
 demo-web/dist
 
 
@@ -37,3 +37,6 @@ gran-prix-wasm/pkg-node/
 # Agent git worktrees (created by Claude Code)
 .claude/worktrees/
 gran-prix-wasm/pkg/
+
+# Local data (real page text lives here, never committed; D12)
+data/

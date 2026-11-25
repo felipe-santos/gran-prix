@@ -1,0 +1,41 @@
+{
+  "format": "gran-prix.stage-kind-spec",
+  "format_version": "1.0.0",
+  "kind": "label",
+  "impl": "ts:label.heuristic@1.0.0",
+  "inputs": [
+    {
+      "name": "snapshots",
+      "type": "SnapshotSet"
+    },
+    {
+      "name": "features",
+      "type": "NodeFeaturesSet"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "labels",
+      "type": "NodeLabelsSet"
+    }
+  ],
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "labeler": {
+        "enum": [
+          "readability"
+        ]
+      },
+      "confidence": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "additionalProperties": false
+  },
+  "runtime": "node",
+  "determinism": "pure",
+  "map_over": "group"
+}

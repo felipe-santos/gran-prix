@@ -1,0 +1,54 @@
+{
+  "format": "gran-prix.train-config",
+  "format_version": "1.0.0",
+  "seed": 42,
+  "network": {
+    "kind": "mlp",
+    "hidden": [
+      16,
+      8
+    ],
+    "activation": "relu",
+    "input_dim": "auto"
+  },
+  "loss": "bce_logits",
+  "optimizer": {
+    "kind": "adam",
+    "lr": 0.01
+  },
+  "lr_schedule": {
+    "kind": "cosine",
+    "min_lr": 0.0005
+  },
+  "epochs": 60,
+  "batch_size": 64,
+  "data": {
+    "min_confidence": 0.5,
+    "allowed_sources": [
+      "human",
+      "readability",
+      "rule",
+      "heuristic"
+    ],
+    "class_balance": {
+      "strategy": "pos_weight",
+      "pos_weight": 1.5
+    }
+  },
+  "normalization": {
+    "kind": "zscore",
+    "fit_on": "train"
+  },
+  "early_stopping": {
+    "metric": "val_loss",
+    "patience": 8,
+    "min_delta": 0.0001
+  },
+  "threshold": {
+    "strategy": "max_f1_on_val"
+  },
+  "runtime": {
+    "engine": "gp-train"
+  },
+  "train_config_id": "sha256:93b06d76afcd18c64ad0a35864e17f6274079ed6045a187bf88a5e6feeb8fb8d"
+}

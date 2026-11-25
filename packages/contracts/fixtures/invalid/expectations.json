@@ -1,0 +1,737 @@
+{
+  "page-snapshot.bad-idx.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "nodes[1].idx",
+    "message": "position"
+  },
+  "page-snapshot.self-parent.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "nodes[3].parent",
+    "message": "pre-order"
+  },
+  "page-snapshot.missing-html.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "html",
+    "message": "required"
+  },
+  "page-snapshot.unknown-major.json": {
+    "contract": "page-snapshot",
+    "code": "version",
+    "path": "format_version",
+    "message": "MAJOR"
+  },
+  "page-snapshot.stale-id.json": {
+    "contract": "page-snapshot",
+    "code": "id-mismatch",
+    "path": "snapshot_id"
+  },
+  "feature-schema.duplicate-name.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[2].name",
+    "message": "duplicate"
+  },
+  "feature-schema.index-out-of-order.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[1].index"
+  },
+  "feature-schema.bad-name-pattern.json": {
+    "contract": "feature-schema",
+    "code": "schema",
+    "path": "features[1].name",
+    "message": "pattern"
+  },
+  "feature-schema.stale-id.json": {
+    "contract": "feature-schema",
+    "code": "id-mismatch",
+    "path": "schema_id"
+  },
+  "feature-schema.default-out-of-range.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[3].default",
+    "message": "range"
+  },
+  "feature-schema.wrong-format.json": {
+    "contract": "feature-schema",
+    "code": "version",
+    "path": "format"
+  },
+  "node-features.x-not-float32.json": {
+    "contract": "node-features",
+    "code": "invariant",
+    "path": "x[0][1]",
+    "message": "float32"
+  },
+  "node-features.unit-ids-not-increasing.json": {
+    "contract": "node-features",
+    "code": "invariant",
+    "path": "unit_ids[1]",
+    "message": "increasing"
+  },
+  "node-features.ragged-row.json": {
+    "contract": "node-features",
+    "code": "invariant",
+    "path": "x[1]",
+    "message": "dim"
+  },
+  "node-labels.y-out-of-space.json": {
+    "contract": "node-labels",
+    "code": "invariant",
+    "path": "items[1].y",
+    "message": "outside label space"
+  },
+  "node-labels.confidence-over-one.json": {
+    "contract": "node-labels",
+    "code": "schema",
+    "path": "items[1].confidence"
+  },
+  "node-labels.unknown-source.json": {
+    "contract": "node-labels",
+    "code": "schema",
+    "path": "items[0].source"
+  },
+  "dataset-manifest.leakage.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "groups[2].split",
+    "message": "LEAKAGE"
+  },
+  "dataset-manifest.ranges-gap.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "split.ranges.val",
+    "message": "gap or overlap"
+  },
+  "dataset-manifest.tampered-bucket.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "groups[0].bucket",
+    "message": "recomputed"
+  },
+  "dataset-manifest.rows-mismatch.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "files.train.rows"
+  },
+  "dataset-manifest.unknown-group-by.json": {
+    "contract": "dataset-manifest",
+    "code": "schema",
+    "path": "split.group_by"
+  },
+  "dataset-row.negative-y.json": {
+    "contract": "dataset-row",
+    "code": "schema",
+    "path": "y"
+  },
+  "dataset-row.x-not-float32.json": {
+    "contract": "dataset-row",
+    "code": "invariant",
+    "path": "x[0]",
+    "message": "float32"
+  },
+  "network-def.unknown-field.json": {
+    "contract": "network-def",
+    "code": "schema",
+    "path": "layers[0]"
+  },
+  "network-def.zero-features.json": {
+    "contract": "network-def",
+    "code": "schema",
+    "path": "layers[0].in_features"
+  },
+  "train-config.batchnorm-on-wasm.json": {
+    "contract": "train-config",
+    "code": "lint",
+    "path": "network.def.layers[1]",
+    "message": "BatchNorm"
+  },
+  "train-config.missing-seed.json": {
+    "contract": "train-config",
+    "code": "schema",
+    "path": "seed",
+    "message": "required"
+  },
+  "train-config.loss-mismatch.json": {
+    "contract": "train-config",
+    "code": "invariant",
+    "path": "loss",
+    "message": "more than one"
+  },
+  "train-config.pos-weight-on-wasm.json": {
+    "contract": "train-config",
+    "code": "invariant",
+    "path": "data.class_balance.strategy",
+    "message": "gp-train"
+  },
+  "model-package.thresholds-inverted.json": {
+    "contract": "model-package",
+    "code": "invariant",
+    "path": "thresholds.escalate",
+    "message": "<= accept"
+  },
+  "model-package.input-dim-mismatch.json": {
+    "contract": "model-package",
+    "code": "invariant",
+    "path": "network.input_dim",
+    "message": "feature_spec.dim"
+  },
+  "model-package.stale-model-id.json": {
+    "contract": "model-package",
+    "code": "id-mismatch",
+    "path": "model_id"
+  },
+  "model-package.weights-count.json": {
+    "contract": "model-package",
+    "code": "invariant",
+    "path": "files.weights.count"
+  },
+  "model-package.zscore-wrong-length.json": {
+    "contract": "model-package",
+    "code": "invariant",
+    "path": "feature_spec.normalization.mean"
+  },
+  "model-package.bad-digest-format.json": {
+    "contract": "model-package",
+    "code": "schema",
+    "path": "digest.weights",
+    "message": "pattern"
+  },
+  "model-package.one-label.json": {
+    "contract": "model-package",
+    "code": "schema",
+    "path": "output_spec.labels"
+  },
+  "golden.ragged-cases.json": {
+    "contract": "golden",
+    "code": "invariant",
+    "path": "cases[1].input"
+  },
+  "golden.bad-weights-sha.json": {
+    "contract": "golden",
+    "code": "schema",
+    "path": "weights_sha256"
+  },
+  "eval-report.counts-dont-add-up.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.overall",
+    "message": "tp+fp+tn+fn"
+  },
+  "eval-report.ci-inverted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.comparison[0].ci95"
+  },
+  "eval-report.mode-without-section.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "downstream"
+  },
+  "eval-report.f1-over-one.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.overall.f1"
+  },
+  "content-tree.heading-level-7.json": {
+    "contract": "content-tree",
+    "code": "schema",
+    "path": "root[0]"
+  },
+  "content-tree.table-row-width.json": {
+    "contract": "content-tree",
+    "code": "invariant",
+    "path": "root[2].children[1].rows[0]",
+    "message": "cells"
+  },
+  "content-tree.sibling-order.json": {
+    "contract": "content-tree",
+    "code": "invariant",
+    "path": "root[1].src",
+    "message": "document order"
+  },
+  "pipeline-spec.cycle.json": {
+    "contract": "pipeline-spec",
+    "code": "invariant",
+    "path": "stages",
+    "message": "cycle"
+  },
+  "pipeline-spec.unknown-stage-ref.json": {
+    "contract": "pipeline-spec",
+    "code": "invariant",
+    "path": "stages[2].inputs.features",
+    "message": "unknown stage"
+  },
+  "pipeline-spec.duplicate-stage-id.json": {
+    "contract": "pipeline-spec",
+    "code": "invariant",
+    "path": "stages[5].id",
+    "message": "duplicate"
+  },
+  "pipeline-spec.undeclared-external.json": {
+    "contract": "pipeline-spec",
+    "code": "invariant",
+    "path": "stages[0].inputs.urls",
+    "message": "externals"
+  },
+  "pipeline-spec.no-stages.json": {
+    "contract": "pipeline-spec",
+    "code": "schema",
+    "path": "stages"
+  },
+  "stage-kind-spec.unknown-kind.json": {
+    "contract": "stage-kind-spec",
+    "code": "schema",
+    "path": "kind"
+  },
+  "stage-kind-spec.unknown-port-type.json": {
+    "contract": "stage-kind-spec",
+    "code": "schema",
+    "path": "inputs[0].type"
+  },
+  "page-snapshot.text-unit-wrong-owner.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[1].id",
+    "message": "does not name its owner"
+  },
+  "page-snapshot.text-unit-duplicate.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[1].id"
+  },
+  "page-snapshot.text-unit-bad-id.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "text_units[0].id",
+    "message": "pattern"
+  },
+  "page-snapshot.text-unit-blank.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[2].t",
+    "message": "NON-BLANK"
+  },
+  "page-snapshot.text-unit-owner-out-of-range.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[3].owner"
+  },
+  "page-snapshot.text-unit-child-order.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[2].id",
+    "message": "document order"
+  },
+  "page-snapshot.own-text-over-cap.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "nodes[2].own_text",
+    "message": "own_text_cap"
+  },
+  "page-snapshot.unknown-id-scheme.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "probe.id_scheme"
+  },
+  "page-snapshot.settle-unknown-reason.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "capture.settle.reason"
+  },
+  "page-snapshot.settle-without-shadow-roots.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "capture.settle.shadow_roots",
+    "message": "required"
+  },
+  "page-snapshot.unknown-capture-flag.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "capture.flags[0]"
+  },
+  "page-snapshot.content-encoding-not-a-string.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "html.content_encoding"
+  },
+  "page-snapshot.unknown-network-outcome.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "capture.network"
+  },
+  "page-snapshot.disclosure-not-boolean.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "nodes[7].flags.disclosure"
+  },
+  "page-snapshot.jsonld-types-not-strings.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "page.jsonld_types[0]"
+  },
+  "feature-schema.context-unknown-source.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[3].context.source",
+    "message": "not a feature"
+  },
+  "feature-schema.context-own-source.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[3].context.source",
+    "message": "own source"
+  },
+  "feature-schema.context-source-is-context.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[1].context.source",
+    "message": "context feature"
+  },
+  "feature-schema.context-bad-rel.json": {
+    "contract": "feature-schema",
+    "code": "schema",
+    "path": "features[3].context.rel"
+  },
+  "feature-schema.log1p-scale-zero.json": {
+    "contract": "feature-schema",
+    "code": "schema",
+    "path": "features[0].transform.scale"
+  },
+  "dataset-manifest.tags-unsorted.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "groups[1].tags[1]",
+    "message": "sorted"
+  },
+  "dataset-manifest.tag-bad-pattern.json": {
+    "contract": "dataset-manifest",
+    "code": "schema",
+    "path": "groups[0].tags[0]",
+    "message": "pattern"
+  },
+  "dataset-manifest.by-tag-count-mismatch.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "stats.by_tag.lang:en.groups"
+  },
+  "dataset-manifest.by-tag-unknown-tag.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "stats.by_tag.logged_out",
+    "message": "no group carries"
+  },
+  "dataset-manifest.excluded-page-without-flags.json": {
+    "contract": "dataset-manifest",
+    "code": "schema",
+    "path": "excluded_pages[0].flags"
+  },
+  "dataset-manifest.unknown-row-weight.json": {
+    "contract": "dataset-manifest",
+    "code": "schema",
+    "path": "row_weight"
+  },
+  "dataset-row.negative-weight.json": {
+    "contract": "dataset-row",
+    "code": "schema",
+    "path": "w"
+  },
+  "eval-report.gate-passed-contradicts-value.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[2].passed",
+    "message": "<="
+  },
+  "eval-report.gate-ci-bound-is-not-value.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[0].value",
+    "message": "CI bound"
+  },
+  "eval-report.gate-ci-lower-without-ci.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[0].ci95",
+    "message": "requires ci95"
+  },
+  "eval-report.gate-comparator-without-threshold.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[1].threshold",
+    "message": "together"
+  },
+  "eval-report.gate-unknown-comparator.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "gates[1].comparator"
+  },
+  "eval-report.gate-value-is-not-observed.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[1].value",
+    "message": "observed"
+  },
+  "eval-report.comparison-unknown-metric.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.comparison[1].metric"
+  },
+  "eval-report.comparison-unknown-aggregate.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.comparison[2].stratum",
+    "message": "aggregates"
+  },
+  "eval-report.pr-curve-unsorted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.pr_curve.points[1].threshold",
+    "message": "ascending"
+  },
+  "eval-report.pr-operating-threshold-differs.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.pr_curve.operating_threshold"
+  },
+  "eval-report.metric-ci-inverted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.metric_ci.model.overall.f1"
+  },
+  "eval-report.metric-ci-unknown-stratum.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.metric_ci.model.forum"
+  },
+  "eval-report.token-iqr-inverted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.token_reduction.d2.iqr_ratio"
+  },
+  "eval-report.aggregate-unknown-stratum.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.aggregates[0].strata[0]"
+  },
+  "eval-report.by-tag-counts-dont-add-up.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.by_tag.lang:en",
+    "message": "tp+fp+tn+fn"
+  },
+  "eval-report.bootstrap-unknown-cluster.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.bootstrap.cluster_by"
+  },
+  "eval-report.bootstrap-without-resamples.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.bootstrap.resamples",
+    "message": "required"
+  },
+  "eval-report.system-unknown-kind.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "system.kind"
+  },
+  "eval-report.unknown-weighting.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.weighting.unit"
+  },
+  "eval-report.runtime-without-p95.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.runtime.p95_ms",
+    "message": "required"
+  },
+  "eval-report.aggregate-micro-counts.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.aggregates[0].micro",
+    "message": "tp+fp+tn+fn"
+  },
+  "eval-report.comparison-unknown-aggregation.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.comparison[0].aggregation"
+  },
+  "eval-report.baseline-coverage-over-one.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.baselines.readability.coverage"
+  },
+  "eval-report.note-unknown-kind.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "notes[0].kind"
+  },
+  "eval-report.evidence-retention-over-one.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "downstream.arms.pruned_model.evidence_retention.mean"
+  },
+  "eval-report.evidence-retention-ci-inverted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "downstream.arms.pruned_model.evidence_retention.ci95"
+  },
+  "pipeline-spec.misspelled-demo-kind.json": {
+    "contract": "pipeline-spec",
+    "code": "schema",
+    "path": "stages[0].kind"
+  },
+  "label-agreement.kappa-not-recomputable.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].kappa",
+    "message": "recomputed"
+  },
+  "label-agreement.observed-agreement-wrong.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].observed_agreement"
+  },
+  "label-agreement.n-differs-from-confusion.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].n"
+  },
+  "label-agreement.confusion-not-square.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].confusion",
+    "message": "x 2"
+  },
+  "label-agreement.binary-with-three-classes.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].classes",
+    "message": "exactly 2"
+  },
+  "label-agreement.self-pair.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].b",
+    "message": "itself"
+  },
+  "label-agreement.unknown-labeler.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].b",
+    "message": "labelers"
+  },
+  "label-agreement.unknown-stratum.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[1].stratum"
+  },
+  "label-agreement.duplicate-pair.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[3]",
+    "message": "duplicate pair"
+  },
+  "label-agreement.population-units-dont-sum.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "population.n_units"
+  },
+  "label-agreement.gate-contradicts-kappa.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "gates[0].passed"
+  },
+  "label-agreement.ci-inverted.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].ci95"
+  },
+  "label-agreement.kappa-over-one.json": {
+    "contract": "label-agreement",
+    "code": "schema",
+    "path": "pairs[0].results[0].kappa"
+  },
+  "label-agreement.single-labeler.json": {
+    "contract": "label-agreement",
+    "code": "schema",
+    "path": "labelers"
+  },
+  "label-agreement.stale-id.json": {
+    "contract": "label-agreement",
+    "code": "id-mismatch",
+    "path": "agreement_id"
+  },
+  "qa-task-set.evidence-in-noise.json": {
+    "contract": "qa-task-set",
+    "code": "schema",
+    "path": "tasks[0].evidence.class"
+  },
+  "qa-task-set.answer-over-20-words.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[0].answer",
+    "message": "20"
+  },
+  "qa-task-set.unknown-page.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[0].group_id"
+  },
+  "qa-task-set.stratum-differs-from-page.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[0].stratum"
+  },
+  "qa-task-set.duplicate-task-id.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[1].id",
+    "message": "duplicate"
+  },
+  "qa-task-set.evidence-units-not-increasing.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[1].evidence.unit_ids[1]"
+  },
+  "qa-task-set.evidence-without-units.json": {
+    "contract": "qa-task-set",
+    "code": "schema",
+    "path": "tasks[0].evidence.unit_ids"
+  },
+  "qa-task-set.review-counts.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "review.n_candidates"
+  },
+  "qa-task-set.rejection-rate-wrong.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "review.rejection_rate"
+  },
+  "qa-task-set.accepted-count-differs-from-tasks.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "review.n_accepted"
+  },
+  "qa-task-set.unknown-task-kind.json": {
+    "contract": "qa-task-set",
+    "code": "schema",
+    "path": "tasks[0].kind"
+  },
+  "qa-task-set.empty-tasks.json": {
+    "contract": "qa-task-set",
+    "code": "schema",
+    "path": "tasks"
+  },
+  "qa-task-set.stale-id.json": {
+    "contract": "qa-task-set",
+    "code": "id-mismatch",
+    "path": "task_set_id"
+  }
+}

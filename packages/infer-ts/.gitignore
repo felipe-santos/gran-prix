@@ -1,0 +1,6 @@
+node_modules
+dist
+# modules emitted by the tests (generateInferenceModule output)
+.generated
+# the workspace lockfile lives at the repository root
+pnpm-lock.yaml

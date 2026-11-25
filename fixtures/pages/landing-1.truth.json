@@ -1,0 +1,23 @@
+{
+  "page": "landing-1.html",
+  "category": "landing",
+  "note": "Landing pages have no single article; the value proposition (hero + features) is main, pricing and testimonials are support.",
+  "rules": [
+    { "selector": ".hero-title", "label": "main" },
+    { "selector": ".hero-sub", "label": "main" },
+    { "selector": ".feature", "label": "main" },
+    { "selector": "#features > h2", "label": "main" },
+    { "selector": ".eyebrow", "label": "support" },
+    { "selector": "#pricing", "label": "support" },
+    { "selector": "#stories", "label": "support" },
+    { "selector": ".hero .btn", "label": "noise" },
+    { "selector": ".hero .btn-secondary", "label": "noise" },
+    { "selector": ".fine", "label": "noise" },
+    { "selector": ".nav", "label": "noise" },
+    { "selector": ".logo-strip", "label": "noise" },
+    { "selector": ".cta-band", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" },
+    { "selector": ".cookie", "label": "noise" },
+    { "selector": "#beta-popup", "label": "noise" }
+  ]
+}

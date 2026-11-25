@@ -11,7 +11,7 @@ updates:
 
   # Demo web app (npm)
   - package-ecosystem: "npm"
-    directory: "/demo-web"
+    directory: "/"
     schedule:
       interval: "weekly"
     groups:

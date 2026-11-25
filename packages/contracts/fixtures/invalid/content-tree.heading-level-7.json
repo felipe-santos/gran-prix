@@ -1,0 +1,151 @@
+{
+  "format": "gran-prix.content-tree",
+  "format_version": "1.0.0",
+  "source": {
+    "url": "https://a.example/post/1",
+    "snapshot_id": "sha256:296397bcaa836eb9b15b5af8795cd92cd1a4d958dd8ec9f03a2a6d0264c19b64",
+    "model_id": "sha256:0f9d02f522026bc2243030c833f8a8f218b3eb0fbc2a74bf53bff4087d69cec6",
+    "feature_schema_id": "sha256:1ee5428f83b192818529edcc949804efcb116e98db3385d0fb161c73a2db3d26",
+    "threshold": 0.5,
+    "mode": "balanced"
+  },
+  "root": [
+    {
+      "kind": "heading",
+      "level": 7,
+      "src": [
+        2
+      ],
+      "runs": [
+        {
+          "t": "text",
+          "text": "Example heading"
+        }
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "src": [
+        3,
+        4
+      ],
+      "score": 0.93,
+      "runs": [
+        {
+          "t": "text",
+          "text": "Synthetic paragraph text. "
+        },
+        {
+          "t": "link",
+          "href": "/next",
+          "children": [
+            {
+              "t": "text",
+              "text": "next"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "container",
+      "src": [],
+      "children": [
+        {
+          "kind": "list",
+          "ordered": false,
+          "src": [
+            5
+          ],
+          "items": [
+            {
+              "kind": "paragraph",
+              "src": [
+                6
+              ],
+              "runs": [
+                {
+                  "t": "strong",
+                  "children": [
+                    {
+                      "t": "text",
+                      "text": "item"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "table",
+          "src": [
+            7
+          ],
+          "headers": [
+            "a",
+            "b"
+          ],
+          "rows": [
+            [
+              "1",
+              "2"
+            ],
+            [
+              "3",
+              "4"
+            ]
+          ]
+        },
+        {
+          "kind": "code",
+          "src": [
+            8
+          ],
+          "lang": null,
+          "text": "let x = 1;"
+        },
+        {
+          "kind": "quote",
+          "src": [
+            9
+          ],
+          "children": [
+            {
+              "kind": "paragraph",
+              "src": [
+                9
+              ],
+              "runs": [
+                {
+                  "t": "em",
+                  "children": [
+                    {
+                      "t": "text",
+                      "text": "quoted"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "media",
+          "src": [
+            10
+          ],
+          "alt": "diagram",
+          "url": "https://a.example/d.png"
+        }
+      ]
+    }
+  ],
+  "stats": {
+    "nodes_total": 11,
+    "nodes_candidates": 9,
+    "nodes_kept": 7,
+    "chars_in": 420,
+    "chars_out": 120
+  }
+}

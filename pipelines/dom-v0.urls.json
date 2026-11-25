@@ -1,0 +1,14 @@
+[
+  { "url": "fixtures/pages/article-1.html", "stratum": "article" },
+  { "url": "fixtures/pages/article-2.html", "stratum": "article" },
+  { "url": "fixtures/pages/docs-1.html", "stratum": "docs" },
+  { "url": "fixtures/pages/docs-2.html", "stratum": "docs" },
+  { "url": "fixtures/pages/forum-1.html", "stratum": "forum" },
+  { "url": "fixtures/pages/forum-2.html", "stratum": "forum" },
+  { "url": "fixtures/pages/landing-1.html", "stratum": "landing" },
+  { "url": "fixtures/pages/landing-2.html", "stratum": "landing" },
+  { "url": "fixtures/pages/product-1.html", "stratum": "product" },
+  { "url": "fixtures/pages/product-2.html", "stratum": "product" },
+  { "url": "fixtures/pages/spa-1.html", "stratum": "spa" },
+  { "url": "fixtures/pages/spa-2.html", "stratum": "spa" }
+]

@@ -1,0 +1,26 @@
+{
+  "format": "gran-prix.pipeline-spec",
+  "format_version": "1.1.0",
+  "name": "fixture-demo-pipeline",
+  "externals": {
+    "urls": {
+      "type": "UrlList",
+      "path": "data/urls.csv"
+    }
+  },
+  "stages": [
+    {
+      "id": "echo",
+      "kind": "demo",
+      "impl": "ts:demo.echo@1.0.0",
+      "params": {
+        "message": "hello"
+      },
+      "inputs": {
+        "urls": {
+          "external": "urls"
+        }
+      }
+    }
+  ]
+}

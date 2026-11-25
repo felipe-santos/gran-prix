@@ -1,0 +1,15 @@
+{
+  "name": "gran-prix-workspace",
+  "private": true,
+  "description": "pnpm workspace root of gran-prix: convenience scripts only, no runtime code.",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build:wasm": "pnpm --filter @gran-prix/wasm build",
+    "build:demo": "pnpm --filter demo-web build",
+    "test:js": "pnpm -r --if-present test",
+    "smoke": "node demo-web/scripts/smoke-test.mjs && node demo-web/scripts/seeded-init-check.mjs"
+  }
+}

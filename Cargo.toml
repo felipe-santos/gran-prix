@@ -1,5 +1,5 @@
 [workspace]
-members = ["gran-prix-wasm"]
+members = ["gran-prix-wasm", "tools/train"]
 resolver = "2"
 
 [package]

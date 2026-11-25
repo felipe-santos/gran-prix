@@ -1,0 +1,355 @@
+{
+  "format": "gran-prix.page-snapshot",
+  "format_version": "1.1.0",
+  "snapshot_id": "sha256:7b0ae04b6b3bb3dbee6f62ad61d8b1f72c1ebd4727abe1e051d1b9fb6c47d7ce",
+  "page": {
+    "url": "https://a.example/post/1?utm_source=x",
+    "final_url": "https://a.example/post/1",
+    "url_key": "https://a.example/post/1",
+    "group_key": "a.example",
+    "category": "article",
+    "title": "Synthetic page",
+    "lang": "en",
+    "og_type": "article",
+    "jsonld_types": [
+      "Article",
+      "BreadcrumbList"
+    ]
+  },
+  "doc": {
+    "viewport_w": 1366,
+    "viewport_h": 900,
+    "scroll_w": 1366,
+    "scroll_h": 1800
+  },
+  "nodes": [
+    {
+      "attrs": {},
+      "own_text": "",
+      "own_text_len": 0,
+      "text_len": 62,
+      "link_text_len": 4,
+      "child_elems": 1,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1366,
+        "h": 900
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 0,
+      "parent": -1,
+      "depth": 0,
+      "tag": "html"
+    },
+    {
+      "attrs": {},
+      "own_text": "",
+      "own_text_len": 0,
+      "text_len": 62,
+      "link_text_len": 4,
+      "child_elems": 5,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 1366,
+        "h": 900
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 1,
+      "parent": 0,
+      "depth": 1,
+      "tag": "body"
+    },
+    {
+      "attrs": {
+        "id": "title"
+      },
+      "own_text": "Example heading",
+      "own_text_len": 15,
+      "text_len": 15,
+      "link_text_len": 0,
+      "child_elems": 0,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 32,
+        "font_weight": 700
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 800,
+        "h": 40
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 2,
+      "parent": 1,
+      "depth": 2,
+      "tag": "h1"
+    },
+    {
+      "attrs": {},
+      "own_text": "Synthetic paragraph text.",
+      "own_text_len": 25,
+      "text_len": 29,
+      "link_text_len": 4,
+      "child_elems": 1,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 800,
+        "h": 40
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 3,
+      "parent": 1,
+      "depth": 2,
+      "tag": "p"
+    },
+    {
+      "attrs": {
+        "href": "/next",
+        "role": "link"
+      },
+      "own_text": "next",
+      "own_text_len": 4,
+      "text_len": 4,
+      "link_text_len": 4,
+      "child_elems": 0,
+      "style": {
+        "display": "inline",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "w": 800,
+        "h": 40
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 4,
+      "parent": 3,
+      "depth": 3,
+      "tag": "a"
+    },
+    {
+      "attrs": {
+        "type": "search",
+        "name": "q",
+        "role": "searchbox"
+      },
+      "own_text": "",
+      "own_text_len": 0,
+      "text_len": 0,
+      "link_text_len": 0,
+      "child_elems": 0,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": {
+        "x": 10,
+        "y": 600,
+        "w": 300,
+        "h": 32
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 5,
+      "parent": 1,
+      "depth": 2,
+      "tag": "input"
+    },
+    {
+      "attrs": {},
+      "own_text": "",
+      "own_text_len": 0,
+      "text_len": 18,
+      "link_text_len": 0,
+      "child_elems": 1,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": {
+        "x": 10,
+        "y": 640,
+        "w": 600,
+        "h": 24
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 6,
+      "parent": 1,
+      "depth": 2,
+      "tag": "details"
+    },
+    {
+      "attrs": {},
+      "own_text": "Hidden FAQ answer.",
+      "own_text_len": 18,
+      "text_len": 18,
+      "link_text_len": 0,
+      "child_elems": 0,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": null,
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0,
+        "disclosure": true
+      },
+      "idx": 7,
+      "parent": 6,
+      "depth": 3,
+      "tag": "p"
+    },
+    {
+      "attrs": {},
+      "own_text": "",
+      "own_text_len": 0,
+      "text_len": 0,
+      "link_text_len": 0,
+      "child_elems": 0,
+      "style": {
+        "display": "none",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": null,
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 8,
+      "parent": 1,
+      "depth": 2,
+      "tag": "script"
+    }
+  ],
+  "text_units": [
+    {
+      "id": "n2#t0",
+      "owner": 2,
+      "t": "Example heading"
+    },
+    {
+      "id": "n3#t0",
+      "owner": 3,
+      "t": "Synthetic paragraph text. "
+    },
+    {
+      "id": "n4#t0",
+      "owner": 4,
+      "t": "next"
+    },
+    {
+      "id": "n7#t0",
+      "owner": 7,
+      "t": "Hidden FAQ answer."
+    }
+  ],
+  "probe": {
+    "id_scheme": "gp-composed-preorder/1",
+    "version": "0.1.0",
+    "own_text_cap": 1000
+  },
+  "html": {
+    "path": "html/rendered.html.gz",
+    "sha256": "sha256:73aa1b807ce3df23639c32b94a637122f088db8ecc5d004a280df1a911d029f7",
+    "bytes": 2048,
+    "media_type": "text/html",
+    "content_encoding": true
+  },
+  "capture": {
+    "captured_at": "2026-11-25T12:00:00Z",
+    "collector_version": "0.1.0",
+    "browser": {
+      "name": "chromium",
+      "version": "130.0.0.0"
+    },
+    "user_agent": "fixture",
+    "http_status": 200,
+    "wait_strategy": "networkidle+2s",
+    "scrolled_to_bottom": true,
+    "truncated": false,
+    "auth": "none",
+    "settle": {
+      "reason": "quiet",
+      "shadow_roots": 0,
+      "tracked_from_start": true,
+      "late_unstamped": 0
+    },
+    "flags": [
+      "tiny-dom"
+    ],
+    "network": "idle"
+  }
+}

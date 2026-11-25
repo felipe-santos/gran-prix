@@ -1,0 +1,26 @@
+/**
+ * Single registration point for every stage plugin the `gp` CLI knows.
+ *
+ * Each lane adds its stages here: one import line and one spread entry.
+ * Keep the list ordered by lane so parallel merges stay trivial.
+ */
+import type { StagePlugin } from "../stage.js";
+import { COLLECT_STAGES } from "./collect-stages.js";
+import { DEMO_STAGES } from "./demo.js";
+import { EVALUATE_STAGES } from "./evaluate/index.js";
+import { LABELING_STAGES } from "./labeling.js";
+import { packageStage } from "./package.js";
+import { trainStage } from "./train.js";
+
+export const ALL_STAGES: StagePlugin[] = [
+  ...DEMO_STAGES,
+  // L4 (data): collect + extract
+  ...COLLECT_STAGES,
+  // L4b (labels): label.heuristic, label.truth, label.merge + dataset.jsonl
+  ...LABELING_STAGES,
+  // L1 (engine): train (gp-train, rust) and package (deployable bundle)
+  trainStage,
+  packageStage,
+  // L5 (science): evaluate.intrinsic
+  ...EVALUATE_STAGES,
+];

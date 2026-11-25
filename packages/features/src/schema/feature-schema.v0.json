@@ -1,0 +1,1082 @@
+{
+  "schema_id": "sha256:22b5e302ae50bb12c8e2ca4e50f96066791e5c1cb30f1a4c4eb9b265deb179e2",
+  "format": "gran-prix.feature-schema",
+  "format_version": "1.0.0",
+  "name": "dom-node-v0",
+  "version": "0.1.0",
+  "unit": "dom-element",
+  "description": "One row per rendered DOM element (script/style/head-like tags and display:none subtrees are prefiltered). Own and subtree text statistics, structure, tag one-hot, landmarks, geometry, id/class hints and hashing, page type, and the same core text statistics for the parent and the previous / next sibling. Normalization is NOT fitted here; ranges are OOD clip bounds.",
+  "extractor": {
+    "name": "@gran-prix/features",
+    "version": "0.1.0"
+  },
+  "dim": 59,
+  "features": [
+    {
+      "index": 0,
+      "name": "log_own_len",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "log1p(own_text_len) / log1p(5000): characters of the node's direct text.",
+      "transform": {
+        "op": "log1p",
+        "scale": 5000
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 1,
+      "name": "log_text_len",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "log1p(text_len) / log1p(100000): characters of the whole subtree text.",
+      "transform": {
+        "op": "log1p",
+        "scale": 100000
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 2,
+      "name": "own_text_ratio",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "own_text_len / text_len: share of the subtree text that is the node's own.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 3,
+      "name": "link_density",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "link_text_len / text_len: share of the subtree text inside <a> (Kohlschuetter, CETD).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 4,
+      "name": "text_density",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "CETD text density: log1p(text_len / elements in subtree) / log1p(1000).",
+      "transform": {
+        "op": "log1p",
+        "scale": 1000
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 5,
+      "name": "stopword_ratio",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "Stopword-like words / words in the node's own text (cheap multilingual list, jusText style).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 6,
+      "name": "punct_ratio",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "Punctuation characters / characters in the node's own text.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 7,
+      "name": "ends_with_punct",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "1 when the own text ends with sentence punctuation, 0 when not, 0.5 when the probe truncated it.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 8,
+      "name": "text_share",
+      "kind": "scalar",
+      "group": "text",
+      "doc": "text_len / text_len of the root: the node's share of all text on the page.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 9,
+      "name": "depth",
+      "kind": "scalar",
+      "group": "structure",
+      "doc": "Composed-tree depth / 32 (root = 0).",
+      "transform": {
+        "op": "div",
+        "by": 32
+      },
+      "range": [
+        0,
+        2
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 10,
+      "name": "log_sibling_count",
+      "kind": "scalar",
+      "group": "structure",
+      "doc": "log1p(non-prefiltered siblings, self included) / log1p(100).",
+      "transform": {
+        "op": "log1p",
+        "scale": 100
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 11,
+      "name": "sibling_index_rel",
+      "kind": "scalar",
+      "group": "structure",
+      "doc": "Rank among the siblings / (siblings - 1); 0 for an only child.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 12,
+      "name": "sibling_same_tag_ratio",
+      "kind": "scalar",
+      "group": "structure",
+      "doc": "Fraction of the other siblings with the same tag (high for repeated cards / list items).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 13,
+      "name": "log_subtree_size",
+      "kind": "scalar",
+      "group": "structure",
+      "doc": "log1p(elements in the subtree, self included) / log1p(5000).",
+      "transform": {
+        "op": "log1p",
+        "scale": 5000
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 14,
+      "name": "in_link",
+      "kind": "bool",
+      "group": "structure",
+      "doc": "1 when the node is an <a> or inside one.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 15,
+      "name": "doc_pos_rel",
+      "kind": "scalar",
+      "group": "structure",
+      "doc": "Node index / (node count - 1): relative position in document order.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 16,
+      "name": "tag_p",
+      "kind": "onehot",
+      "group": "tag",
+      "doc": "1 for <p>.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "onehot": {
+        "of": "tag",
+        "value": "p"
+      }
+    },
+    {
+      "index": 17,
+      "name": "tag_div",
+      "kind": "onehot",
+      "group": "tag",
+      "doc": "1 for <div>.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "onehot": {
+        "of": "tag",
+        "value": "div"
+      }
+    },
+    {
+      "index": 18,
+      "name": "tag_span",
+      "kind": "onehot",
+      "group": "tag",
+      "doc": "1 for <span>.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "onehot": {
+        "of": "tag",
+        "value": "span"
+      }
+    },
+    {
+      "index": 19,
+      "name": "tag_a",
+      "kind": "onehot",
+      "group": "tag",
+      "doc": "1 for <a>.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "onehot": {
+        "of": "tag",
+        "value": "a"
+      }
+    },
+    {
+      "index": 20,
+      "name": "tag_li",
+      "kind": "onehot",
+      "group": "tag",
+      "doc": "1 for <li>.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "onehot": {
+        "of": "tag",
+        "value": "li"
+      }
+    },
+    {
+      "index": 21,
+      "name": "tag_heading",
+      "kind": "onehot",
+      "group": "tag",
+      "doc": "1 for <h1> to <h6>.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "onehot": {
+        "of": "tag",
+        "value": "heading"
+      }
+    },
+    {
+      "index": 22,
+      "name": "tag_other",
+      "kind": "onehot",
+      "group": "tag",
+      "doc": "1 for every other tag.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "onehot": {
+        "of": "tag",
+        "value": "other"
+      }
+    },
+    {
+      "index": 23,
+      "name": "in_main",
+      "kind": "bool",
+      "group": "landmark",
+      "doc": "1 inside <main> or role=main (self or ancestor).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 24,
+      "name": "in_nav",
+      "kind": "bool",
+      "group": "landmark",
+      "doc": "1 inside <nav> or role=navigation.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 25,
+      "name": "in_header",
+      "kind": "bool",
+      "group": "landmark",
+      "doc": "1 inside <header> or role=banner.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 26,
+      "name": "in_footer",
+      "kind": "bool",
+      "group": "landmark",
+      "doc": "1 inside <footer> or role=contentinfo.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 27,
+      "name": "in_aside",
+      "kind": "bool",
+      "group": "landmark",
+      "doc": "1 inside <aside> or role=complementary.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 28,
+      "name": "visible",
+      "kind": "bool",
+      "group": "geometry",
+      "doc": "1 when the node has a non-empty box on the canvas, visibility:visible and no opacity:0 ancestor-or-self.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 29,
+      "name": "area_frac",
+      "kind": "scalar",
+      "group": "geometry",
+      "doc": "Box area / (scroll_w * scroll_h), clipped to [0, 1]; 0 without a box.",
+      "transform": {
+        "op": "clip",
+        "lo": 0,
+        "hi": 1
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 30,
+      "name": "y_center_rel",
+      "kind": "scalar",
+      "group": "geometry",
+      "doc": "Vertical centre of the box / scroll_h, clipped to [0, 1]; 0 without a box.",
+      "transform": {
+        "op": "clip",
+        "lo": 0,
+        "hi": 1
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 31,
+      "name": "font_size_rel",
+      "kind": "scalar",
+      "group": "geometry",
+      "doc": "font_size / median font size of the visible text nodes of the page, clipped to [0, 4].",
+      "transform": {
+        "op": "clip",
+        "lo": 0,
+        "hi": 4
+      },
+      "range": [
+        0,
+        4
+      ],
+      "default": 1,
+      "since": "0.1.0"
+    },
+    {
+      "index": 32,
+      "name": "font_weight_rel",
+      "kind": "scalar",
+      "group": "geometry",
+      "doc": "font_weight / 900.",
+      "transform": {
+        "op": "div",
+        "by": 900
+      },
+      "range": [
+        0,
+        1.25
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 33,
+      "name": "pos_fixed_sticky",
+      "kind": "bool",
+      "group": "geometry",
+      "doc": "1 when computed position is fixed or sticky (headers, banners, modals).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 34,
+      "name": "hint_nav",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"nav\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 35,
+      "name": "hint_footer",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"footer\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 36,
+      "name": "hint_ad",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"ad\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 37,
+      "name": "hint_comment",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"comment\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 38,
+      "name": "hint_related",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"related\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 39,
+      "name": "hint_cookie",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"cookie\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 40,
+      "name": "hint_sidebar",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"sidebar\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 41,
+      "name": "hint_menu",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"menu\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 42,
+      "name": "hint_share",
+      "kind": "bool",
+      "group": "hint",
+      "doc": "1 when an id/class token of this node or of an ancestor matches the \"share\" hint list (see README).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 43,
+      "name": "idclass_hash_0",
+      "kind": "hash_bucket",
+      "group": "hash",
+      "doc": "1 when some id/class token of this node alone hashes (FNV-1a 32) to bucket 0 of 4.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "hash": {
+        "fn": "fnv1a32",
+        "buckets": 4
+      }
+    },
+    {
+      "index": 44,
+      "name": "idclass_hash_1",
+      "kind": "hash_bucket",
+      "group": "hash",
+      "doc": "1 when some id/class token of this node alone hashes (FNV-1a 32) to bucket 1 of 4.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "hash": {
+        "fn": "fnv1a32",
+        "buckets": 4
+      }
+    },
+    {
+      "index": 45,
+      "name": "idclass_hash_2",
+      "kind": "hash_bucket",
+      "group": "hash",
+      "doc": "1 when some id/class token of this node alone hashes (FNV-1a 32) to bucket 2 of 4.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "hash": {
+        "fn": "fnv1a32",
+        "buckets": 4
+      }
+    },
+    {
+      "index": 46,
+      "name": "idclass_hash_3",
+      "kind": "hash_bucket",
+      "group": "hash",
+      "doc": "1 when some id/class token of this node alone hashes (FNV-1a 32) to bucket 3 of 4.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "hash": {
+        "fn": "fnv1a32",
+        "buckets": 4
+      }
+    },
+    {
+      "index": 47,
+      "name": "page_article",
+      "kind": "bool",
+      "group": "page",
+      "doc": "1 when og:type is article or JSON-LD @type is an Article kind.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 48,
+      "name": "page_product",
+      "kind": "bool",
+      "group": "page",
+      "doc": "1 when og:type is product* or JSON-LD @type is Product / Offer.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 49,
+      "name": "page_discussion",
+      "kind": "bool",
+      "group": "page",
+      "doc": "1 when JSON-LD @type is DiscussionForumPosting / QAPage / Question.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0"
+    },
+    {
+      "index": 50,
+      "name": "parent_log_text_len",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "log_text_len of the parent (0 for the root).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "parent",
+        "source": "log_text_len"
+      }
+    },
+    {
+      "index": 51,
+      "name": "parent_link_density",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "link_density of the parent.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "parent",
+        "source": "link_density"
+      }
+    },
+    {
+      "index": 52,
+      "name": "parent_text_density",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "text_density of the parent.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "parent",
+        "source": "text_density"
+      }
+    },
+    {
+      "index": 53,
+      "name": "prev_log_text_len",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "log_text_len of the previous non-prefiltered sibling (0 when none).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "prev",
+        "source": "log_text_len"
+      }
+    },
+    {
+      "index": 54,
+      "name": "prev_link_density",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "link_density of the previous sibling.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "prev",
+        "source": "link_density"
+      }
+    },
+    {
+      "index": 55,
+      "name": "prev_text_density",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "text_density of the previous sibling.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "prev",
+        "source": "text_density"
+      }
+    },
+    {
+      "index": 56,
+      "name": "next_log_text_len",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "log_text_len of the next non-prefiltered sibling (0 when none).",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "next",
+        "source": "log_text_len"
+      }
+    },
+    {
+      "index": 57,
+      "name": "next_link_density",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "link_density of the next sibling.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "next",
+        "source": "link_density"
+      }
+    },
+    {
+      "index": 58,
+      "name": "next_text_density",
+      "kind": "scalar",
+      "group": "context",
+      "doc": "text_density of the next sibling.",
+      "transform": {
+        "op": "none"
+      },
+      "range": [
+        0,
+        1
+      ],
+      "default": 0,
+      "since": "0.1.0",
+      "context": {
+        "rel": "next",
+        "source": "text_density"
+      }
+    }
+  ],
+  "prefilter": {
+    "rules_version": "1",
+    "rules": [
+      {
+        "id": "skip_tags",
+        "kind": "tag",
+        "tags": [
+          "script",
+          "style",
+          "noscript",
+          "template",
+          "head",
+          "meta",
+          "link",
+          "base",
+          "title"
+        ]
+      },
+      {
+        "id": "display_none",
+        "kind": "style",
+        "display_none": true
+      }
+    ]
+  },
+  "missing_policy": {
+    "nan": "zero",
+    "inf": "clip"
+  }
+}

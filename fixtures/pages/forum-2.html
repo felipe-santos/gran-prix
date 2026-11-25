@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How do I keep a CSV import from duplicating rows? - Quillstack Answers</title>
+<style>
+body{font:14px/1.5 Arial,sans-serif;margin:0}
+.container{max-width:980px;margin:0 auto;display:flex;gap:16px}
+.main-col{flex:1}.right-col{width:260px}
+.votes{width:50px;text-align:center;float:left}
+.accepted{border:2px solid #2e7d32}
+.cookie{position:fixed;bottom:0;left:0;right:0;background:#222;color:#eee;padding:8px}
+.hidden{display:none}
+pre{background:#f0f0f0;padding:8px;overflow:auto}
+</style>
+</head>
+<body>
+<header class="top"><div class="container">
+  <a href="/" class="logo">Quillstack Answers</a>
+  <nav><a href="/questions">Questions</a> <a href="/tags">Tags</a> <a href="/users">Users</a> <a href="/unanswered">Unanswered</a></nav>
+  <button>Ask a question</button>
+</div></header>
+
+<div class="container">
+<div class="main-col">
+  <div class="q-header"><h1 class="q-title">How do I keep a CSV import from duplicating rows?</h1>
+    <p class="q-stats">Asked 3 weeks ago &middot; Active 2 days ago &middot; Viewed 1,204 times</p></div>
+
+  <div class="question post">
+    <div class="votes"><button>Up</button><div>14</div><button>Down</button></div>
+    <div class="post-body">
+      <p>I load a CSV file into a table every night, and some nights the job runs twice. Each run inserts the same rows again, so the table slowly fills with duplicates. The file has no unique column, only a name, a date and an amount.</p>
+      <p>What is the cleanest way to make the import safe to repeat?</p>
+      <div class="post-tags"><a href="#">csv</a> <a href="#">import</a> <a href="#">deduplication</a></div>
+      <div class="post-user">asked by <a href="#">tidyhands</a> <span>rep 340</span></div>
+      <div class="comments"><div class="comment">Do you control the file format, or only the loader? <span>- fieldmouse</span></div></div>
+    </div>
+  </div>
+
+  <h2 class="answers-head">2 Answers</h2>
+
+  <div class="answer post accepted">
+    <div class="votes"><button>Up</button><div>31</div><button>Down</button><div class="check">Accepted</div></div>
+    <div class="post-body">
+      <p>Build a natural key from the three columns and put a unique constraint on it. Then insert with a clause that ignores conflicts, so a second run changes nothing.</p>
+      <pre><code>CREATE UNIQUE INDEX uniq_row ON ledger (name, day, amount);
+INSERT INTO ledger SELECT * FROM staging ON CONFLICT DO NOTHING;</code></pre>
+      <p>If amounts can legitimately repeat on the same day, add a line number from the file as a fourth column.</p>
+      <div class="post-user">answered by <a href="#">keyholder</a> <span>rep 18,230</span></div>
+      <div class="comments"><div class="comment">Worked for me, thanks. <span>- tidyhands</span></div></div>
+    </div>
+  </div>
+
+  <div class="answer post">
+    <div class="votes"><button>Up</button><div>6</div><button>Down</button></div>
+    <div class="post-body">
+      <p>Alternatively, load into a staging table first and delete rows that already exist in the target before the final insert. It is slower but needs no schema change.</p>
+      <div class="post-user">answered by <a href="#">stagehand</a> <span>rep 2,410</span></div>
+    </div>
+  </div>
+
+  <form class="your-answer"><h3>Your answer</h3><textarea></textarea><button>Post your answer</button></form>
+</div>
+
+<aside class="right-col">
+  <div class="widget"><h3>Related</h3><ul><li><a href="#">Upsert patterns for nightly jobs</a></li><li><a href="#">Detect duplicate lines in a file</a></li></ul></div>
+  <div class="widget"><h3>Hot this week</h3><ul><li><a href="#">Why is my cron job silent?</a></li><li><a href="#">Time zones in batch files</a></li></ul></div>
+  <div class="widget ad">Sponsored: Pipelane, managed data jobs.</div>
+</aside>
+</div>
+
+<div class="hidden" id="mobile-menu"><a href="#">Home</a> <a href="#">Questions</a></div>
+<footer class="site-footer"><div class="container"><p>Quillstack Answers. User contributions are shared under an open licence.</p><p><a href="#">Help</a> <a href="#">Legal</a> <a href="#">Contact</a></p></div></footer>
+<div class="cookie">We use cookies on this site. <button>Accept</button></div>
+</body>
+</html>

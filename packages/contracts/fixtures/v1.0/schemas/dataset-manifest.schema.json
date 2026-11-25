@@ -1,0 +1,346 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:dataset-manifest",
+  "x-gran-prix": {
+    "contract": "dataset-manifest",
+    "format": "gran-prix.dataset-manifest",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "dataset-manifest",
+  "description": "Dataset manifest: feature schema binding, label space, hash-bucket split by group_key, file hashes.",
+  "type": "object",
+  "required": ["format", "format_version", "dataset_id", "feature_schema_id", "dim", "label_space", "sources", "filters", "groups", "split", "files", "stats"],
+  "properties": {
+    "format": { "const": "gran-prix.dataset-manifest", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "dataset_id": { "$ref": "#/$defs/Sha256" },
+    "feature_schema_id": { "$ref": "#/$defs/Sha256" },
+    "dim": { "minimum": 1, "type": "integer" },
+    "label_space": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["kind", "classes"],
+          "properties": {
+            "kind": { "const": "binary", "type": "string" },
+            "classes": {
+              "type": "array",
+              "items": [
+                { "const": "drop", "type": "string" },
+                { "const": "keep", "type": "string" }
+              ],
+              "additionalItems": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "classes"],
+          "properties": {
+            "kind": { "const": "multiclass", "type": "string" },
+            "classes": {
+              "minItems": 2,
+              "type": "array",
+              "items": { "minLength": 1, "type": "string" }
+            }
+          }
+        }
+      ]
+    },
+    "label_projection": {
+      "type": "object",
+      "required": ["from", "keep_classes"],
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": ["kind", "classes"],
+              "properties": {
+                "kind": { "const": "binary", "type": "string" },
+                "classes": {
+                  "type": "array",
+                  "items": [
+                    { "const": "drop", "type": "string" },
+                    { "const": "keep", "type": "string" }
+                  ],
+                  "additionalItems": false,
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["kind", "classes"],
+              "properties": {
+                "kind": { "const": "multiclass", "type": "string" },
+                "classes": {
+                  "minItems": 2,
+                  "type": "array",
+                  "items": { "minLength": 1, "type": "string" }
+                }
+              }
+            }
+          ]
+        },
+        "keep_classes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["group_id", "features_id", "labels_id"],
+        "properties": {
+          "group_id": { "minLength": 1, "type": "string" },
+          "source_id": { "$ref": "#/$defs/Sha256" },
+          "features_id": { "$ref": "#/$defs/Sha256" },
+          "labels_id": { "$ref": "#/$defs/Sha256" }
+        }
+      }
+    },
+    "filters": {
+      "type": "object",
+      "required": ["drop_unlabeled", "min_confidence", "allowed_sources", "dedupe"],
+      "properties": {
+        "drop_unlabeled": { "type": "boolean" },
+        "min_confidence": { "minimum": 0, "maximum": 1, "type": "number" },
+        "allowed_sources": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "const": "rule", "type": "string" },
+              { "const": "heuristic", "type": "string" },
+              { "const": "readability", "type": "string" },
+              { "const": "llm", "type": "string" },
+              { "const": "human", "type": "string" },
+              { "const": "user_feedback", "type": "string" }
+            ]
+          }
+        },
+        "test_allowed_sources": {
+          "description": "Restricts the test split (e.g. [human]), ADR-006.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "const": "rule", "type": "string" },
+              { "const": "heuristic", "type": "string" },
+              { "const": "readability", "type": "string" },
+              { "const": "llm", "type": "string" },
+              { "const": "human", "type": "string" },
+              { "const": "user_feedback", "type": "string" }
+            ]
+          }
+        },
+        "dedupe": {
+          "anyOf": [
+            { "const": "none", "type": "string" },
+            { "const": "exact_x_per_group", "type": "string" }
+          ]
+        }
+      }
+    },
+    "groups": {
+      "description": "Sorted by group_id.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["group_id", "group_key", "stratum", "split", "bucket", "n_rows", "n_pos"],
+        "properties": {
+          "group_id": { "minLength": 1, "type": "string" },
+          "group_key": { "minLength": 1, "type": "string" },
+          "stratum": { "minLength": 1, "type": "string" },
+          "split": {
+            "anyOf": [
+              { "const": "train", "type": "string" },
+              { "const": "val", "type": "string" },
+              { "const": "test", "type": "string" }
+            ]
+          },
+          "bucket": { "minimum": 0, "type": "integer" },
+          "n_rows": { "minimum": 0, "type": "integer" },
+          "n_pos": { "minimum": 0, "type": "integer" }
+        }
+      }
+    },
+    "split": {
+      "type": "object",
+      "required": ["scheme", "group_by", "salt", "n_buckets", "ranges", "overrides"],
+      "properties": {
+        "scheme": { "const": "hash-bucket-v1", "type": "string" },
+        "group_by": {
+          "description": "group_key (default): all groups sharing the key stay together, e.g. same domain.",
+          "anyOf": [
+            { "const": "group_key", "type": "string" },
+            { "const": "group", "type": "string" }
+          ]
+        },
+        "salt": { "type": "string" },
+        "n_buckets": { "const": 100, "type": "number" },
+        "ranges": {
+          "type": "object",
+          "required": ["train", "val", "test"],
+          "properties": {
+            "train": {
+              "description": "[lo, hi) over buckets.",
+              "type": "array",
+              "items": [
+                { "minimum": 0, "type": "integer" },
+                { "minimum": 0, "type": "integer" }
+              ],
+              "additionalItems": false,
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "val": {
+              "description": "[lo, hi) over buckets.",
+              "type": "array",
+              "items": [
+                { "minimum": 0, "type": "integer" },
+                { "minimum": 0, "type": "integer" }
+              ],
+              "additionalItems": false,
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "test": {
+              "description": "[lo, hi) over buckets.",
+              "type": "array",
+              "items": [
+                { "minimum": 0, "type": "integer" },
+                { "minimum": 0, "type": "integer" }
+              ],
+              "additionalItems": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "overrides": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "anyOf": [
+                { "const": "train", "type": "string" },
+                { "const": "val", "type": "string" },
+                { "const": "test", "type": "string" }
+              ]
+            }
+          }
+        },
+        "kfold": {
+          "type": "object",
+          "required": ["k"],
+          "properties": {
+            "k": { "minimum": 2, "type": "integer" }
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "required": ["train", "val", "test"],
+      "properties": {
+        "train": {
+          "type": "object",
+          "required": ["path", "sha256", "bytes", "rows", "pos_rate"],
+          "properties": {
+            "path": {
+              "minLength": 1,
+              "description": "Path relative to the artifact directory, '/' separators, no '..'.",
+              "type": "string"
+            },
+            "sha256": { "$ref": "#/$defs/Sha256" },
+            "bytes": { "minimum": 0, "type": "integer" },
+            "media_type": { "type": "string" },
+            "rows": { "minimum": 0, "type": "integer" },
+            "pos_rate": { "minimum": 0, "maximum": 1, "type": "number" }
+          }
+        },
+        "val": {
+          "type": "object",
+          "required": ["path", "sha256", "bytes", "rows", "pos_rate"],
+          "properties": {
+            "path": {
+              "minLength": 1,
+              "description": "Path relative to the artifact directory, '/' separators, no '..'.",
+              "type": "string"
+            },
+            "sha256": { "$ref": "#/$defs/Sha256" },
+            "bytes": { "minimum": 0, "type": "integer" },
+            "media_type": { "type": "string" },
+            "rows": { "minimum": 0, "type": "integer" },
+            "pos_rate": { "minimum": 0, "maximum": 1, "type": "number" }
+          }
+        },
+        "test": {
+          "type": "object",
+          "required": ["path", "sha256", "bytes", "rows", "pos_rate"],
+          "properties": {
+            "path": {
+              "minLength": 1,
+              "description": "Path relative to the artifact directory, '/' separators, no '..'.",
+              "type": "string"
+            },
+            "sha256": { "$ref": "#/$defs/Sha256" },
+            "bytes": { "minimum": 0, "type": "integer" },
+            "media_type": { "type": "string" },
+            "rows": { "minimum": 0, "type": "integer" },
+            "pos_rate": { "minimum": 0, "maximum": 1, "type": "number" }
+          }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": ["by_split", "by_stratum"],
+      "properties": {
+        "by_split": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "object",
+              "required": ["rows", "pos_rate"],
+              "properties": {
+                "rows": { "minimum": 0, "type": "integer" },
+                "pos_rate": { "minimum": 0, "maximum": 1, "type": "number" }
+              }
+            }
+          }
+        },
+        "by_stratum": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "object",
+              "required": ["groups", "rows", "pos_rate"],
+              "properties": {
+                "groups": { "minimum": 0, "type": "integer" },
+                "rows": { "minimum": 0, "type": "integer" },
+                "pos_rate": { "minimum": 0, "maximum": 1, "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
