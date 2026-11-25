@@ -79,7 +79,7 @@ export function buildSnapshot(): PageSnapshot {
       { id: "n7#t0", owner: 7, t: "Hidden FAQ answer." },
     ],
     probe: { id_scheme: "gp-composed-preorder/1", version: "0.1.0", own_text_cap: 1000 },
-    html: { path: "rendered.html.gz", sha256: sha("rendered-html"), bytes: 512, media_type: "application/gzip" },
+    html: { path: "html/rendered.html.gz", sha256: sha("rendered-html"), bytes: 2048, media_type: "text/html", content_encoding: "gzip" },
     capture: {
       captured_at: "2026-11-25T12:00:00Z",
       collector_version: "0.1.0",
@@ -90,7 +90,8 @@ export function buildSnapshot(): PageSnapshot {
       scrolled_to_bottom: true,
       truncated: false,
       auth: "none",
-      settle: { reason: "quiet", waited_ms: 812, mutations: 37, shadow_roots: 0, tracked_from_start: true, late_unstamped: 0 },
+      settle: { reason: "quiet", shadow_roots: 0, tracked_from_start: true, late_unstamped: 0 },
+      flags: ["tiny-dom"],
       network: "idle",
     },
   };

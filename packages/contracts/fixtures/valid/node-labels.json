@@ -1,8 +1,8 @@
 {
   "format": "gran-prix.node-labels",
   "format_version": "1.0.0",
-  "labels_id": "sha256:7ebf71a5ee9707054b197350d3457e311ede55637ee96498f8d6186c1dc19e4b",
-  "snapshot_id": "sha256:7836fa26993fb87114485d1d43b13c8e8c9fb95cb01480f19406e3cc54fd2b86",
+  "labels_id": "sha256:548fb4bd3e1eba65a5083283d73c4ede4c58485d022e965d4d0b3f0f7c924075",
+  "snapshot_id": "sha256:296397bcaa836eb9b15b5af8795cd92cd1a4d958dd8ec9f03a2a6d0264c19b64",
   "label_space": {
     "kind": "multiclass",
     "classes": [

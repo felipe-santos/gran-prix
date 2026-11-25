@@ -1,8 +1,8 @@
 {
   "format": "gran-prix.label-agreement",
   "format_version": "1.0.0",
-  "agreement_id": "sha256:373d16b64ad93ddaed8e3ba19e7fbe402e11ce6d77d84b2ec5f7305629e12406",
-  "dataset_id": "sha256:62727e07e55ccdd7005e466f0d2c6f6bef1d2f9e7a2d0ff42add0a7cf5096653",
+  "agreement_id": "sha256:73495656d8fada77a6f04167acc5973ef1070c42b5c0583dd0aaa4581bd5962b",
+  "dataset_id": "sha256:3c809ea9792703034be555a07564018e53a7f07d7abc8259b77bb93eaa04b4e4",
   "guide_version": "1.0.0",
   "population": {
     "unit": "dom-element-with-own-text",

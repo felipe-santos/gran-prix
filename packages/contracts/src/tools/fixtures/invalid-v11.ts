@@ -34,6 +34,9 @@ export function buildInvalidCasesV11(u: Universe): InvalidCase[] {
     add("page-snapshot", "own-text-over-cap", snap((d) => (d["probe"].own_text_cap = 5)), "invariant", "nodes[2].own_text", "own_text_cap");
     add("page-snapshot", "unknown-id-scheme", snap((d) => (d["probe"].id_scheme = "gp-composed-preorder/2")), "schema", "probe.id_scheme");
     add("page-snapshot", "settle-unknown-reason", snap((d) => (d["capture"].settle.reason = "timeout")), "schema", "capture.settle.reason");
+    add("page-snapshot", "settle-without-shadow-roots", snap((d) => delete d["capture"].settle.shadow_roots), "schema", "capture.settle.shadow_roots", "required");
+    add("page-snapshot", "unknown-capture-flag", snap((d) => (d["capture"].flags = ["login-wall"])), "schema", "capture.flags[0]");
+    add("page-snapshot", "content-encoding-not-a-string", snap((d) => (d["html"].content_encoding = true)), "schema", "html.content_encoding");
     add("page-snapshot", "unknown-network-outcome", snap((d) => (d["capture"].network = "yes")), "schema", "capture.network");
     add("page-snapshot", "disclosure-not-boolean", snap((d) => (d["nodes"][7].flags.disclosure = "yes")), "schema", "nodes[7].flags.disclosure");
     add("page-snapshot", "jsonld-types-not-strings", snap((d) => (d["page"].jsonld_types = [1])), "schema", "page.jsonld_types[0]");
@@ -63,6 +66,7 @@ export function buildInvalidCasesV11(u: Universe): InvalidCase[] {
     add("dataset-manifest", "tag-bad-pattern", ds((d) => (d["groups"][0].tags = ["Logged In"])), "schema", "groups[0].tags[0]", "pattern");
     add("dataset-manifest", "by-tag-count-mismatch", ds((d) => (d["stats"].by_tag["lang:en"].groups += 1)), "invariant", "stats.by_tag.lang:en.groups");
     add("dataset-manifest", "by-tag-unknown-tag", ds((d) => (d["stats"].by_tag["logged_out"] = { groups: 1, rows: 1, pos_rate: 0 })), "invariant", "stats.by_tag.logged_out", "no group carries");
+    add("dataset-manifest", "excluded-page-without-flags", ds((d) => (d["excluded_pages"][0].flags = [])), "schema", "excluded_pages[0].flags");
     add("dataset-manifest", "unknown-row-weight", ds((d) => (d["row_weight"] = "tokens")), "schema", "row_weight");
     const row: Doc = clone(u.datasetRow);
     row["w"] = -3;

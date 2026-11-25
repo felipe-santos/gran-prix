@@ -55,8 +55,10 @@ Normative details not visible in the schemas (those marked v1.1 are normative fr
   Ids are valid for ONE snapshot. `probe.id_scheme = "gp-composed-preorder/1"` names this rule and is part of the snapshot id.
   A **text unit** is a non-blank light-DOM text node, id `n<owner>#t<child index among the owner's childNodes>` (e.g. `n9#t2`);
   `text_units` lists them in composed document order, so the child index strictly increases per owner.
-* (v1.1) **The `html` FileRef** of a snapshot is the *flattened* rendered HTML: gzip, open shadow roots inlined, `data-gp-id` attributes kept
-  (the join key to `nodes`), `<script>` removed. Not the HTML the server sent.
+* (v1.1) **The `html` FileRef** of a snapshot is the *flattened* rendered HTML: stored gzip (`content_encoding: "gzip"`), open shadow roots inlined,
+  `data-gp-id` attributes kept (the join key to `nodes`), `<script>` elements kept but **emptied** (not removed: they carry ids). Not the HTML the server sent.
+* (v1.1) **FileRef.** `sha256` and `bytes` describe the DECODED content; `content_encoding` (optional, e.g. `gzip`) only says how it is stored, so zlib builds never change an id.
+* (v1.1) **Capture quality.** `capture.flags` (`http-error`, `error-page`, `captcha`, `paywall`, `tiny-dom`) and `capture.settle` (`reason`, `shadow_roots`, `tracked_from_start`, `late_unstamped`; no volatile timings) live outside the snapshot id.
 * (v1.1) **Disclosure.** `nodes[i].flags.disclosure = true` marks an element inside a collapsed disclosure (closed `<details>`,
   `aria-expanded=false` region, inactive `role=tabpanel`): not rendered, but part of the labelable universe U (labeling guide 2.3).
 * (v1.1) **Attributes.** `attrs.id`, `role`, `href`, `type` are the attribute values as written (href is not resolved); `type` of

@@ -177,9 +177,16 @@ describe("PageSnapshot v1.1", () => {
     expect(nodes[2]?.attrs.id).toBe("title");
   });
 
+  it("html FileRef: gzip content_encoding, hashes describe the decoded content; settle has no volatile timings", () => {
+    expect(u.snapshot.html.content_encoding).toBe("gzip");
+    expect(Object.keys(u.snapshot.capture.settle ?? {}).sort()).toEqual(["late_unstamped", "reason", "shadow_roots", "tracked_from_start"]);
+    expect(u.snapshot.capture.flags).toEqual(["tiny-dom"]);
+  });
+
   it("settle and network are in capture, hence outside snapshot_id", () => {
     const d = structuredClone(u.snapshot) as unknown as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-    d["capture"].settle.waited_ms = 9999;
+    d["capture"].settle.shadow_roots = 9;
+    d["capture"].flags = [];
     d["capture"].network = "timeout";
     expect(contractId("page-snapshot", d)).toBe(u.snapshot.snapshot_id);
     d["probe"].own_text_cap = 999;

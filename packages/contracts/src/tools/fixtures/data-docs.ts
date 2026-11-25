@@ -128,6 +128,7 @@ export function buildDataset(): DatasetFixture {
       dedupe: "exact_x_per_group",
     },
     groups,
+    excluded_pages: [{ source_id: sha("snapshot:paywalled"), group_key: "paywalled.example", flags: ["paywall"] }],
     split: {
       scheme: "hash-bucket-v1",
       group_by: "group_key",

@@ -1,8 +1,8 @@
 {
   "format": "gran-prix.qa-task-set",
   "format_version": "1.0.0",
-  "task_set_id": "sha256:5cb79aebbc9cd9ec6949a964c8cd5f085c494473fa1b35c7ca97bb878b2f87f2",
-  "dataset_id": "sha256:62727e07e55ccdd7005e466f0d2c6f6bef1d2f9e7a2d0ff42add0a7cf5096653",
+  "task_set_id": "sha256:73b690a13c4da2833ac544ea119cc7af8ec151fd07890666bee4fc903a07a632",
+  "dataset_id": "sha256:3c809ea9792703034be555a07564018e53a7f07d7abc8259b77bb93eaa04b4e4",
   "generator": {
     "model": "generator-model",
     "prompt_sha256": "sha256:4fbe6df75b0fbce81ac4200cee9403d1ec8b127aa7605c385e25aadb060ba707",
@@ -12,7 +12,7 @@
   "pages": [
     {
       "group_id": "g00_site0",
-      "snapshot_id": "sha256:7836fa26993fb87114485d1d43b13c8e8c9fb95cb01480f19406e3cc54fd2b86",
+      "snapshot_id": "sha256:296397bcaa836eb9b15b5af8795cd92cd1a4d958dd8ec9f03a2a6d0264c19b64",
       "stratum": "article",
       "split": "test",
       "prediction": "frozen_model"

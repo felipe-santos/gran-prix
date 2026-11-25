@@ -103,6 +103,16 @@ export const DatasetManifestContract = defineContract(
         }),
         { description: "Sorted by group_id." },
       ),
+      excluded_pages: Type.Optional(
+        Type.Array(
+          Type.Object({
+            source_id: Sha256,
+            group_key: Type.String({ minLength: 1 }),
+            flags: Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description: "The capture.flags that got the page excluded." }),
+          }),
+          { description: "v1.1: pages left out of the dataset because of capture flags (http-error, captcha, paywall, ...), so the exclusion is auditable." },
+        ),
+      ),
       split: Type.Object({
         scheme: Type.Literal("hash-bucket-v1"),
         group_by: Type.Union([Type.Literal("group_key"), Type.Literal("group")], {

@@ -1,7 +1,7 @@
 {
   "format": "gran-prix.page-snapshot",
   "format_version": "1.1.0",
-  "snapshot_id": "sha256:a22fb1394299f1ffde487bc24c4c9d36eff1fc108880ed249d2d4dc452676f49",
+  "snapshot_id": "sha256:442372206b838b1ac7397fc17dc9760d64af4b0b7ea35f0606ce2b58d2f26479",
   "page": {
     "url": "https://a.example/post/1?utm_source=x",
     "final_url": "https://a.example/post/1",
@@ -322,10 +322,11 @@
     "own_text_cap": 1000
   },
   "html": {
-    "path": "rendered.html.gz",
+    "path": "html/rendered.html.gz",
     "sha256": "sha256:73aa1b807ce3df23639c32b94a637122f088db8ecc5d004a280df1a911d029f7",
-    "bytes": 512,
-    "media_type": "application/gzip"
+    "bytes": 2048,
+    "media_type": "text/html",
+    "content_encoding": "gzip"
   },
   "capture": {
     "captured_at": "2026-11-25T12:00:00Z",
@@ -342,12 +343,13 @@
     "auth": "none",
     "settle": {
       "reason": "quiet",
-      "waited_ms": 812,
-      "mutations": 37,
       "shadow_roots": 0,
       "tracked_from_start": true,
       "late_unstamped": 0
     },
+    "flags": [
+      "tiny-dom"
+    ],
     "network": "idle"
   }
 }

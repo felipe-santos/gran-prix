@@ -343,6 +343,22 @@
     "code": "schema",
     "path": "capture.settle.reason"
   },
+  "page-snapshot.settle-without-shadow-roots.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "capture.settle.shadow_roots",
+    "message": "required"
+  },
+  "page-snapshot.unknown-capture-flag.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "capture.flags[0]"
+  },
+  "page-snapshot.content-encoding-not-a-string.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "html.content_encoding"
+  },
   "page-snapshot.unknown-network-outcome.json": {
     "contract": "page-snapshot",
     "code": "schema",
@@ -408,6 +424,11 @@
     "code": "invariant",
     "path": "stats.by_tag.logged_out",
     "message": "no group carries"
+  },
+  "dataset-manifest.excluded-page-without-flags.json": {
+    "contract": "dataset-manifest",
+    "code": "schema",
+    "path": "excluded_pages[0].flags"
   },
   "dataset-manifest.unknown-row-weight.json": {
     "contract": "dataset-manifest",

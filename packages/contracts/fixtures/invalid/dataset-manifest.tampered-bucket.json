@@ -1,7 +1,7 @@
 {
   "format": "gran-prix.dataset-manifest",
   "format_version": "1.1.0",
-  "dataset_id": "sha256:d53b1deba730dc799ce1ced7dc44f9368ec9a8d5a99e101c810b599f95c889f3",
+  "dataset_id": "sha256:23dd1c5374b96b9b182e5ae56b3082820291d12fa35653af6825cf3269850b67",
   "feature_schema_id": "sha256:1ee5428f83b192818529edcc949804efcb116e98db3385d0fb161c73a2db3d26",
   "dim": 4,
   "row_weight": "own_text_chars",
@@ -112,6 +112,15 @@
       "tags": [
         "lang:pt",
         "logged_in"
+      ]
+    }
+  ],
+  "excluded_pages": [
+    {
+      "source_id": "sha256:7a1e5cd40e49fbdf623a6d09cb9e957712205ebcd57291051d8e20c5509077a6",
+      "group_key": "paywalled.example",
+      "flags": [
+        "paywall"
       ]
     }
   ],

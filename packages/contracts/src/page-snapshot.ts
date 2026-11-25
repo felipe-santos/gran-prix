@@ -17,11 +17,14 @@ import { FileRef, Iso8601, NonNegInt, PosInt, SemVer, Sha256, contractObject, de
  * `<iframe>` element itself is a node), closed shadow roots, `<template>` content, text nodes sitting
  * directly in a shadow root. Ids are valid for ONE snapshot only (a re-collection may renumber).
  *
- * NORMATIVE (v1.1) - the `html` FileRef. The referenced file is the FLATTENED rendered HTML, gzip
- * (media_type `application/gzip`): open shadow roots inlined, `data-gp-id` attributes KEPT (they are the join
- * key between the markup and `nodes`), `<script>` removed. It is the input of DOM-clone based labelers. It is
- * not the HTML the server sent, and, because scripts are removed, a D1 token count taken from it (protocol
- * experimento-dom-v0 section 10 counts inline scripts) must be defined by the stage that computes it.
+ * NORMATIVE (v1.1) - the `html` FileRef. The referenced file is the FLATTENED rendered HTML, stored gzip
+ * (`content_encoding: "gzip"`; `sha256` / `bytes` describe the DECODED text, so zlib builds never change an id):
+ * open shadow roots inlined, `data-gp-id` attributes KEPT (they are the join key between the markup and
+ * `nodes`), `<script>` elements kept but EMPTIED (content and attributes other than `data-gp-id` dropped; they
+ * are not removed because they carry ids and removing them would shift the pre-order). It is the input of
+ * DOM-clone based labelers. It is not the HTML the server sent, and, because script content is gone, a D1 token
+ * count taken from it (protocol experimento-dom-v0 section 10 counts inline scripts) must be defined by the
+ * stage that computes it.
  */
 
 /** Pre-order composed-tree id scheme this contract version defines. */
@@ -97,15 +100,23 @@ export const ProbeInfo = Type.Object({
 });
 export type ProbeInfo = Static<typeof ProbeInfo>;
 
+/**
+ * How the page settled. Only the facts that explain the snapshot, none of the volatile timings (waited_ms,
+ * mutation counts may ride along as extra fields; they are not part of the contract).
+ */
 export const SettleRecord = Type.Object({
-  reason: Type.Union([Type.Literal("quiet"), Type.Literal("max"), Type.Literal("skipped")]),
-  waited_ms: Type.Number({ minimum: 0 }),
-  mutations: NonNegInt,
+  reason: Type.Union([Type.Literal("quiet"), Type.Literal("max"), Type.Literal("skipped")], {
+    description: "quiet = DOM quiet for the window; max = hard cap hit first; skipped = no wait.",
+  }),
   shadow_roots: NonNegInt,
-  tracked_from_start: Type.Boolean(),
+  tracked_from_start: Type.Boolean({ description: "Mutation tracking started before DOMContentLoaded." }),
   late_unstamped: Type.Optional(NonNegInt),
 });
 export type SettleRecord = Static<typeof SettleRecord>;
+
+export const CAPTURE_FLAGS = ["http-error", "error-page", "captcha", "paywall", "tiny-dom"] as const;
+export const CaptureFlag = Type.Union(CAPTURE_FLAGS.map((f) => Type.Literal(f)));
+export type CaptureFlag = (typeof CAPTURE_FLAGS)[number];
 
 export const PageSnapshotContract = defineContract(
   "page-snapshot",
@@ -158,6 +169,11 @@ export const PageSnapshotContract = defineContract(
           truncated: Type.Boolean(),
           auth: Type.Literal("none"),
           settle: Type.Optional(SettleRecord),
+          flags: Type.Optional(
+            Type.Array(CaptureFlag, {
+              description: "v1.1: quality flags raised by the collector (http-error, error-page, captcha, paywall, tiny-dom). Empty / absent = none.",
+            }),
+          ),
           network: Type.Optional(
             Type.Union([Type.Literal("idle"), Type.Literal("timeout"), Type.Literal("skipped")], {
               description: "v1.1: outcome of the best-effort networkidle wait (idle = reached, timeout = capped, skipped = not attempted).",

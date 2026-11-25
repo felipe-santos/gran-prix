@@ -18,7 +18,11 @@
         },
         "sha256": { "$ref": "#/$defs/Sha256" },
         "bytes": { "minimum": 0, "type": "integer" },
-        "media_type": { "type": "string" }
+        "media_type": { "type": "string" },
+        "content_encoding": {
+          "description": "v1.1: transfer encoding of the stored file, e.g. 'gzip'. `sha256` and `bytes` ALWAYS describe the DECODED content, so the compressor / zlib build never changes an id; absent = stored as is.",
+          "type": "string"
+        }
       }
     },
     "Iso8601": {
@@ -248,20 +252,35 @@
         "auth": { "const": "none", "type": "string" },
         "settle": {
           "type": "object",
-          "required": ["reason", "waited_ms", "mutations", "shadow_roots", "tracked_from_start"],
+          "required": ["reason", "shadow_roots", "tracked_from_start"],
           "properties": {
             "reason": {
+              "description": "quiet = DOM quiet for the window; max = hard cap hit first; skipped = no wait.",
               "anyOf": [
                 { "const": "quiet", "type": "string" },
                 { "const": "max", "type": "string" },
                 { "const": "skipped", "type": "string" }
               ]
             },
-            "waited_ms": { "minimum": 0, "type": "number" },
-            "mutations": { "minimum": 0, "type": "integer" },
             "shadow_roots": { "minimum": 0, "type": "integer" },
-            "tracked_from_start": { "type": "boolean" },
+            "tracked_from_start": {
+              "description": "Mutation tracking started before DOMContentLoaded.",
+              "type": "boolean"
+            },
             "late_unstamped": { "minimum": 0, "type": "integer" }
+          }
+        },
+        "flags": {
+          "description": "v1.1: quality flags raised by the collector (http-error, error-page, captcha, paywall, tiny-dom). Empty / absent = none.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "const": "http-error", "type": "string" },
+              { "const": "error-page", "type": "string" },
+              { "const": "captcha", "type": "string" },
+              { "const": "paywall", "type": "string" },
+              { "const": "tiny-dom", "type": "string" }
+            ]
           }
         },
         "network": {

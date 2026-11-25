@@ -1,8 +1,8 @@
 {
   "format": "gran-prix.node-features",
   "format_version": "1.0.1",
-  "features_id": "sha256:d9258005f8fb633457f287bde96e5a9f5f0ba1f64f13f5547d1cef3fd7afd925",
-  "snapshot_id": "sha256:7836fa26993fb87114485d1d43b13c8e8c9fb95cb01480f19406e3cc54fd2b86",
+  "features_id": "sha256:3024563565a4c6fd0f13cddb32b771a136f4b2027c07e6d890474e268ce28c3d",
+  "snapshot_id": "sha256:296397bcaa836eb9b15b5af8795cd92cd1a4d958dd8ec9f03a2a6d0264c19b64",
   "feature_schema_id": "sha256:1ee5428f83b192818529edcc949804efcb116e98db3385d0fb161c73a2db3d26",
   "extractor": {
     "name": "fixture-extractor",
