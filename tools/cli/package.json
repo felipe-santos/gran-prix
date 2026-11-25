@@ -1,0 +1,43 @@
+{
+  "name": "@gran-prix/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "gp: runs PipelineSpec files incrementally over a content-addressed artifact store, with receipts, lineage and a budget ledger; checks ModelPackages.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "gp": "./dist/bin.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "examples",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gp": "node dist/bin.js"
+  },
+  "dependencies": {
+    "@gran-prix/contracts": "workspace:*",
+    "@gran-prix/model": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}
