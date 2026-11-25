@@ -1,5 +1,5 @@
 import React from 'react';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 import { OVEN_INPUTS, OVEN_HIDDEN, OVEN_OUTPUTS } from '../../types';
 import { NetworkViz } from '../shared/NetworkViz';
 

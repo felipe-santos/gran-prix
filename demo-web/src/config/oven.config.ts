@@ -5,7 +5,7 @@
  * learn to cook different foods without burning.
  */
 
-import { MutationStrategy } from '../wasm/pkg/gran_prix_wasm';
+import { MutationStrategy } from '@gran-prix/wasm';
 
 /**
  * Evolution hyperparameters for cooking control

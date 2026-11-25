@@ -1,5 +1,5 @@
 import React from 'react';
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 import { DRONE_INPUTS, DRONE_HIDDEN, DRONE_OUTPUTS } from '../../types';
 import { NetworkViz } from '../shared/NetworkViz';
 

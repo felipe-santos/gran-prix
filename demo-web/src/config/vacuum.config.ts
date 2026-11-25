@@ -4,7 +4,7 @@
  * Centralized configuration for vacuum simulation parameters.
  */
 
-import { MutationStrategy } from '../wasm/pkg/gran_prix_wasm';
+import { MutationStrategy } from '@gran-prix/wasm';
 
 /**
  * Evolution hyperparameters optimized for vacuum navigation
