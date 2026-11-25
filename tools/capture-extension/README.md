@@ -95,7 +95,7 @@ extensão.
 6. Se o popup mostrar "avisos: ..." (`captcha`, `paywall`, `error-page`, `tiny-dom`), a página provavelmente não é a que
    você queria (tela de login, erro, página vazia): confira e capture a certa.
 
-Capturar a mesma página duas vezes sem o DOM mudar produz o mesmo nome de arquivo (o arquivo é sobrescrito).
+Capturar a mesma página duas vezes, sem o conteúdo mudar e com a janela do mesmo tamanho, produz o mesmo nome de arquivo (o arquivo é sobrescrito).
 
 ### 4. Levar os arquivos para a máquina do projeto
 
