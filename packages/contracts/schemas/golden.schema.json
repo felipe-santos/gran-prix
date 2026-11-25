@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:golden",
+  "x-gran-prix": {
+    "contract": "golden",
+    "format": "gran-prix.golden",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "golden",
+  "description": "Golden vectors for cross-runtime parity of a ModelPackage.",
+  "type": "object",
+  "required": ["format", "format_version", "weights_sha256", "tolerance", "cases"],
+  "properties": {
+    "format": { "const": "gran-prix.golden", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "weights_sha256": { "$ref": "#/$defs/Sha256" },
+    "tolerance": {
+      "type": "object",
+      "required": ["abs"],
+      "properties": {
+        "abs": { "minimum": 0, "type": "number" },
+        "rel": { "minimum": 0, "type": "number" }
+      }
+    },
+    "cases": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["input", "raw", "score"],
+        "properties": {
+          "name": { "type": "string" },
+          "input": {
+            "description": "Feature vector as the extractor emits it (BEFORE fitted normalization).",
+            "type": "array",
+            "items": { "type": "number" }
+          },
+          "raw": {
+            "description": "Network output (logits), before calibration/activation.",
+            "type": "array",
+            "items": { "type": "number" }
+          },
+          "score": {
+            "description": "Final model output: after calibration and activation.",
+            "type": "array",
+            "items": { "type": "number" }
+          }
+        }
+      }
+    }
+  }
+}

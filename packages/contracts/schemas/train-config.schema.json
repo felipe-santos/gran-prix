@@ -1,0 +1,296 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:train-config",
+  "x-gran-prix": {
+    "contract": "train-config",
+    "format": "gran-prix.train-config",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "train-config",
+  "description": "Training recipe: seed (mandatory), network, loss, optimizer, data policy, normalization, early stopping, threshold.",
+  "type": "object",
+  "required": ["format", "format_version", "seed", "network", "loss", "optimizer", "epochs", "batch_size", "data", "normalization", "threshold", "runtime"],
+  "properties": {
+    "format": { "const": "gran-prix.train-config", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "train_config_id": { "$ref": "#/$defs/Sha256" },
+    "seed": { "minimum": 0, "maximum": 4294967295, "type": "integer" },
+    "network": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["kind", "def"],
+          "properties": {
+            "kind": { "const": "def", "type": "string" },
+            "def": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["input_dim", "layers"],
+              "properties": {
+                "input_dim": { "minimum": 1, "type": "integer" },
+                "layers": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": ["type", "in_features", "out_features"],
+                        "properties": {
+                          "type": { "const": "linear", "type": "string" },
+                          "in_features": { "minimum": 1, "type": "integer" },
+                          "out_features": { "minimum": 1, "type": "integer" }
+                        }
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": ["type", "function"],
+                        "properties": {
+                          "type": { "const": "activation", "type": "string" },
+                          "function": {
+                            "anyOf": [
+                              { "const": "relu", "type": "string" },
+                              { "const": "sigmoid", "type": "string" },
+                              { "const": "tanh", "type": "string" },
+                              { "const": "softmax", "type": "string" }
+                            ]
+                          }
+                        }
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": ["type", "input_size", "hidden_size"],
+                        "properties": {
+                          "type": { "const": "rnn", "type": "string" },
+                          "input_size": { "minimum": 1, "type": "integer" },
+                          "hidden_size": { "minimum": 1, "type": "integer" }
+                        }
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": ["type", "input_size", "hidden_size"],
+                        "properties": {
+                          "type": { "const": "gru", "type": "string" },
+                          "input_size": { "minimum": 1, "type": "integer" },
+                          "hidden_size": { "minimum": 1, "type": "integer" }
+                        }
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": ["type", "rate"],
+                        "properties": {
+                          "type": { "const": "dropout", "type": "string" },
+                          "rate": { "minimum": 0, "exclusiveMaximum": 1, "type": "number" }
+                        }
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "required": ["type", "num_features"],
+                        "properties": {
+                          "type": { "const": "batchnorm", "type": "string" },
+                          "num_features": { "minimum": 1, "type": "integer" }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "hidden", "activation", "input_dim"],
+          "properties": {
+            "kind": { "const": "mlp", "type": "string" },
+            "hidden": {
+              "type": "array",
+              "items": { "minimum": 1, "type": "integer" }
+            },
+            "activation": {
+              "anyOf": [
+                { "const": "relu", "type": "string" },
+                { "const": "tanh", "type": "string" },
+                { "const": "sigmoid", "type": "string" }
+              ]
+            },
+            "input_dim": {
+              "description": "\"auto\" = feature schema dim.",
+              "anyOf": [
+                { "const": "auto", "type": "string" },
+                { "minimum": 1, "type": "integer" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "loss": {
+      "anyOf": [
+        { "const": "bce_logits", "type": "string" },
+        { "const": "ce_logits", "type": "string" }
+      ]
+    },
+    "optimizer": {
+      "type": "object",
+      "required": ["kind", "lr"],
+      "properties": {
+        "kind": { "const": "adam", "type": "string" },
+        "lr": { "exclusiveMinimum": 0, "type": "number" }
+      }
+    },
+    "lr_schedule": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "constant", "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "every", "gamma"],
+          "properties": {
+            "kind": { "const": "step", "type": "string" },
+            "every": { "minimum": 1, "type": "integer" },
+            "gamma": { "exclusiveMinimum": 0, "maximum": 1, "type": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "min_lr"],
+          "properties": {
+            "kind": { "const": "cosine", "type": "string" },
+            "min_lr": { "minimum": 0, "type": "number" }
+          }
+        }
+      ]
+    },
+    "epochs": { "minimum": 1, "type": "integer" },
+    "batch_size": { "minimum": 1, "type": "integer" },
+    "data": {
+      "type": "object",
+      "required": ["min_confidence", "allowed_sources", "class_balance"],
+      "properties": {
+        "min_confidence": { "minimum": 0, "maximum": 1, "type": "number" },
+        "allowed_sources": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "const": "rule", "type": "string" },
+              { "const": "heuristic", "type": "string" },
+              { "const": "readability", "type": "string" },
+              { "const": "llm", "type": "string" },
+              { "const": "human", "type": "string" },
+              { "const": "user_feedback", "type": "string" }
+            ]
+          }
+        },
+        "class_balance": {
+          "type": "object",
+          "required": ["strategy"],
+          "properties": {
+            "strategy": {
+              "anyOf": [
+                { "const": "none", "type": "string" },
+                { "const": "oversample_pos", "type": "string" },
+                { "const": "undersample_neg", "type": "string" },
+                { "const": "pos_weight", "type": "string" }
+              ]
+            },
+            "target_pos_rate": { "minimum": 0, "maximum": 1, "type": "number" },
+            "pos_weight": { "exclusiveMinimum": 0, "type": "number" }
+          }
+        }
+      }
+    },
+    "normalization": {
+      "type": "object",
+      "required": ["kind", "fit_on"],
+      "properties": {
+        "kind": {
+          "anyOf": [
+            { "const": "none", "type": "string" },
+            { "const": "zscore", "type": "string" }
+          ]
+        },
+        "fit_on": { "const": "train", "type": "string" }
+      }
+    },
+    "early_stopping": {
+      "type": "object",
+      "required": ["metric", "patience", "min_delta"],
+      "properties": {
+        "metric": {
+          "anyOf": [
+            { "const": "val_loss", "type": "string" },
+            { "const": "val_f1", "type": "string" }
+          ]
+        },
+        "patience": { "minimum": 1, "type": "integer" },
+        "min_delta": { "minimum": 0, "type": "number" }
+      }
+    },
+    "threshold": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["strategy", "value"],
+          "properties": {
+            "strategy": { "const": "fixed", "type": "string" },
+            "value": { "minimum": 0, "maximum": 1, "type": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["strategy"],
+          "properties": {
+            "strategy": { "const": "max_f1_on_val", "type": "string" }
+          }
+        }
+      ]
+    },
+    "init_from": {
+      "type": "object",
+      "required": ["model_id"],
+      "properties": {
+        "model_id": { "$ref": "#/$defs/Sha256" }
+      }
+    },
+    "freeze_prefixes": {
+      "type": "array",
+      "items": { "minLength": 1, "type": "string" }
+    },
+    "runtime": {
+      "type": "object",
+      "required": ["engine"],
+      "properties": {
+        "engine": {
+          "anyOf": [
+            { "const": "wasm-node", "type": "string" },
+            { "const": "gp-train", "type": "string" }
+          ]
+        }
+      }
+    }
+  }
+}
