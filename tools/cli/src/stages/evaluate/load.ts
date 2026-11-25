@@ -6,7 +6,8 @@ import { unitKeyOf } from "./core.js";
 
 /** Everything the evaluator reads from its inputs: the split's rows (scored later), the manifest and baseline predictions. */
 
-export type SplitParam = "train" | "val" | "test" | "all";
+/** `dev` = train + val: the rows every choice (tuning, tau*) is allowed to see; the test split is NOT read. */
+export type SplitParam = "train" | "val" | "dev" | "test" | "all";
 
 export interface DataRow {
   g: string;
@@ -42,7 +43,7 @@ export function readDataset(h: ArtifactHandle, split: SplitParam): { manifest: D
   const manifest = assertValid("dataset-manifest", JSON.parse(dec.decode(h.file("manifest.json"))) as unknown);
   const ls = manifest.label_space;
   if (ls.kind !== "binary") throw new Error(`the dataset's label space is "${ls.kind}"; evaluate needs a binary (drop, keep) dataset: project the labels first`);
-  const names = split === "all" ? (["train", "val", "test"] as const) : [split];
+  const names = split === "all" ? (["train", "val", "test"] as const) : split === "dev" ? (["train", "val"] as const) : [split];
   const rows: DataRow[] = [];
   for (const name of names) {
     const file = `${name}.jsonl`;

@@ -157,11 +157,18 @@ export function world(withBaseline = true, build: BuildOptions = {}): World {
   return { dataDir, store, externals };
 }
 
+/**
+ * These tests re-score the SAME synthetic model on the SAME test split with different params, which the blindness
+ * register (protocol 13) refuses without a reason: the helper declares it. `test/evaluate-blindness.test.ts` checks the
+ * register itself, with plain params.
+ */
+export const FIXTURE_REOPEN = "test fixture: one synthetic model is re-scored on the same split with different params";
+
 export const stage = (params: Record<string, unknown>, baselines = true): PipelineSpec["stages"][number] => ({
   id: "eval",
   kind: "evaluate",
   impl: EVALUATE_IMPL,
-  params,
+  params: { reopen_reason: FIXTURE_REOPEN, ...params },
   inputs: {
     model: { external: "model" },
     dataset: { external: "dataset" },

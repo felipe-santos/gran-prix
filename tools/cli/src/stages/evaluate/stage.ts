@@ -8,6 +8,7 @@ import { LABEL_BASELINE_SCHEMA, collectBaselines, type LabelBaselineParam } from
 import { evaluateCore, type AggregateDef, type BaselineInput, type CoreOptions, type GroupInfo, type ReportWeighting, type ScoredRow } from "./core.js";
 import { GATE_PARAM_SCHEMA, type GateParam } from "./gates.js";
 import { readDataset, readModel, scoreRows, type DataRow, type SplitParam } from "./load.js";
+import { registerOpening } from "./openings.js";
 
 /**
  * `ts:evaluate.intrinsic@1.0.0`: scores a split of a Dataset with a ModelPackage and writes an EvalReport v1.1
@@ -34,6 +35,7 @@ interface AggregateParam {
 interface Params {
   seed: number;
   split?: SplitParam;
+  reopen_reason?: string;
   resamples?: number;
   cluster_by?: "group_key" | "group_id";
   stratified?: boolean;
@@ -56,7 +58,12 @@ const PARAMS_SCHEMA = {
   required: ["seed"],
   additionalProperties: false,
   properties: {
-    split: { enum: ["train", "val", "test", "all"], description: "Split to score (default test)." },
+    split: {
+      enum: ["train", "val", "dev", "test", "all"],
+      description:
+        'Split to score (default test). "dev" = train + val (the test split is not read; the report says "all" because the contract has no "dev" yet). "test" and "all" OPEN the test: once per (model, dataset), registered in <data dir>/test-openings.jsonl (protocol 13).',
+    },
+    reopen_reason: { type: "string", minLength: 1, description: "Why the test is opened a second time for the same (model, dataset). Without it a second opening fails; with it, it runs and is registered with the reason." },
     seed: { type: "integer", minimum: 0, description: "Bootstrap seed." },
     resamples: { type: "integer", minimum: 100, description: "Bootstrap resamples (default 1000)." },
     cluster_by: { enum: ["group_key", "group_id"], description: "Resampling unit: group_key (domain, default) or group_id (page)." },
@@ -163,6 +170,22 @@ export function weightOf(plan: WeightPlan, x: readonly number[], w?: number): nu
   return Math.max(0, Math.round(Math.expm1(v * Math.log1p(plan.scale))));
 }
 
+/** Notes about WHAT was read; deterministic (params and inputs only, never the history of the data dir). */
+function splitNotes(split: SplitParam, reopenReason: string | undefined): Array<{ kind: "note" | "threat"; text: string }> {
+  if (split === "dev") {
+    return [
+      { kind: "note", text: 'Split "dev" = train + val; the test split was NOT read (the report\'s split field says "all" because the contract has no "dev" value yet).' },
+      { kind: "threat", text: "Dev rows are the rows the model was fit and tuned on: the model's own metrics here are in-sample, not out-of-fold. Out-of-fold claims about dev come from OOF prediction bundles given as baselines." },
+    ];
+  }
+  if (split === "train" || split === "val") return [{ kind: "threat", text: `Split "${split}" is part of dev: if the model was fit on it, its metrics here are in-sample.` }];
+  const registered = "registered in test-openings.jsonl (protocol 13: the test is opened once per frozen model)";
+  // Depends on params only (never on whether a first opening exists), so a --force re-run reproduces the same report.
+  if (reopenReason !== undefined) return [{ kind: "threat", text: `This run declares that it may be a second look at the test for this (model, dataset), reason given: ${reopenReason}. Every opening is ${registered}.` }];
+  const all = split === "all" ? " Split \"all\" includes train and val: the model's metrics there are in-sample." : "";
+  return [{ kind: "note", text: `The test split was opened for this (model, dataset), ${registered}.${all}` }];
+}
+
 const single = (ctx: StageContext, port: string): ArtifactHandle => {
   const h = ctx.inputs[port];
   if (h === undefined || Array.isArray(h)) throw new Error(`input "${port}" is missing`);
@@ -225,6 +248,12 @@ export const evaluateIntrinsic = defineStage(
     const handle = readModel(single(ctx, "model"), p.runtime ?? "ts", positiveLabel);
     try {
       const model = handle.model;
+      // Blindness (protocol 13): the opening is registered BEFORE a single test row is scored, and refused when this
+      // model already saw this test (unless a reason is given). Train, val and dev never touch the register.
+      if (split === "test" || split === "all") {
+        const { reopened } = registerOpening({ dataDir: ctx.dataDir, runId: ctx.runId, stageId: ctx.stageId, modelId: model.modelId, datasetId: manifest.dataset_id, split, ...(p.reopen_reason ? { reopenReason: p.reopen_reason } : {}) });
+        if (reopened) ctx.log(`the test split was RE-OPENED for this (model, dataset): ${p.reopen_reason ?? "?"}`);
+      }
       if (model.inputDim !== manifest.dim) throw new Error(`the model takes ${model.inputDim} features, the dataset has ${manifest.dim}`);
       if (model.manifest.feature_spec.schema_id !== manifest.feature_schema_id) {
         throw new Error(`the model was trained on feature schema ${model.manifest.feature_spec.schema_id}, the dataset uses ${manifest.feature_schema_id}`);
@@ -262,6 +291,7 @@ export const evaluateIntrinsic = defineStage(
         operatingRule: acceptThreshold ? "the model package's thresholds.accept" : `params.threshold = ${threshold}`,
         notes: [
           { kind: "note", text: plan.note },
+          ...splitNotes(split, p.reopen_reason),
           {
             kind: "note",
             text: `Operating threshold ${threshold}${acceptThreshold ? " (the package's thresholds.accept)" : " (params.threshold)"}; predicted keep = score >= threshold. Positive class = ${keepText}. ${rows.length} rows of split "${split}"${p.label_sources ? `, label sources ${p.label_sources.join("+")}` : ""}.`,
@@ -277,7 +307,7 @@ export const evaluateIntrinsic = defineStage(
         mode: "intrinsic" as const,
         model_id: model.modelId,
         dataset_id: manifest.dataset_id,
-        split,
+        split: split === "dev" ? ("all" as const) : split,
         threshold,
         intrinsic: res.intrinsic,
         ...(res.gates.length > 0 ? { gates: res.gates } : {}),
