@@ -251,6 +251,18 @@ npm run build
 
 Generated WASM packages are currently checked into `demo-web/public/pkg` and `demo-web/src/wasm/pkg` so the demo can run without rebuilding Rust every time. Rebuild `gran-prix-wasm` when the Rust/WASM API changes.
 
+### Building WASM
+
+Requires [`wasm-pack`](https://rustwasm.github.io/wasm-pack/) and the `wasm32-unknown-unknown` Rust target.
+
+```bash
+node scripts/build-wasm.mjs --target both   # gran-prix-wasm/pkg (web) and gran-prix-wasm/pkg-node (Node)
+node scripts/check-wasm-size.mjs            # fails if raw > 480,000 B or gzip > 200,000 B
+node demo-web/scripts/smoke-test.mjs        # runs the bridge from Node (needs pkg-node)
+```
+
+The build script applies the size profile (`opt-level=z`, LTO, `codegen-units=1`, `panic=abort`, `wasm-opt -Oz`) through `CARGO_PROFILE_RELEASE_*` environment variables, so it keeps working if the crates move into a Cargo workspace. `scripts/check-wasm-parity.mjs <pkg-node-A> <pkg-node-B>` checks that two builds produce bit-identical outputs. The CI workflow (`.github/workflows/ci.yml`) runs the Rust tests, this build with the size check, the smoke test and the demo-web build on pull requests and on pushes to branches other than `main`.
+
 ---
 
 ## License
