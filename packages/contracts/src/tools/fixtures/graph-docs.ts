@@ -47,7 +47,11 @@ const kind = (k: Omit<StageKindSpec, "format" | "format_version">): StageKindSpe
   ...k,
 });
 
-/** Registry matching `buildPipeline()`. */
+/**
+ * Registry matching `buildPipeline()`: the REAL stages of `@gran-prix/cli` (same impl ids, ports, runtime and
+ * determinism; `params_schema` is the subset of the real one that the example uses). A test of the CLI checks
+ * that this file and the real stage specs still agree, so the example cannot drift from the stages again.
+ */
 export function buildStageKinds(): StageKindSpec[] {
   return [
     kind({
@@ -55,7 +59,13 @@ export function buildStageKinds(): StageKindSpec[] {
       inputs: [port("urls", "UrlList")], outputs: [port("snapshots", "SnapshotSet")],
       params_schema: {
         type: "object", required: ["viewport"],
-        properties: { viewport: { type: "array", items: { type: "integer" }, minItems: 2, maxItems: 2 }, wait: { type: "string" }, max_nodes: { type: "integer", minimum: 1 } },
+        properties: {
+          viewport: { type: "array", items: { type: "integer", minimum: 1 }, minItems: 2, maxItems: 2 },
+          wait: { type: "string" },
+          max_nodes: { type: "integer", minimum: 1 },
+          captured_at: { type: "string" },
+          fail_on_error: { type: "boolean" },
+        },
       },
       runtime: "node+playwright", determinism: "external", map_over: "group",
     }),
@@ -68,20 +78,51 @@ export function buildStageKinds(): StageKindSpec[] {
     kind({
       kind: "label", impl: "ts:label.heuristic@1.0.0",
       inputs: [port("snapshots", "SnapshotSet"), port("features", "NodeFeaturesSet")], outputs: [port("labels", "NodeLabelsSet")],
-      params_schema: { type: "object", properties: { confidence: { type: "number", minimum: 0, maximum: 1 } } },
+      params_schema: {
+        type: "object",
+        properties: { labeler: { enum: ["readability"] }, confidence: { type: "number", minimum: 0, maximum: 1 } },
+        additionalProperties: false,
+      },
       runtime: "node", determinism: "pure", map_over: "group",
     }),
     kind({
       kind: "dataset", impl: "ts:dataset.jsonl@1.0.0",
-      inputs: [port("features", "NodeFeaturesSet"), port("labels", "NodeLabelsSet"), port("schema", "FeatureSchema")], outputs: [port("dataset", "Dataset")],
-      params_schema: { type: "object", required: ["split"], properties: { split: { type: "object" }, min_confidence: { type: "number" } } },
+      inputs: [port("features", "NodeFeaturesSet"), port("labels", "NodeLabelsSet"), port("schema", "FeatureSchema"), port("snapshots", "SnapshotSet", { optional: true })],
+      outputs: [port("dataset", "Dataset")],
+      params_schema: {
+        type: "object", required: ["split"],
+        properties: {
+          split: {
+            type: "object", required: ["seed"],
+            properties: {
+              seed: { type: ["string", "integer"] },
+              ranges: { type: "object" },
+              overrides: { type: "object", additionalProperties: { enum: ["train", "val", "test"] } },
+              group_by: { enum: ["group_key", "group"] },
+            },
+            additionalProperties: false,
+          },
+          min_confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+        additionalProperties: false,
+      },
       runtime: "node", determinism: "pure",
     }),
     kind({
-      kind: "train", impl: "ts:train.wasm-trainer@1.0.0",
-      inputs: [port("dataset", "Dataset")], outputs: [port("model", "ModelPackage")],
-      params_schema: { type: "object", required: ["seed"], properties: { seed: { type: "integer", minimum: 0 }, epochs: { type: "integer", minimum: 1 } } },
-      runtime: "node+wasm", determinism: "seeded",
+      kind: "train", impl: "rust:train.gp-train@1.0.0",
+      inputs: [port("dataset", "Dataset"), port("config", "TrainConfig", { optional: true })], outputs: [port("model", "ModelPackage")],
+      params_schema: {
+        type: "object", required: ["seed"],
+        properties: {
+          seed: { type: "integer", minimum: 0, maximum: 4294967295 },
+          config: { type: "object" },
+          name: { type: "string", minLength: 1 },
+          task_name: { type: "string", minLength: 1 },
+          created_at: { type: "string" },
+        },
+        additionalProperties: false,
+      },
+      runtime: "rust", determinism: "seeded",
     }),
     kind({
       kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0",
@@ -89,10 +130,23 @@ export function buildStageKinds(): StageKindSpec[] {
       outputs: [port("report", "EvalReport"), port("extras", "Bundle"), port("details", "Bundle")],
       params_schema: {
         type: "object", required: ["seed"],
-        properties: { seed: { type: "integer", minimum: 0 }, split: { enum: ["train", "val", "test", "all"] }, baselines: { type: "array", items: { type: "string" } } },
+        properties: {
+          seed: { type: "integer", minimum: 0 },
+          split: { enum: ["train", "val", "test", "all"] },
+          resamples: { type: "integer", minimum: 100 },
+          baselines: { type: "array", items: { type: "string" } },
+          gates: { type: "array", items: { type: "object" } },
+        },
+        additionalProperties: false,
       },
       runtime: "node+wasm", determinism: "seeded",
-      gates: [{ id: "f1_vs_baseline", description: "Macro F1 delta against the baseline is >= 0." }],
+      gates: [{ id: "params_gates", description: "Every entry of params.gates (metric, comparator, threshold, strata, baseline, CI bound) becomes a gates[] entry of the report." }],
+    }),
+    kind({
+      kind: "package", impl: "ts:package.bundle@1.0.0",
+      inputs: [port("model", "ModelPackage")], outputs: [port("bundle", "Bundle")],
+      params_schema: { type: "object", additionalProperties: false },
+      runtime: "node+wasm", determinism: "pure",
     }),
   ];
 }
@@ -100,31 +154,40 @@ export function buildStageKinds(): StageKindSpec[] {
 const ext = (name: string) => ({ external: name });
 const out = (stage: string, output: string) => ({ stage, output });
 
+/**
+ * The example pipeline: collect -> extract -> label -> dataset -> train -> eval, then package. `package` is LAST in
+ * declaration order on purpose (the contract tests address the first six stages by index); the runner orders by dependency.
+ */
 export function buildPipeline(): PipelineSpec {
   return {
     format: "gran-prix.pipeline-spec",
     format_version: "1.0.0",
     name: "fixture-dom-pipeline",
-    description: "Synthetic pipeline used by the contract fixtures.",
+    description: "Synthetic pipeline used by the contract fixtures. Same shape as pipelines/dom-v0.json, over the real stage implementations.",
     vars: { seed: 42 },
     externals: {
       urls: { type: "UrlList", path: "data/urls.csv" },
       schema: { type: "FeatureSchema", id: sha("feature-schema-id") },
+      train_config: { type: "TrainConfig", id: sha("train-config-id") },
     },
     stages: [
       { id: "collect", kind: "collect", impl: "ts:collect.playwright@1.0.0", params: { viewport: [1366, 900], wait: "networkidle+2s" }, inputs: { urls: ext("urls") } },
       { id: "extract", kind: "extract", impl: "ts:extract.dom-node@1.0.0", params: {}, inputs: { snapshots: out("collect", "snapshots"), schema: ext("schema") } },
-      { id: "label", kind: "label", impl: "ts:label.heuristic@1.0.0", params: { confidence: 0.8 }, inputs: { snapshots: out("collect", "snapshots"), features: out("extract", "features") } },
+      { id: "label", kind: "label", impl: "ts:label.heuristic@1.0.0", params: { labeler: "readability", confidence: 0.8 }, inputs: { snapshots: out("collect", "snapshots"), features: out("extract", "features") } },
       {
         id: "dataset", kind: "dataset", impl: "ts:dataset.jsonl@1.0.0",
-        params: { split: { group_by: "group_key", salt: "fixture-v1" }, min_confidence: 0.5 },
-        inputs: { features: out("extract", "features"), labels: out("label", "labels"), schema: ext("schema") },
+        params: { split: { seed: "fixture-v1", group_by: "group_key" }, min_confidence: 0.5 },
+        inputs: { features: out("extract", "features"), labels: out("label", "labels"), schema: ext("schema"), snapshots: out("collect", "snapshots") },
       },
-      { id: "train", kind: "train", impl: "ts:train.wasm-trainer@1.0.0", params: { seed: "${vars.seed}", epochs: 30 }, inputs: { dataset: out("dataset", "dataset") } },
       {
-        id: "eval", kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0", params: { seed: "${vars.seed}", split: "test", baselines: ["readability"] },
+        id: "train", kind: "train", impl: "rust:train.gp-train@1.0.0", params: { seed: "${vars.seed}" },
+        inputs: { dataset: out("dataset", "dataset"), config: ext("train_config") },
+      },
+      {
+        id: "eval", kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0", params: { seed: "${vars.seed}", split: "test", gates: [] },
         inputs: { model: out("train", "model"), dataset: out("dataset", "dataset") }, gate: true,
       },
+      { id: "package", kind: "package", impl: "ts:package.bundle@1.0.0", params: {}, inputs: { model: out("train", "model") } },
     ],
     layout: { collect: { x: 0, y: 0 }, extract: { x: 200, y: 0 } },
   };

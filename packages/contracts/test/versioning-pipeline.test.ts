@@ -143,9 +143,10 @@ describe("PipelineSpec validation", () => {
     };
     const spec = structuredClone(u.pipeline);
     spec.stages.push({ id: "merge", kind: "label", impl: merge.impl, params: {}, inputs: { layers: { stage: "label", output: "labels" } } });
+    const at = spec.stages.length - 1;
     const issues = pipelineRegistryIssues(spec, [...kinds, merge]);
-    expect(issues.some((i) => i.path === "stages[6].inputs.layers" && /array/.test(i.message))).toBe(true);
-    spec.stages[6]!.inputs["layers"] = [{ stage: "label", output: "labels" }];
+    expect(issues.some((i) => i.path === `stages[${at}].inputs.layers` && /array/.test(i.message))).toBe(true);
+    spec.stages[at]!.inputs["layers"] = [{ stage: "label", output: "labels" }];
     expect(pipelineRegistryIssues(spec, [...kinds, merge])).toEqual([]);
   });
 });
