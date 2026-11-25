@@ -46,6 +46,8 @@ describe("pipelines/dom-v0.json", () => {
     ]);
     expect(stage("train").inputs).toEqual({ dataset: { stage: "dataset", output: "dataset" }, config: { external: "train_config" } });
     expect(stage("evaluate").inputs["model"]).toEqual({ stage: "train", output: "model" });
+    // the Readability labels are the baseline of the evaluation
+    expect(stage("evaluate").inputs["label_baselines"]).toEqual([{ stage: "label_heuristic", output: "labels" }]);
     // seeds are vars; the pinned capture time keeps the SnapshotSet id reproducible
     expect(dom.vars).toMatchObject({ seed: 42 });
     expect(stage("train").params["seed"]).toBe("${vars.seed}");

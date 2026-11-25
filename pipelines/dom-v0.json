@@ -374,7 +374,10 @@
       },
       "inputs": {
         "model": { "stage": "train", "output": "model" },
-        "dataset": { "stage": "dataset", "output": "dataset" }
+        "dataset": { "stage": "dataset", "output": "dataset" },
+        "label_baselines": [
+          { "stage": "label_heuristic", "output": "labels" }
+        ]
       }
     }
   ]

@@ -126,7 +126,7 @@ export function buildStageKinds(): StageKindSpec[] {
     }),
     kind({
       kind: "evaluate", impl: "ts:evaluate.intrinsic@1.0.0",
-      inputs: [port("model", "ModelPackage"), port("dataset", "Dataset"), port("baselines", "Bundle", { many: true, optional: true })],
+      inputs: [port("model", "ModelPackage"), port("dataset", "Dataset"), port("baselines", "Bundle", { many: true, optional: true }), port("label_baselines", "NodeLabelsSet", { many: true, optional: true })],
       outputs: [port("report", "EvalReport"), port("extras", "Bundle"), port("details", "Bundle")],
       params_schema: {
         type: "object", required: ["seed"],

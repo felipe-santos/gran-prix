@@ -273,6 +273,12 @@
         "type": "Bundle",
         "many": true,
         "optional": true
+      },
+      {
+        "name": "label_baselines",
+        "type": "NodeLabelsSet",
+        "many": true,
+        "optional": true
       }
     ],
     "outputs": [
