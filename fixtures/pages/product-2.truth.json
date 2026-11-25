@@ -1,0 +1,25 @@
+{
+  "page": "product-2.html",
+  "category": "product",
+  "note": "The technical specs live in an open shadow root; the rule targets the shadow host and descendants inherit its label.",
+  "rules": [
+    { "selector": ".title", "label": "main" },
+    { "selector": ".price-line", "label": "main" },
+    { "selector": ".tagline", "label": "main" },
+    { "selector": ".sku", "label": "support" },
+    { "selector": ".options", "label": "support" },
+    { "selector": ".delivery", "label": "support" },
+    { "selector": "product-specs", "label": "main" },
+    { "selector": ".story", "label": "main" },
+    { "selector": ".qa", "label": "support" },
+    { "selector": ".reviews", "label": "support" },
+    { "selector": ".banner", "label": "noise" },
+    { "selector": ".top", "label": "noise" },
+    { "selector": ".video-note", "label": "noise" },
+    { "selector": ".buy", "label": "noise" },
+    { "selector": ".recs", "label": "noise" },
+    { "selector": ".chat", "label": "noise" },
+    { "selector": ".hidden", "label": "noise" },
+    { "selector": ".site-footer", "label": "noise" }
+  ]
+}

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fieldnotes Reader</title>
+<style>
+body{font:16px/1.5 system-ui,sans-serif;margin:0}
+#app{max-width:900px;margin:0 auto;padding:12px}
+.appbar{display:flex;gap:16px;background:#274c43;color:#fff;padding:10px}
+.appbar a{color:#fff}
+.hidden{display:none}
+.toast{position:fixed;right:12px;bottom:12px;background:#222;color:#fff;padding:8px}
+.skeleton{color:#999}
+</style>
+</head>
+<body>
+<div id="app"><p class="skeleton">Loading the reader...</p></div>
+<noscript><p>Fieldnotes Reader needs JavaScript to display stories.</p></noscript>
+
+<script>
+// Content is rendered after load, in two waves, the way a client-side app would.
+const story = {
+  title: "Why the Tide Tables Disagree",
+  byline: "Reported by Oriel Vance, 2 February 2026",
+  paras: [
+    "Anyone who has planned a walk across the sandbar knows the frustration: two printed tide tables for the same bay, and two different times for low water. The disagreement is real, and it is usually no one's mistake.",
+    "Tables are built from long records of measured heights at a single reference harbour. Everywhere else, the times are corrected with local offsets. A bay with a narrow mouth delays the tide, and the size of that delay depends on the wind and the pressure of the day.",
+    "Publishers also differ in how they smooth the data. One may average ten years of readings, another may fit a smooth curve to a single year. Both are defensible, and on a calm day they agree within a few minutes.",
+    "The practical advice from the harbour office is modest. Pick one table and learn how it behaves, check the date of its last correction, and always leave a margin of an hour on either side of the time you need."
+  ],
+  related: ["How buoys listen to the sea", "A short history of the tidal clock", "Reading the sky before a crossing"]
+};
+const el = (tag, attrs, ...kids) => {
+  const e = document.createElement(tag);
+  Object.assign(e, attrs || {});
+  kids.forEach(k => e.append(k));
+  return e;
+};
+const app = document.getElementById('app');
+
+// Wave 1 (about 250 ms): shell and main story.
+setTimeout(() => {
+  app.replaceChildren(
+    el('header', { className: 'appbar' }, el('strong', {}, 'Fieldnotes'), el('a', { href: '#home' }, 'Home'), el('a', { href: '#saved' }, 'Saved'), el('a', { href: '#settings' }, 'Settings')),
+    el('main', { className: 'view' },
+      el('article', { className: 'story' },
+        el('h1', {}, story.title),
+        el('p', { className: 'byline' }, story.byline),
+        ...story.paras.map(t => el('p', {}, t)))),
+    el('footer', { className: 'app-footer' }, el('p', {}, 'Fieldnotes Reader is an experiment in calm reading.'), el('a', { href: '#about' }, 'About')),
+    el('div', { className: 'hidden drawer' }, el('p', {}, 'Account drawer: sign in to sync your saved stories.'))
+  );
+}, 250);
+
+// Wave 2 (about 700 ms): lazily loaded sections and a toast.
+setTimeout(() => {
+  const main = app.querySelector('main');
+  main.append(
+    el('section', { className: 'reader-notes' }, el('h2', {}, 'Reader notes'),
+      el('p', {}, 'Harbour volunteer: the offset for the east jetty is posted on the board by the slipway.')),
+    el('section', { className: 'more-stories' }, el('h2', {}, 'Keep reading'),
+      el('ul', {}, ...story.related.map(t => el('li', {}, el('a', { href: '#' }, t)))))
+  );
+  document.body.append(el('div', { className: 'toast' }, 'You are offline. Showing saved stories.'));
+}, 700);
+</script>
+</body>
+</html>

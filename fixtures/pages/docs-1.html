@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Configuring the Retry Policy - Tallowfield Client Library Docs</title>
+<style>
+body{font:15px/1.55 system-ui,sans-serif;margin:0}
+.shell{display:flex;min-height:100vh}
+.side{width:240px;background:#f3f4f6;padding:12px}
+.content{flex:1;max-width:760px;padding:16px 28px}
+.hidden{display:none}
+pre{background:#101820;color:#e8e8e8;padding:10px;overflow:auto}
+table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px;text-align:left}
+.topbar{background:#0b3d5c;color:#fff;padding:8px 16px;display:flex;gap:16px}
+.feedback{border-top:1px solid #ddd;margin-top:32px;padding-top:8px}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="docs-logo">Tallowfield Docs</a>
+  <a href="/guides">Guides</a><a href="/reference">Reference</a><a href="/changelog">Changelog</a>
+  <input type="search" placeholder="Search the docs">
+  <select class="ver"><option>v4.2</option><option>v4.1</option><option>v3.9</option></select>
+</div>
+<div class="shell">
+<nav class="side" aria-label="Documentation">
+  <h4>Getting started</h4>
+  <ul><li><a href="#">Installation</a></li><li><a href="#">Your first request</a></li><li><a href="#">Authentication</a></li></ul>
+  <h4>Guides</h4>
+  <ul><li><a href="#">Timeouts</a></li><li><a class="current" href="#">Retry policy</a></li><li><a href="#">Pagination</a></li><li><a href="#">Error handling</a></li></ul>
+  <h4>Reference</h4>
+  <ul><li><a href="#">Client</a></li><li><a href="#">RetryOptions</a></li><li><a href="#">Errors</a></li></ul>
+</nav>
+
+<main class="content">
+  <nav class="breadcrumbs"><a href="#">Docs</a> / <a href="#">Guides</a> / <span>Retry policy</span></nav>
+  <article class="doc">
+    <h1>Configuring the Retry Policy</h1>
+    <p class="lead">The Tallowfield client can repeat failed requests automatically. This guide explains which failures are retried, how the delay between attempts grows, and how to turn the behaviour off.</p>
+
+    <h2 id="defaults">Default behaviour</h2>
+    <p>By default the client retries up to three times when it receives a network error or a response with status 502, 503 or 504. Requests that use unsafe methods are only retried when they carry an idempotency key.</p>
+
+    <h2 id="options">Retry options</h2>
+    <table>
+      <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>maxAttempts</code></td><td>number</td><td>3</td><td>Total attempts including the first request.</td></tr>
+        <tr><td><code>baseDelayMs</code></td><td>number</td><td>200</td><td>Delay before the first retry.</td></tr>
+        <tr><td><code>factor</code></td><td>number</td><td>2</td><td>Multiplier applied after every attempt.</td></tr>
+        <tr><td><code>jitter</code></td><td>boolean</td><td>true</td><td>Randomise each delay by up to half its length.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="example">Example</h2>
+    <p>The following snippet raises the attempt limit and uses a gentler growth factor.</p>
+    <pre><code>const client = new Client({
+  retry: { maxAttempts: 5, baseDelayMs: 150, factor: 1.5 },
+});
+const result = await client.get("/reports/weekly");</code></pre>
+    <p>To disable retries entirely, pass <code>retry: false</code> when constructing the client.</p>
+
+    <h2 id="notes">Notes</h2>
+    <ul>
+      <li>Delays are capped at thirty seconds regardless of the growth factor.</li>
+      <li>A <code>Retry-After</code> header always takes precedence over the computed delay.</li>
+      <li>Retried requests keep the same idempotency key.</li>
+    </ul>
+
+    <div class="feedback"><p>Was this page helpful?</p><button>Yes</button> <button>No</button> <a href="#">Edit this page on the code host</a></div>
+    <nav class="pager"><a href="#">Previous: Timeouts</a> <a href="#">Next: Pagination</a></nav>
+  </article>
+</main>
+
+<aside class="toc-right" aria-label="On this page">
+  <h4>On this page</h4>
+  <ul><li><a href="#defaults">Default behaviour</a></li><li><a href="#options">Retry options</a></li><li><a href="#example">Example</a></li><li><a href="#notes">Notes</a></li></ul>
+</aside>
+</div>
+<div class="hidden" id="version-banner"><p>You are reading an older version of this page.</p></div>
+<footer class="site-footer"><p>Tallowfield Client Library, released under a permissive licence.</p><p><a href="#">Status</a> <a href="#">Community</a> <a href="#">Security policy</a></p></footer>
+</body>
+</html>

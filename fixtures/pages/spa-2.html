@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pantry Pages</title>
+<style>
+body{font:16px/1.5 Georgia,serif;margin:0;background:#fffaf0}
+#root{max-width:860px;margin:0 auto;padding:12px}
+.nav{display:flex;gap:14px;border-bottom:1px solid #ddd;padding:8px}
+.cols{display:flex;gap:24px}
+.cols>*{flex:1}
+.ad{background:#eee;padding:10px;text-align:center}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div id="root"><div class="spinner">Fetching recipe...</div></div>
+
+<script>
+// A tiny client-side "app": data first, markup built with innerHTML after a delay.
+const recipe = {
+  name: "Roasted Beet and Barley Salad",
+  intro: "A sturdy cold salad that keeps well for lunches. The barley stays chewy, the beets turn sweet in the oven, and a sharp dressing ties it together.",
+  time: "Prep 20 minutes, cook 50 minutes, serves 4",
+  ingredients: ["4 medium beets, scrubbed", "200 g pearl barley", "2 spoonfuls of cider vinegar", "3 spoonfuls of olive oil", "1 small red onion, sliced thin", "A handful of chopped parsley"],
+  steps: [
+    "Heat the oven to 200 degrees. Wrap the beets in foil and roast until a knife slides in easily, about 45 minutes.",
+    "Meanwhile, simmer the barley in salted water until tender but still chewy. Drain well and let it steam dry.",
+    "Whisk the vinegar and oil with a pinch of salt. Peel and cube the beets, then fold everything together with the onion.",
+    "Rest for ten minutes so the flavours mingle, and finish with the parsley just before serving."
+  ]
+};
+const li = a => a.map(t => '<li>' + t + '</li>').join('');
+const root = document.getElementById('root');
+
+setTimeout(() => {
+  root.innerHTML =
+    '<nav class="nav"><a href="#">Pantry Pages</a><a href="#">Soups</a><a href="#">Salads</a><a href="#">Bakes</a><a href="#">Saved</a></nav>' +
+    '<div class="ad">Sponsored: Oakhurst olive oil, cold pressed.</div>' +
+    '<main><article class="recipe"><h1>' + recipe.name + '</h1>' +
+    '<p class="intro">' + recipe.intro + '</p><p class="timing">' + recipe.time + '</p>' +
+    '<div class="cols"><section class="ingredients"><h2>Ingredients</h2><ul>' + li(recipe.ingredients) + '</ul></section>' +
+    '<section class="method"><h2>Method</h2><ol>' + li(recipe.steps) + '</ol></section></div></article></main>' +
+    '<footer class="foot"><p>Pantry Pages. Recipes tested in a home kitchen.</p><a href="#">Contact</a> <a href="#">Privacy</a></footer>';
+}, 300);
+
+setTimeout(() => {
+  const main = root.querySelector('main');
+  main.insertAdjacentHTML('beforeend',
+    '<section class="ratings"><h2>Ratings</h2><p>4.7 average from 63 cooks.</p><p class="rev">"Even better the next day." - Pellam</p></section>' +
+    '<section class="suggest"><h2>You may also like</h2><ul><li>Lentil and fennel soup</li><li>Seeded rye loaf</li></ul></section>' +
+    '<div class="hidden promo"><p>Save this recipe to your pantry list.</p></div>');
+}, 800);
+</script>
+</body>
+</html>

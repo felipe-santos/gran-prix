@@ -1,0 +1,21 @@
+{
+  "page": "forum-1.html",
+  "category": "forum",
+  "rules": [
+    { "selector": ".thread-title", "label": "main" },
+    { "selector": ".post-text", "label": "main" },
+    { "selector": ".thread-meta", "label": "support" },
+    { "selector": ".post-date", "label": "support" },
+    { "selector": ".author-col", "label": "support" },
+    { "selector": ".board-crumbs", "label": "support" },
+    { "selector": ".sig", "label": "noise" },
+    { "selector": ".post-actions", "label": "noise" },
+    { "selector": ".forum-head", "label": "noise" },
+    { "selector": ".ad-slot", "label": "noise" },
+    { "selector": ".pagination", "label": "noise" },
+    { "selector": ".quick-reply", "label": "noise" },
+    { "selector": ".forum-side", "label": "noise" },
+    { "selector": "#login-wall", "label": "noise" },
+    { "selector": ".forum-footer", "label": "noise" }
+  ]
+}
