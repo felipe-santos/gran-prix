@@ -1,0 +1,237 @@
+[
+  {
+    "format": "gran-prix.stage-kind-spec",
+    "format_version": "1.0.0",
+    "kind": "collect",
+    "impl": "ts:collect.playwright@1.0.0",
+    "inputs": [
+      {
+        "name": "urls",
+        "type": "UrlList"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "snapshots",
+        "type": "SnapshotSet"
+      }
+    ],
+    "params_schema": {
+      "type": "object",
+      "required": [
+        "viewport"
+      ],
+      "properties": {
+        "viewport": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "wait": {
+          "type": "string"
+        },
+        "max_nodes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "runtime": "node+playwright",
+    "determinism": "external",
+    "map_over": "group"
+  },
+  {
+    "format": "gran-prix.stage-kind-spec",
+    "format_version": "1.0.0",
+    "kind": "extract",
+    "impl": "ts:extract.dom-node@1.0.0",
+    "inputs": [
+      {
+        "name": "snapshots",
+        "type": "SnapshotSet"
+      },
+      {
+        "name": "schema",
+        "type": "FeatureSchema"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "features",
+        "type": "NodeFeaturesSet"
+      }
+    ],
+    "params_schema": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "runtime": "node",
+    "determinism": "pure",
+    "map_over": "group"
+  },
+  {
+    "format": "gran-prix.stage-kind-spec",
+    "format_version": "1.0.0",
+    "kind": "label",
+    "impl": "ts:label.heuristic@1.0.0",
+    "inputs": [
+      {
+        "name": "snapshots",
+        "type": "SnapshotSet"
+      },
+      {
+        "name": "features",
+        "type": "NodeFeaturesSet"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "labels",
+        "type": "NodeLabelsSet"
+      }
+    ],
+    "params_schema": {
+      "type": "object",
+      "properties": {
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "runtime": "node",
+    "determinism": "pure",
+    "map_over": "group"
+  },
+  {
+    "format": "gran-prix.stage-kind-spec",
+    "format_version": "1.0.0",
+    "kind": "dataset",
+    "impl": "ts:dataset.jsonl@1.0.0",
+    "inputs": [
+      {
+        "name": "features",
+        "type": "NodeFeaturesSet"
+      },
+      {
+        "name": "labels",
+        "type": "NodeLabelsSet"
+      },
+      {
+        "name": "schema",
+        "type": "FeatureSchema"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "dataset",
+        "type": "Dataset"
+      }
+    ],
+    "params_schema": {
+      "type": "object",
+      "required": [
+        "split"
+      ],
+      "properties": {
+        "split": {
+          "type": "object"
+        },
+        "min_confidence": {
+          "type": "number"
+        }
+      }
+    },
+    "runtime": "node",
+    "determinism": "pure"
+  },
+  {
+    "format": "gran-prix.stage-kind-spec",
+    "format_version": "1.0.0",
+    "kind": "train",
+    "impl": "ts:train.wasm-trainer@1.0.0",
+    "inputs": [
+      {
+        "name": "dataset",
+        "type": "Dataset"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "model",
+        "type": "ModelPackage"
+      }
+    ],
+    "params_schema": {
+      "type": "object",
+      "required": [
+        "seed"
+      ],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "epochs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "runtime": "node+wasm",
+    "determinism": "seeded"
+  },
+  {
+    "format": "gran-prix.stage-kind-spec",
+    "format_version": "1.0.0",
+    "kind": "evaluate",
+    "impl": "ts:evaluate.intrinsic@1.0.0",
+    "inputs": [
+      {
+        "name": "model",
+        "type": "ModelPackage"
+      },
+      {
+        "name": "dataset",
+        "type": "Dataset"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "report",
+        "type": "EvalReport"
+      }
+    ],
+    "params_schema": {
+      "type": "object",
+      "properties": {
+        "split": {
+          "enum": [
+            "train",
+            "val",
+            "test",
+            "all"
+          ]
+        },
+        "baselines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "runtime": "node+wasm",
+    "determinism": "pure",
+    "gates": [
+      {
+        "id": "f1_vs_baseline",
+        "description": "Macro F1 delta against the baseline is >= 0."
+      }
+    ]
+  }
+]

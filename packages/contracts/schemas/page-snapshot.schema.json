@@ -1,0 +1,191 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:page-snapshot",
+  "x-gran-prix": {
+    "contract": "page-snapshot",
+    "format": "gran-prix.page-snapshot",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "FileRef": {
+      "type": "object",
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "description": "Path relative to the artifact directory, '/' separators, no '..'.",
+          "type": "string"
+        },
+        "sha256": { "$ref": "#/$defs/Sha256" },
+        "bytes": { "minimum": 0, "type": "integer" },
+        "media_type": { "type": "string" }
+      }
+    },
+    "Iso8601": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "RFC 3339 / ISO 8601 date-time. Provenance only.",
+      "type": "string"
+    },
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "page-snapshot",
+  "description": "Immutable record of a rendered page: flat pre-order node table + rendered HTML reference.",
+  "type": "object",
+  "required": ["format", "format_version", "snapshot_id", "page", "doc", "nodes", "html", "capture"],
+  "properties": {
+    "format": { "const": "gran-prix.page-snapshot", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "snapshot_id": { "$ref": "#/$defs/Sha256" },
+    "page": {
+      "type": "object",
+      "required": ["url", "final_url", "url_key", "group_key", "category"],
+      "properties": {
+        "url": { "minLength": 1, "type": "string" },
+        "final_url": { "minLength": 1, "type": "string" },
+        "url_key": {
+          "minLength": 1,
+          "description": "Normalized URL: no fragment/tracking params, lowercase host.",
+          "type": "string"
+        },
+        "group_key": {
+          "minLength": 1,
+          "description": "Registrable domain (eTLD+1): unit of the anti-leakage split.",
+          "type": "string"
+        },
+        "category": {
+          "minLength": 1,
+          "description": "Stratum of the page (article, ecom, docs, ...).",
+          "type": "string"
+        },
+        "title": { "type": "string" },
+        "lang": { "type": "string" }
+      }
+    },
+    "doc": {
+      "type": "object",
+      "required": ["viewport_w", "viewport_h", "scroll_w", "scroll_h"],
+      "properties": {
+        "viewport_w": { "minimum": 0, "type": "integer" },
+        "viewport_h": { "minimum": 0, "type": "integer" },
+        "scroll_w": { "minimum": 0, "type": "integer" },
+        "scroll_h": { "minimum": 0, "type": "integer" }
+      }
+    },
+    "nodes": {
+      "description": "Pre-order element table; nodes[i].idx === i.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["idx", "parent", "depth", "tag", "attrs", "own_text", "own_text_len", "text_len", "link_text_len", "child_elems", "style", "rect", "flags"],
+        "properties": {
+          "idx": { "minimum": 0, "type": "integer" },
+          "parent": {
+            "minimum": -1,
+            "description": "-1 for the root; otherwise < idx (pre-order).",
+            "type": "integer"
+          },
+          "depth": { "minimum": 0, "type": "integer" },
+          "tag": {
+            "minLength": 1,
+            "description": "Lowercase tag name.",
+            "type": "string"
+          },
+          "attrs": {
+            "description": "Whitelisted attributes only (whitelist is fixed per collector_version).",
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "class": { "type": "string" },
+              "role": { "type": "string" },
+              "href": { "type": "string" },
+              "type": { "type": "string" },
+              "aria-label": { "type": "string" },
+              "itemprop": { "type": "string" },
+              "alt": { "type": "string" },
+              "src": { "type": "string" },
+              "name": { "type": "string" }
+            }
+          },
+          "own_text": {
+            "description": "Direct text children, whitespace collapsed, truncated.",
+            "type": "string"
+          },
+          "own_text_len": { "minimum": 0, "type": "integer" },
+          "text_len": { "minimum": 0, "type": "integer" },
+          "link_text_len": { "minimum": 0, "type": "integer" },
+          "child_elems": { "minimum": 0, "type": "integer" },
+          "style": {
+            "type": "object",
+            "required": ["display", "visibility", "opacity", "position", "font_size", "font_weight"],
+            "properties": {
+              "display": { "type": "string" },
+              "visibility": { "type": "string" },
+              "opacity": { "minimum": 0, "maximum": 1, "type": "number" },
+              "position": { "type": "string" },
+              "font_size": { "minimum": 0, "type": "number" },
+              "font_weight": { "minimum": 0, "type": "number" },
+              "float": { "type": "string" },
+              "z_index": { "type": "integer" }
+            }
+          },
+          "rect": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["x", "y", "w", "h"],
+                "properties": {
+                  "x": { "type": "integer" },
+                  "y": { "type": "integer" },
+                  "w": { "minimum": 0, "type": "integer" },
+                  "h": { "minimum": 0, "type": "integer" }
+                }
+              },
+              { "type": "null" }
+            ]
+          },
+          "flags": {
+            "type": "object",
+            "required": ["in_shadow", "iframe_depth"],
+            "properties": {
+              "in_shadow": { "type": "boolean" },
+              "iframe_depth": { "minimum": 0, "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "html": { "$ref": "#/$defs/FileRef" },
+    "capture": {
+      "description": "Capture metadata. OUTSIDE snapshot_id.",
+      "type": "object",
+      "required": ["captured_at", "collector_version", "browser", "user_agent", "http_status", "wait_strategy", "scrolled_to_bottom", "truncated", "auth"],
+      "properties": {
+        "captured_at": { "$ref": "#/$defs/Iso8601" },
+        "collector_version": { "type": "string" },
+        "browser": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "const": "chromium", "type": "string" },
+            "version": { "type": "string" }
+          }
+        },
+        "user_agent": { "type": "string" },
+        "http_status": { "minimum": 100, "maximum": 599, "type": "integer" },
+        "wait_strategy": { "type": "string" },
+        "scrolled_to_bottom": { "type": "boolean" },
+        "truncated": { "type": "boolean" },
+        "auth": { "const": "none", "type": "string" }
+      }
+    }
+  }
+}

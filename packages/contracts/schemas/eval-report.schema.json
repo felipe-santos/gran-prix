@@ -1,0 +1,350 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:eval-report",
+  "x-gran-prix": {
+    "contract": "eval-report",
+    "format": "gran-prix.eval-report",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "Ci95": {
+      "description": "[lo, hi], lo <= hi.",
+      "type": "array",
+      "items": [
+        { "type": "number" },
+        { "type": "number" }
+      ],
+      "additionalItems": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "Iso8601": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "RFC 3339 / ISO 8601 date-time. Provenance only.",
+      "type": "string"
+    },
+    "Prf": {
+      "type": "object",
+      "required": ["n", "tp", "fp", "tn", "fn", "precision", "recall", "f1", "accuracy"],
+      "properties": {
+        "n": { "minimum": 0, "type": "integer" },
+        "tp": { "minimum": 0, "type": "integer" },
+        "fp": { "minimum": 0, "type": "integer" },
+        "tn": { "minimum": 0, "type": "integer" },
+        "fn": { "minimum": 0, "type": "integer" },
+        "precision": { "minimum": 0, "maximum": 1, "type": "number" },
+        "recall": { "minimum": 0, "maximum": 1, "type": "number" },
+        "f1": { "minimum": 0, "maximum": 1, "type": "number" },
+        "accuracy": { "minimum": 0, "maximum": 1, "type": "number" }
+      }
+    },
+    "Provenance": {
+      "description": "Where an artifact came from. Outside every content id.",
+      "type": "object",
+      "required": ["produced_by", "inputs", "pipeline_spec_id", "tool_versions", "created_at", "duration_ms"],
+      "properties": {
+        "produced_by": {
+          "type": "object",
+          "required": ["run_id", "stage_id", "kind", "impl", "params_sha256", "cache_key"],
+          "properties": {
+            "run_id": { "minLength": 1, "type": "string" },
+            "stage_id": { "minLength": 1, "type": "string" },
+            "kind": { "minLength": 1, "type": "string" },
+            "impl": { "minLength": 1, "type": "string" },
+            "params_sha256": { "$ref": "#/$defs/Sha256" },
+            "cache_key": { "$ref": "#/$defs/Sha256" }
+          }
+        },
+        "inputs": {
+          "description": "Edges of the lineage DAG.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["port", "artifact_id"],
+            "properties": {
+              "port": { "type": "string" },
+              "artifact_id": { "$ref": "#/$defs/Sha256" }
+            }
+          }
+        },
+        "pipeline_spec_id": { "$ref": "#/$defs/Sha256" },
+        "tool_versions": {
+          "type": "object",
+          "required": ["gp_cli", "node"],
+          "properties": {
+            "gp_cli": { "type": "string" },
+            "git_commit": { "type": "string" },
+            "git_dirty": { "type": "boolean" },
+            "node": { "type": "string" },
+            "wasm_sha256": { "$ref": "#/$defs/Sha256" },
+            "extractor": {
+              "type": "object",
+              "required": ["name", "version", "bundle_sha256"],
+              "properties": {
+                "name": { "type": "string" },
+                "version": { "$ref": "#/$defs/SemVer" },
+                "bundle_sha256": { "$ref": "#/$defs/Sha256" }
+              }
+            }
+          }
+        },
+        "created_at": { "$ref": "#/$defs/Iso8601" },
+        "host": { "type": "string" },
+        "duration_ms": { "minimum": 0, "type": "integer" }
+      }
+    },
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "eval-report",
+  "description": "Evaluation of a model on a dataset split: per-stratum metrics, baselines, group-bootstrap CIs, gates.",
+  "type": "object",
+  "required": ["format", "format_version", "report_id", "mode", "model_id", "dataset_id", "split", "threshold", "provenance"],
+  "properties": {
+    "format": { "const": "gran-prix.eval-report", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "report_id": { "$ref": "#/$defs/Sha256" },
+    "mode": {
+      "anyOf": [
+        { "const": "intrinsic", "type": "string" },
+        { "const": "downstream", "type": "string" }
+      ]
+    },
+    "model_id": { "$ref": "#/$defs/Sha256" },
+    "dataset_id": { "$ref": "#/$defs/Sha256" },
+    "split": {
+      "anyOf": [
+        {
+          "anyOf": [
+            { "const": "train", "type": "string" },
+            { "const": "val", "type": "string" },
+            { "const": "test", "type": "string" }
+          ]
+        },
+        { "const": "all", "type": "string" },
+        {
+          "type": "object",
+          "required": ["kfold"],
+          "properties": {
+            "kfold": {
+              "type": "object",
+              "required": ["k", "fold"],
+              "properties": {
+                "k": { "minimum": 1, "type": "integer" },
+                "fold": { "minimum": 0, "type": "integer" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "threshold": { "minimum": 0, "maximum": 1, "type": "number" },
+    "intrinsic": {
+      "type": "object",
+      "required": ["overall", "by_stratum", "by_label_source", "baselines", "comparison", "per_group"],
+      "properties": {
+        "overall": {
+          "allOf": [
+            { "$ref": "#/$defs/Prf" },
+            {
+              "type": "object",
+              "required": ["auc_roc", "pr_auc", "logloss", "brier"],
+              "properties": {
+                "auc_roc": { "minimum": 0, "maximum": 1, "type": "number" },
+                "pr_auc": { "minimum": 0, "maximum": 1, "type": "number" },
+                "logloss": { "minimum": 0, "type": "number" },
+                "brier": { "minimum": 0, "maximum": 1, "type": "number" }
+              }
+            }
+          ]
+        },
+        "by_stratum": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "allOf": [
+                { "$ref": "#/$defs/Prf" },
+                {
+                  "type": "object",
+                  "required": ["n_groups"],
+                  "properties": {
+                    "n_groups": { "minimum": 0, "type": "integer" }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "by_label_source": {
+          "description": "Avoids the circularity 'trained and measured on the same labeler'. Keys = LabelSource.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": { "$ref": "#/$defs/Prf" }
+          }
+        },
+        "baselines": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "object",
+              "required": ["overall", "by_stratum"],
+              "properties": {
+                "overall": { "$ref": "#/$defs/Prf" },
+                "by_stratum": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^(.*)$": { "$ref": "#/$defs/Prf" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "comparison": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["stratum", "metric", "model", "baseline", "baseline_value", "delta", "ci95", "n_groups"],
+            "properties": {
+              "stratum": { "type": "string" },
+              "metric": { "const": "f1", "type": "string" },
+              "model": { "type": "number" },
+              "baseline": { "type": "string" },
+              "baseline_value": { "type": "number" },
+              "delta": { "type": "number" },
+              "ci95": { "$ref": "#/$defs/Ci95" },
+              "n_groups": { "minimum": 0, "type": "integer" }
+            }
+          }
+        },
+        "token_stats": {
+          "type": "object",
+          "required": ["tokenizer", "full_tokens", "kept_tokens", "ratio"],
+          "properties": {
+            "tokenizer": { "type": "string" },
+            "full_tokens": { "minimum": 0, "type": "integer" },
+            "kept_tokens": { "minimum": 0, "type": "integer" },
+            "ratio": { "minimum": 0, "type": "number" }
+          }
+        },
+        "per_group": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["group_id", "stratum", "f1", "kept_ratio"],
+            "properties": {
+              "group_id": { "type": "string" },
+              "stratum": { "type": "string" },
+              "f1": { "minimum": 0, "maximum": 1, "type": "number" },
+              "kept_ratio": { "minimum": 0, "maximum": 1, "type": "number" }
+            }
+          }
+        },
+        "calibration": {
+          "type": "object",
+          "required": ["ece", "bins"],
+          "properties": {
+            "ece": { "minimum": 0, "maximum": 1, "type": "number" },
+            "bins": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["lo", "hi", "n", "mean_p", "frac_pos"],
+                "properties": {
+                  "lo": { "minimum": 0, "maximum": 1, "type": "number" },
+                  "hi": { "minimum": 0, "maximum": 1, "type": "number" },
+                  "n": { "minimum": 0, "type": "integer" },
+                  "mean_p": { "minimum": 0, "maximum": 1, "type": "number" },
+                  "frac_pos": { "minimum": 0, "maximum": 1, "type": "number" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "downstream": {
+      "type": "object",
+      "required": ["task_set_id", "llm", "judge", "arms", "paired_deltas"],
+      "properties": {
+        "task_set_id": { "$ref": "#/$defs/Sha256" },
+        "llm": {
+          "type": "object",
+          "required": ["model", "prompt_sha256"],
+          "properties": {
+            "model": { "type": "string" },
+            "prompt_sha256": { "$ref": "#/$defs/Sha256" }
+          }
+        },
+        "judge": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "anyOf": [
+                { "const": "llm", "type": "string" },
+                { "const": "exact", "type": "string" },
+                { "const": "human", "type": "string" }
+              ]
+            },
+            "model": { "type": "string" },
+            "rubric_sha256": { "$ref": "#/$defs/Sha256" }
+          }
+        },
+        "arms": {
+          "description": "e.g. full_page, pruned_model, pruned_readability.",
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "object",
+              "required": ["n", "score_mean", "score_ci95", "tokens_in_mean", "cost_usd"],
+              "properties": {
+                "n": { "minimum": 0, "type": "integer" },
+                "score_mean": { "type": "number" },
+                "score_ci95": { "$ref": "#/$defs/Ci95" },
+                "tokens_in_mean": { "minimum": 0, "type": "number" },
+                "cost_usd": { "minimum": 0, "type": "number" }
+              }
+            }
+          }
+        },
+        "paired_deltas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["a", "b", "mean_delta", "ci95"],
+            "properties": {
+              "a": { "type": "string" },
+              "b": { "type": "string" },
+              "mean_delta": { "type": "number" },
+              "ci95": { "$ref": "#/$defs/Ci95" },
+              "p_value": { "minimum": 0, "maximum": 1, "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "rule", "value", "passed"],
+        "properties": {
+          "id": { "minLength": 1, "type": "string" },
+          "rule": { "type": "string" },
+          "value": { "type": "number" },
+          "passed": { "type": "boolean" }
+        }
+      }
+    },
+    "provenance": { "$ref": "#/$defs/Provenance" }
+  }
+}

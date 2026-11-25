@@ -1,0 +1,354 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:gran-prix:schema:model-package",
+  "x-gran-prix": {
+    "contract": "model-package",
+    "format": "gran-prix.model-package",
+    "version": "1.0.0"
+  },
+  "$defs": {
+    "Iso8601": {
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "RFC 3339 / ISO 8601 date-time. Provenance only.",
+      "type": "string"
+    },
+    "Provenance": {
+      "description": "Where an artifact came from. Outside every content id.",
+      "type": "object",
+      "required": ["produced_by", "inputs", "pipeline_spec_id", "tool_versions", "created_at", "duration_ms"],
+      "properties": {
+        "produced_by": {
+          "type": "object",
+          "required": ["run_id", "stage_id", "kind", "impl", "params_sha256", "cache_key"],
+          "properties": {
+            "run_id": { "minLength": 1, "type": "string" },
+            "stage_id": { "minLength": 1, "type": "string" },
+            "kind": { "minLength": 1, "type": "string" },
+            "impl": { "minLength": 1, "type": "string" },
+            "params_sha256": { "$ref": "#/$defs/Sha256" },
+            "cache_key": { "$ref": "#/$defs/Sha256" }
+          }
+        },
+        "inputs": {
+          "description": "Edges of the lineage DAG.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["port", "artifact_id"],
+            "properties": {
+              "port": { "type": "string" },
+              "artifact_id": { "$ref": "#/$defs/Sha256" }
+            }
+          }
+        },
+        "pipeline_spec_id": { "$ref": "#/$defs/Sha256" },
+        "tool_versions": {
+          "type": "object",
+          "required": ["gp_cli", "node"],
+          "properties": {
+            "gp_cli": { "type": "string" },
+            "git_commit": { "type": "string" },
+            "git_dirty": { "type": "boolean" },
+            "node": { "type": "string" },
+            "wasm_sha256": { "$ref": "#/$defs/Sha256" },
+            "extractor": {
+              "type": "object",
+              "required": ["name", "version", "bundle_sha256"],
+              "properties": {
+                "name": { "type": "string" },
+                "version": { "$ref": "#/$defs/SemVer" },
+                "bundle_sha256": { "$ref": "#/$defs/Sha256" }
+              }
+            }
+          }
+        },
+        "created_at": { "$ref": "#/$defs/Iso8601" },
+        "host": { "type": "string" },
+        "duration_ms": { "minimum": 0, "type": "integer" }
+      }
+    },
+    "SemVer": {
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+      "description": "Semantic version x.y.z.",
+      "type": "string"
+    },
+    "Sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content id: sha256: + 64 lowercase hex characters.",
+      "type": "string"
+    }
+  },
+  "title": "model-package",
+  "description": "model.json of a ModelPackage v1: feature_spec, output_spec, thresholds, digest, metrics and provenance around a pure NetworkDef.",
+  "type": "object",
+  "required": ["format", "format_version", "model_id", "name", "task", "files", "digest", "network", "feature_spec", "output_spec", "thresholds", "requires", "provenance"],
+  "properties": {
+    "format": { "const": "gran-prix.model-package", "type": "string" },
+    "format_version": { "$ref": "#/$defs/SemVer" },
+    "model_id": { "$ref": "#/$defs/Sha256" },
+    "name": { "minLength": 1, "type": "string" },
+    "description": { "type": "string" },
+    "task": {
+      "type": "object",
+      "required": ["name", "unit", "stateless"],
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "description": "Free-form, e.g. dom-content-classifier.",
+          "type": "string"
+        },
+        "unit": { "minLength": 1, "type": "string" },
+        "stateless": {
+          "description": "false: recurrent state is out-of-band (KNOWN-GAPS).",
+          "type": "boolean"
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "required": ["network_def", "weights", "golden"],
+      "properties": {
+        "network_def": {
+          "type": "object",
+          "required": ["path", "bytes"],
+          "properties": {
+            "path": {
+              "minLength": 1,
+              "description": "Relative to the package directory.",
+              "type": "string"
+            },
+            "bytes": { "minimum": 0, "type": "integer" }
+          }
+        },
+        "weights": {
+          "type": "object",
+          "required": ["path", "bytes", "dtype", "count"],
+          "properties": {
+            "path": {
+              "minLength": 1,
+              "description": "Relative to the package directory.",
+              "type": "string"
+            },
+            "bytes": { "minimum": 0, "type": "integer" },
+            "dtype": { "const": "f32le", "type": "string" },
+            "count": { "minimum": 0, "type": "integer" }
+          }
+        },
+        "golden": {
+          "type": "object",
+          "required": ["path", "bytes"],
+          "properties": {
+            "path": {
+              "minLength": 1,
+              "description": "Relative to the package directory.",
+              "type": "string"
+            },
+            "bytes": { "minimum": 0, "type": "integer" }
+          }
+        }
+      }
+    },
+    "digest": {
+      "description": "network_def: sha256 of the RFC 8785 canonical JSON of the parsed network_def.json; weights/golden: sha256 of the raw file bytes. golden is verified at load but is not part of model_id.",
+      "type": "object",
+      "required": ["algorithm", "network_def", "weights", "golden"],
+      "properties": {
+        "algorithm": { "const": "sha256", "type": "string" },
+        "network_def": { "$ref": "#/$defs/Sha256" },
+        "weights": { "$ref": "#/$defs/Sha256" },
+        "golden": { "$ref": "#/$defs/Sha256" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "required": ["input_dim", "output_dim", "param_layout"],
+      "properties": {
+        "input_dim": { "minimum": 1, "type": "integer" },
+        "output_dim": { "minimum": 1, "type": "integer" },
+        "param_layout": {
+          "description": "Names such as \"layers[0].weight\"; offset/length in floats; contiguous.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "shape", "offset", "length"],
+            "properties": {
+              "name": { "minLength": 1, "type": "string" },
+              "shape": {
+                "minItems": 1,
+                "type": "array",
+                "items": { "minimum": 1, "type": "integer" }
+              },
+              "offset": { "minimum": 0, "type": "integer" },
+              "length": { "minimum": 1, "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "feature_spec": {
+      "type": "object",
+      "required": ["schema_id", "name", "version", "dim", "names", "normalization", "ood"],
+      "properties": {
+        "schema_id": { "$ref": "#/$defs/Sha256" },
+        "name": { "minLength": 1, "type": "string" },
+        "version": { "$ref": "#/$defs/SemVer" },
+        "dim": { "minimum": 1, "type": "integer" },
+        "names": {
+          "description": "names[i] === FeatureSchema.features[i].name.",
+          "type": "array",
+          "items": { "minLength": 1, "type": "string" }
+        },
+        "normalization": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": ["kind"],
+              "properties": {
+                "kind": { "const": "none", "type": "string" }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["kind", "mean", "std", "eps"],
+              "properties": {
+                "kind": { "const": "zscore", "type": "string" },
+                "mean": {
+                  "type": "array",
+                  "items": { "type": "number" }
+                },
+                "std": {
+                  "type": "array",
+                  "items": { "type": "number" }
+                },
+                "eps": { "exclusiveMinimum": 0, "type": "number" }
+              }
+            }
+          ]
+        },
+        "ood": {
+          "description": "Per-feature training range, to flag out-of-distribution inputs.",
+          "type": "object",
+          "required": ["lo", "hi", "tolerance"],
+          "properties": {
+            "lo": {
+              "type": "array",
+              "items": { "type": "number" }
+            },
+            "hi": {
+              "type": "array",
+              "items": { "type": "number" }
+            },
+            "tolerance": {
+              "minimum": 0,
+              "description": "Fraction of (hi - lo) allowed beyond the range before the input is flagged OOD.",
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "output_spec": {
+      "type": "object",
+      "required": ["activation", "labels", "calibration"],
+      "properties": {
+        "activation": {
+          "description": "Applied by the runtime to the network output (after calibration of the logit).",
+          "anyOf": [
+            { "const": "sigmoid", "type": "string" },
+            { "const": "softmax", "type": "string" },
+            { "const": "identity", "type": "string" }
+          ]
+        },
+        "labels": {
+          "minItems": 2,
+          "description": "Class names; for sigmoid, labels[1] is the positive class.",
+          "type": "array",
+          "items": { "minLength": 1, "type": "string" }
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": ["kind"],
+              "properties": {
+                "kind": { "const": "none", "type": "string" }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["kind", "a", "b"],
+              "properties": {
+                "kind": { "const": "platt", "type": "string" },
+                "a": { "type": "number" },
+                "b": { "type": "number" }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["kind", "t"],
+              "properties": {
+                "kind": { "const": "temperature", "type": "string" },
+                "t": { "exclusiveMinimum": 0, "type": "number" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "thresholds": {
+      "description": "score >= accept: accept. escalate <= score < accept (or top1-top2 gap < margin): escalate to a stronger judge. score < escalate: reject. Requires escalate <= accept.",
+      "type": "object",
+      "required": ["accept", "escalate", "margin"],
+      "properties": {
+        "accept": { "minimum": 0, "maximum": 1, "type": "number" },
+        "escalate": { "minimum": 0, "maximum": 1, "type": "number" },
+        "margin": { "minimum": 0, "maximum": 1, "type": "number" }
+      }
+    },
+    "requires": {
+      "type": "object",
+      "required": ["runtime", "layer_types", "extensions"],
+      "properties": {
+        "runtime": {
+          "type": "object",
+          "required": ["wasm_abi"],
+          "properties": {
+            "wasm_abi": { "minLength": 1, "type": "string" }
+          }
+        },
+        "layer_types": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "const": "linear", "type": "string" },
+              { "const": "activation", "type": "string" },
+              { "const": "dropout", "type": "string" },
+              { "const": "batchnorm", "type": "string" },
+              { "const": "rnn", "type": "string" },
+              { "const": "gru", "type": "string" }
+            ]
+          }
+        },
+        "extensions": {
+          "description": "Unknown extension => the loader must refuse.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["eval_report_id", "headline"],
+      "properties": {
+        "eval_report_id": { "$ref": "#/$defs/Sha256" },
+        "headline": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": { "type": "number" }
+          }
+        }
+      }
+    },
+    "provenance": { "$ref": "#/$defs/Provenance" }
+  }
+}

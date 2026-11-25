@@ -1,0 +1,43 @@
+{
+  "name": "@gran-prix/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Versioned data contracts (TypeBox -> TS types + JSON Schema), validators and content-addressed identity helpers for the Gran-Prix pipeline.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schemas/*": "./schemas/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "fixtures",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node dist/tools/emit-schemas.js",
+    "test": "vitest run",
+    "check:schemas": "tsc -p tsconfig.build.json && node dist/tools/emit-schemas.js --check",
+    "fixtures:regen": "tsc -p tsconfig.build.json && node dist/tools/write-fixtures.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52",
+    "ajv": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}
