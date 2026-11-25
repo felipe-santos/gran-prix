@@ -73,6 +73,15 @@ describe("split check (§3)", () => {
     expect(splitCounts(pages, "gp-dom-v0-s0")).toEqual(a);
     for (const c of CATEGORIES) expect(a[c.name].train + a[c.name].val + a[c.name].test).toBe(c.n);
   });
+  it("firstSalt can restrict the rule to some categories (the indicative i), and fails when an incomplete one is included", () => {
+    const some = pages.filter((p) => p.category !== "spa").concat(pages.filter((p) => p.category === "spa").slice(0, 5));
+    expect(firstSalt(some).i).toBeNull();
+    const only = ["article", "product", "docs", "forum", "landing"];
+    const r = firstSalt(some, 1000, only);
+    expect(r.i).not.toBeNull();
+    expect(satisfies(r.counts, only)).toBe(true);
+    expect(satisfies(r.counts)).toBe(false);
+  });
   it("firstSalt returns the first i that satisfies the rule", () => {
     const r = firstSalt(pages);
     expect(r.i).not.toBeNull();
