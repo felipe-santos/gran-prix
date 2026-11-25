@@ -2,11 +2,9 @@ import { readFileSync } from "node:fs";
 import type { EvalReport } from "@gran-prix/contracts";
 import { describe, expect, it } from "vitest";
 import { ExtrasError, renderReport } from "../src/index.js";
-import { loadExtras, loadRich, loadValid, PKG, textOf } from "./helpers.js";
+import { loadExtras, loadRich, loadRichV11, loadV10, loadV10Extras, loadValid, PKG, sectionIds, textOf } from "./helpers.js";
 
-const sectionIds = (html: string): string[] => [...html.matchAll(/<section id="([a-z-]+)"/g)].map((m) => m[1] as string);
-
-describe("contract fixture (minimal valid EvalReport)", () => {
+describe("contract fixture (valid EvalReport v1.1)", () => {
   const report = loadValid();
   const html = renderReport(report);
   const text = textOf(html);
@@ -57,11 +55,19 @@ describe("contract fixture (minimal valid EvalReport)", () => {
     expect(text).toContain("n = 20");
   });
 
-  it("says in one line what the contract cannot carry, instead of inventing it", () => {
-    expect(text).toContain("PR curve points are not in this report");
-    expect(text).toContain("Per-stratum 95% CIs are not in this report");
-    expect(text).toContain("D1 and D2 are not in this report");
-    expect(sectionIds(html)).not.toContain("notes");
+  it('has no "not in this report" line: every v1.1 block is in the report itself', () => {
+    expect(text).not.toContain("not in this report");
+    expect(text).not.toContain("v1.0.0");
+    expect(sectionIds(html)).toContain("notes");
+  });
+
+  it("says in one line what a v1.0 report cannot carry, instead of inventing it", () => {
+    const old = textOf(renderReport(loadV10()));
+    expect(old).toContain("PR curve points are not in this report (EvalReport v1.0.0");
+    expect(old).toContain("Per-stratum 95% CIs are not in this report");
+    expect(old).toContain("D1 and D2 are not in this report (EvalReport v1.0.0");
+    expect(old).toContain("Confidence intervals for gate values are not in this report");
+    expect(sectionIds(renderReport(loadV10()))).not.toContain("notes");
   });
 
   it("omits the gates section when the report has no gates", () => {
@@ -81,14 +87,14 @@ describe("contract fixture (minimal valid EvalReport)", () => {
   });
 });
 
-describe("rich synthetic fixture (every section)", () => {
+describe("rich synthetic v1.0 fixture + sidecar (every section)", () => {
   const report = loadRich();
   const extras = loadExtras();
   const html = renderReport(report, { extras });
   const text = textOf(html);
 
   it("renders the sections in the contract order, with the extras after their parents", () => {
-    expect(sectionIds(html)).toEqual(["gates", "strata", "confusion", "pr", "calibration", "tokens", "downstream", "notes"]);
+    expect(sectionIds(html)).toEqual(["gates", "strata", "confusion", "pr", "calibration", "tokens", "downstream", "notes", "provenance"]);
   });
 
   it("has every stratum and every baseline in table, charts and confusion matrices", () => {
@@ -145,9 +151,15 @@ describe("rich synthetic fixture (every section)", () => {
 });
 
 describe("self-containment and safety", () => {
-  const docs = [renderReport(loadValid()), renderReport(loadRich(), { extras: loadExtras() })];
+  const names = ["contract fixture (v1.1)", "rich v1.0 + sidecar", "rich v1.1", "frozen v1.0 + sidecar"];
+  const docs = [
+    renderReport(loadValid()),
+    renderReport(loadRich(), { extras: loadExtras() }),
+    renderReport(loadRichV11()),
+    renderReport(loadV10(), { extras: loadV10Extras() }),
+  ];
 
-  it.each(docs.map((d, i) => [i === 0 ? "contract fixture" : "rich fixture", d] as const))("%s has no external reference at all", (_n, html) => {
+  it.each(docs.map((d, i) => [names[i] as string, d] as const))("%s has no external reference at all", (_n, html) => {
     expect(html).not.toMatch(/https?:\/\//i);
     expect(html).not.toMatch(/(?:src|href|action|poster|srcset)\s*=\s*["']?(?:https?:|\/\/|file:|data:)/i);
     expect(html).not.toMatch(/<(?:script|link|iframe|img|object|embed|video|audio|form)\b/i);
@@ -155,7 +167,7 @@ describe("self-containment and safety", () => {
     for (const m of html.matchAll(/href="([^"]*)"/g)) expect(m[1]).toMatch(/^#/);
   });
 
-  it.each(docs.map((d, i) => [i === 0 ? "contract fixture" : "rich fixture", d] as const))("%s supports light and dark and a phone viewport", (_n, html) => {
+  it.each(docs.map((d, i) => [names[i] as string, d] as const))("%s supports light and dark and a phone viewport", (_n, html) => {
     expect(html).toContain("@media (prefers-color-scheme:dark)");
     expect(html).toContain('<meta name="color-scheme" content="light dark">');
     expect(html).toContain("@media (max-width:520px)");
@@ -171,9 +183,21 @@ describe("self-containment and safety", () => {
 
   it("escapes text that comes from the inputs", () => {
     const evil = '<img src=x onerror="alert(1)">&';
-    const html = renderReport(loadValid(), { extras: { names: { model: evil }, notes: [{ kind: "note", text: evil }] } });
-    expect(html).not.toContain("<img");
-    expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;");
+    const escaped = "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;";
+    // sidecar text (a v1.0 report) ...
+    const viaExtras = renderReport(loadV10(), { extras: { names: { model: evil }, notes: [{ kind: "note", text: evil }] } });
+    expect(viaExtras).not.toContain("<img");
+    expect(viaExtras).toContain(escaped);
+    // ... and the report's own text (v1.1): names, notes, gate names, system.
+    const own = structuredClone(loadValid());
+    own.names = { model: evil, dataset: evil };
+    own.notes = [{ kind: "threat", text: evil }];
+    own.system = { kind: "model", name: evil };
+    const g = own.gates?.[0];
+    if (g) g.name = evil;
+    const viaReport = renderReport(own);
+    expect(viaReport).not.toContain("<img");
+    expect(viaReport).toContain(escaped);
   });
 
   it("rejects malformed extras with every problem listed", () => {
@@ -209,12 +233,20 @@ describe("comparison (--compare)", () => {
 });
 
 describe("golden output", () => {
-  it("matches the stored HTML for the contract fixture", async () => {
+  it("matches the stored HTML for the v1.1 contract fixture", async () => {
     await expect(renderReport(loadValid())).toMatchFileSnapshot("golden/valid-eval-report.html");
   });
 
-  it("matches the committed example (examples/example-report.html)", () => {
+  it("matches the stored HTML for the frozen v1.0 fixture with its sidecar", async () => {
+    await expect(renderReport(loadV10(), { extras: loadV10Extras() })).toMatchFileSnapshot("golden/v10-eval-report-with-extras.html");
+  });
+
+  it("matches the stored HTML for the frozen v1.0 fixture alone", async () => {
+    await expect(renderReport(loadV10())).toMatchFileSnapshot("golden/v10-eval-report.html");
+  });
+
+  it("matches the committed example (examples/example-report.html): a v1.1 report, no sidecar", () => {
     const committed = readFileSync(`${PKG}examples/example-report.html`, "utf8");
-    expect(renderReport(loadRich(), { extras: loadExtras() })).toBe(committed);
+    expect(renderReport(loadRichV11())).toBe(committed);
   });
 });
