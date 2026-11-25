@@ -1,0 +1,15 @@
+{
+  "name": "gp-spike-collect-align",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Spike: stamp stable data-gp-id, snapshot via Playwright, align Readability/Trafilatura output to DOM nodes.",
+  "scripts": {
+    "fixtures": "node src/run.mjs --fixtures",
+    "lint-truth": "node src/run.mjs --fixtures --lint-truth"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "playwright-core": "^1.57.0"
+  }
+}
