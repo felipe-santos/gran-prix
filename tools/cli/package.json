@@ -36,6 +36,7 @@
     "@gran-prix/features": "workspace:*",
     "@gran-prix/infer-ts": "workspace:*",
     "@gran-prix/labels": "workspace:*",
+    "@gran-prix/markdown": "workspace:*",
     "@gran-prix/model": "workspace:*",
     "@gran-prix/report": "workspace:*",
     "defuddle": "0.19.13",
