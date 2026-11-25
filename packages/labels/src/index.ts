@@ -32,3 +32,4 @@ export {
 } from "./label-page.js";
 export { indexBySnapshot, loadSnapshotHtml, readSetDocs, type FileSetLike, type SetMember, type SetSource } from "./sets.js";
 export { DEFAULT_EXCLUDE_FLAGS, buildDataset, groupIdOf, type BuiltDataset, type DatasetParams, type DatasetSource, type PageMeta } from "./dataset.js";
+export { ownTextChars, ownTextWeights } from "./weights.js";

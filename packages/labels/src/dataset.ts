@@ -45,6 +45,11 @@ export interface DatasetSource {
   page: PageMeta;
   features: NodeFeatures;
   labels: NodeLabels;
+  /**
+   * `unit_id` -> evaluation weight (own-text characters, see `ownTextWeights`). All sources or none: with weights every
+   * row carries `w` and the manifest declares `row_weight: "own_text_chars"` (format 1.1.0).
+   */
+  weights?: ReadonlyMap<number, number>;
 }
 
 export interface DatasetParams {
@@ -102,6 +107,10 @@ export function buildDataset(schema: FeatureSchema, sources: readonly DatasetSou
   const dedupe = params.dedupe ?? "none";
 
   const first = sources[0];
+  const weighted = sources.length > 0 && sources.every((s) => s.weights !== undefined);
+  if (!weighted && sources.some((s) => s.weights !== undefined)) {
+    throw new Error("weights must be given for every source or for none: a dataset cannot mix weighted and unweighted pages");
+  }
   const space = first?.labels.label_space;
   const projected = space !== undefined && space.kind !== "binary";
   const seenIds = new Set<string>();
@@ -128,7 +137,7 @@ export function buildDataset(schema: FeatureSchema, sources: readonly DatasetSou
     const hashed = groupBy === "group_key" ? page.group_key : group_id;
     const { split, bucket } = assignSplit(salt, hashed, { ranges, overrides: groupBy === "group_key" ? overrides : {} });
     const g: GroupBuild = { group_id, page, src, split, bucket, rows: [], orphans: 0 };
-    fillRows(g, schema, { projected, keepClasses, minConfidence, allowed, testAllowed, dedupe });
+    fillRows(g, schema, { projected, keepClasses, minConfidence, allowed, testAllowed, dedupe, weighted });
     groups.push(g);
   }
   groups.sort((a, b) => cmp(a.group_id, b.group_id));
@@ -167,9 +176,10 @@ export function buildDataset(schema: FeatureSchema, sources: readonly DatasetSou
 
   const body = {
     format: "gran-prix.dataset-manifest" as const,
-    format_version: "1.0.0" as const,
+    format_version: (weighted ? "1.1.0" : "1.0.0") as "1.0.0" | "1.1.0",
     feature_schema_id: schema.schema_id,
     dim: schema.dim,
+    ...(weighted ? { row_weight: "own_text_chars" as const } : {}),
     label_space: projected || space === undefined ? { kind: "binary" as const, classes: [...BINARY_SPACE.classes] as ["drop", "keep"] } : space,
     ...(projected && space ? { label_projection: { from: space, keep_classes: keepClasses } } : {}),
     sources: groups.map((g) => ({
@@ -232,6 +242,8 @@ interface RowFilter {
   allowed: ReadonlySet<LabelSource>;
   testAllowed: ReadonlySet<LabelSource>;
   dedupe: "none" | "exact_x_per_group";
+  /** Every source has weights: rows carry `w`. */
+  weighted: boolean;
 }
 
 function fillRows(g: GroupBuild, schema: FeatureSchema, f: RowFilter): void {
@@ -257,6 +269,11 @@ function fillRows(g: GroupBuild, schema: FeatureSchema, f: RowFilter): void {
     const y = f.projected ? projectToBinary(item.y, labels.label_space, f.keepClasses) : item.y;
     const row: DatasetRow = { g: g.group_id, u: item.unit_id, x, y, c: item.confidence, s: item.source };
     if (f.projected) row.l = item.y;
+    if (f.weighted) {
+      const w = g.src.weights?.get(item.unit_id);
+      if (w === undefined) throw new Error(`unit ${item.unit_id} of ${g.group_id} has no weight (it is not a node of the snapshot)`);
+      row.w = w;
+    }
     g.rows.push(row);
   }
   g.rows.sort((a, b) => a.u - b.u);
