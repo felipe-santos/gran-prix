@@ -35,7 +35,7 @@ export interface GridStats {
     alive: number;
 }
 
-// ─── Internal Helpers (Copied from useSmartGridGameLoop.ts) ──────────────────
+// ─── Internal Helpers ──────────────────
 
 function houseDemandAt(hour: number): number {
     const base = 0.5;
