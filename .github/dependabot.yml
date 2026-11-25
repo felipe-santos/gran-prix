@@ -3,15 +3,9 @@
 
 version: 2
 updates:
-  # Rust core crate (root Cargo.toml)
+  # Rust workspace (root Cargo.toml + the single Cargo.lock; covers gran-prix-wasm too)
   - package-ecosystem: "cargo"
     directory: "/"
-    schedule:
-      interval: "weekly"
-
-  # Rust WASM crate
-  - package-ecosystem: "cargo"
-    directory: "/gran-prix-wasm"
     schedule:
       interval: "weekly"
 

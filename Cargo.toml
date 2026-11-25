@@ -1,3 +1,7 @@
+[workspace]
+members = ["gran-prix-wasm"]
+resolver = "2"
+
 [package]
 name = "gran-prix"
 version = "0.1.0"
