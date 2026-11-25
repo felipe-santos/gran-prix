@@ -92,6 +92,7 @@ dependencies = [
  "ndarray-rand",
  "num-traits",
  "rand",
+ "rand_chacha",
  "rayon",
  "rustfft",
  "serde",

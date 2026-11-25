@@ -8,6 +8,7 @@ pub mod loss;
 pub mod optim;
 pub mod params;
 pub mod network_def;
+pub mod init;
 pub mod scheduler;
 
 pub use tensor::Tensor;
