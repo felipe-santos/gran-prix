@@ -111,23 +111,44 @@ a run are plain files: `<data>/artifacts/sha256-<hex>/content.json` (ids are in 
 
 ## The `evaluate` stage (`ts:evaluate.intrinsic@1.0.0`)
 
-Scores one split of a `Dataset` with a `ModelPackage` and writes an `EvalReport` v1.0 (intrinsic). Ports:
-inputs `model: ModelPackage`, `dataset: Dataset` (the registry contract) and an optional `many`
-`baselines: Bundle`; outputs `report: EvalReport`, `extras: Bundle` (the sidecar `gp report` reads) and
-`details: Bundle` (micro and macro-by-page tables with CIs, coverage, bootstrap settings). Deterministic
-given the inputs and `seed` (`determinism: seeded`, `runtime: node+wasm`, so the wasm hash is in the cache key).
+Scores one split of a `Dataset` with a `ModelPackage` and writes an `EvalReport` **v1.1.0** (intrinsic). Ports:
+inputs `model: ModelPackage`, `dataset: Dataset` (the registry contract), an optional `many` `baselines: Bundle`
+and an optional `many` `label_baselines: NodeLabelsSet`; outputs `report: EvalReport`, `extras: Bundle` and
+`details: Bundle` (micro and macro-by-page tables with CIs, coverage, bootstrap settings). Deterministic given the
+inputs and `seed` (`determinism: seeded`, `runtime: node+wasm`, so the wasm hash is in the cache key).
 
-* Unit = dataset row (element); positive = keep. Weight = characters of own text, recovered from the
-  feature `log_own_len` (`round(expm1(x * log1p(5000)))`, override with `params.weight`); `"none"` or a
-  model without that feature falls back to weight 1 and says so in the extras notes.
+* **The report is self-contained (1.1.0).** It carries `system`, `names`, `notes[]`, `intrinsic.weighting`,
+  `intrinsic.bootstrap`, `metric_ci` (model and baselines, "overall" + every stratum), `pr_curve` (sorted, with
+  `operating_threshold` = the report threshold and `operating_rule`), `aggregates[]`, `by_tag` (from
+  `Dataset.groups[].tags`), `baselines[].coverage`, `comparison[].aggregation`, per-group `group_key` / `n_chars` /
+  `f1_by_baseline`, and structured `gates[]` (`name, comparator, threshold, unit, stratum, observed, ci95, metric,
+  baseline, aggregation, use_ci_lower`; `passed` is recomputable from `value`). The `extras` output is still written
+  for older `@gran-prix/report` builds but is **redundant** with the report and will go away once the renderer reads
+  the report alone. Not filled by this stage: `token_reduction` (needs a tokenizer and page text) and `runtime` (G5).
+* Unit = dataset row (element); positive = keep. **Weight = characters of own text**: the exact `dataset-row.w` when
+  the dataset declares `row_weight` (`buildDataset` of `@gran-prix/labels` writes it from the snapshots' nodes). Datasets without it fall back
+  to the characters recovered from the feature `log_own_len` (`round(expm1(x * log1p(5000))`, so at most 5000 per
+  element) and say so in `notes`; `params.weight` overrides: `"row"` (requires `w`), `"none"` (1 per element, noted:
+  counts are ELEMENTS) or `{ feature, log1p_scale }`.
 * `by_stratum`, `overall`, `by_label_source`, `baselines` are MICRO (counts summed over pages) as the
   contract implies; macro-by-page (mean of per-page F1) is in `details`, and is the default statistic of
   `comparison[]` and of the gates (`params.aggregation`). Empty output scores P = F1 = 0.
 * CIs: percentile bootstrap over clusters (`group_key`, the domain, by default), seeded, `resamples`
   (default 1000), redrawn within strata. Differences model - baseline use the same resample (paired) and
-  both systems on the units the baseline covers.
-* Baselines: `Bundle` artifacts, JSON `{ id, threshold?, predictions: [{ g, u, p }] }` or a file set with
-  `predictions.jsonl` (+ `system.json`); `p` is 0/1 or a score (>= threshold, default 0.5).
+  both systems on the units the baseline covers (`comparison[].n_groups` counts the pages it covers).
+* **Aggregates** (`params.aggregates: [{ name, strata }]`, e.g. `hard`): reported in `aggregates[]` (micro counts,
+  macro-by-page and macro-by-stratum F1, `ci95` of the headline F1), compared with every baseline, and usable as a
+  gate `stratum`. A gate that pools several strata (`stratum: ["docs", "shop"]`) adds an aggregate named `docs+shop`.
+* **Baselines**:
+  * a prediction `Bundle`: JSON `{ id, threshold?, predictions: [{ g, u, p }] }` or a file set with
+    `predictions.jsonl` (+ `system.json`); `p` is 0/1 or a score (>= threshold, default 0.5);
+  * **NodeLabels** (e.g. the `label.heuristic` / Readability output): wire a `NodeLabelsSet` to `label_baselines`
+    (edges are type-checked, so a label stage's output goes here), or give NodeLabels documents in a `Bundle` on
+    `baselines`. keep = the labels' classes in `params.label_baseline.keep_classes` (default main + support); a unit
+    the labeler did not label is **uncovered** (left out of that baseline and of every paired difference, for the model
+    as well); pages are matched to the dataset by `snapshot_id` (`manifest.sources[].source_id`, else the `#<hex12>`
+    suffix of the group id). The baseline is named by `params.label_baseline.names` (port order) or by the labeler kind.
+    `baselines[].coverage` is the share of the weight it covers; a note gives units and weight.
 * Gates (`params.gates`): `{ id, name?, metric, comparator, threshold, stratum?, baseline?, aggregation?,
   use_ci_lower? }` become `gates[]` (`value` is the CI bound when `use_ci_lower`) and `extras.gate_details`.
   Thresholds are always params; the stage has none of its own.
@@ -135,8 +156,8 @@ given the inputs and `seed` (`determinism: seeded`, `runtime: node+wasm`, so the
   the real run provenance is in the receipt and `meta.json`.
 
 ```
-gp run eval.pipeline.json --data-dir data     # params: seed (required), split, resamples, threshold, weight, gates, ...
-gp report data/artifacts/sha256-<report>/content.json --extras data/artifacts/sha256-<extras>/content.json -o report.html
+gp run eval.pipeline.json --data-dir data     # params: seed (required), split, resamples, threshold, weight, aggregates, label_baseline, gates, ...
+gp report data/artifacts/sha256-<report>/content.json -o report.html     # --extras <extras> only for older report builds
 ```
 
 ## Data stages: `collect` and `extract` (E1.5)

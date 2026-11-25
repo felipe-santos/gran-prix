@@ -1,6 +1,6 @@
 import { inject, describe, expect, it } from "vitest";
 import { assignSplit, sha256Of, validate, type DatasetRow, type NodeFeatures, type NodeLabels } from "@gran-prix/contracts";
-import { buildDataset, labelPageReadability, labelPageTruth, mergeLabels, type DatasetSource } from "../src/index.js";
+import { buildDataset, labelPageReadability, labelPageTruth, mergeLabels, ownTextChars, ownTextWeights, type DatasetSource } from "../src/index.js";
 import { loadCorpus, loadSchema } from "./helpers.js";
 
 const dir = inject("corpusDir");
@@ -181,5 +181,60 @@ describe("dataset from features + labels of the 12 fixtures", () => {
     // configurable: other flags only, or none
     expect(buildDataset(schema, src, { seed, exclude_flags: ["paywall"] }).manifest.groups).toHaveLength(manifest.groups.length);
     expect(buildDataset(schema, src, { seed, exclude_flags: [] }).manifest.dataset_id).toBe(manifest.dataset_id);
+  });
+});
+
+describe("dataset row weight (Dataset 1.1: w = own-text characters)", () => {
+  const weighted = (): DatasetSource[] => sources().map((s, i) => ({ ...s, weights: ownTextWeights(corpus[i]!.snapshot) }));
+  const built = buildDataset(schema, weighted(), { seed });
+  const rows = [...readRows(built.files["train.jsonl"] as string), ...readRows(built.files["val.jsonl"] as string), ...readRows(built.files["test.jsonl"] as string)];
+
+  it("writes w on every row and row_weight in a valid 1.1.0 manifest", () => {
+    expect(built.manifest.format_version).toBe("1.1.0");
+    expect(built.manifest.row_weight).toBe("own_text_chars");
+    expect(validate("dataset-manifest", built.manifest).issues).toEqual([]);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(validate("dataset-row", r).issues).toEqual([]);
+    expect(rows.every((r) => Number.isInteger(r.w))).toBe(true);
+    expect(rows.some((r) => (r.w as number) > 0)).toBe(true);
+  });
+
+  it("w is the own text length of the unit's node (code points), not a feature", () => {
+    const byGroup = new Map(sources().map((s, i) => [`${s.page.group_key}#${s.page.snapshot_id.slice(7, 19)}`, corpus[i]!.snapshot]));
+    for (const r of rows) {
+      const node = byGroup.get(r.g)!.nodes[r.u]!;
+      expect(node.idx).toBe(r.u);
+      expect(r.w).toBe([...node.own_text.normalize("NFC")].length + Math.max(0, node.own_text_len - node.own_text.length));
+    }
+  });
+
+  it("changes nothing but the weight: same rows and labels, another dataset id", () => {
+    const plain = buildDataset(schema, sources(), { seed });
+    expect(plain.manifest.format_version).toBe("1.0.0");
+    expect(plain.manifest.row_weight).toBeUndefined();
+    expect(readRows(plain.files["test.jsonl"] as string).every((r) => r.w === undefined)).toBe(true);
+    const strip = (r: DatasetRow): DatasetRow => {
+      const { w: _w, ...rest } = r;
+      return rest;
+    };
+    expect(readRows(built.files["train.jsonl"] as string).map(strip)).toEqual(readRows(plain.files["train.jsonl"] as string));
+    expect(built.manifest.dataset_id).not.toBe(plain.manifest.dataset_id);
+  });
+
+  it("refuses a mix of weighted and unweighted pages and a unit without a weight", () => {
+    const mixed = weighted();
+    delete mixed[0]!.weights;
+    expect(() => buildDataset(schema, mixed, { seed })).toThrow(/every source or for none/);
+    const holes = weighted();
+    holes[0] = { ...holes[0]!, weights: new Map() };
+    expect(() => buildDataset(schema, holes, { seed })).toThrow(/has no weight/);
+  });
+
+  it("counts code points after NFC and the units cut by the probe cap", () => {
+    expect(ownTextChars({ own_text: "abc", own_text_len: 3 })).toBe(3);
+    expect(ownTextChars({ own_text: "e\u0301", own_text_len: 2 })).toBe(1); // e + combining acute = one code point after NFC
+    expect(ownTextChars({ own_text: "a\u{1F600}", own_text_len: 3 })).toBe(2); // an astral character is 2 UTF-16 units, 1 code point
+    expect(ownTextChars({ own_text: "abcd", own_text_len: 10 })).toBe(10); // 6 units were cut at the cap
+    expect(ownTextChars({ own_text: "", own_text_len: 0 })).toBe(0);
   });
 });

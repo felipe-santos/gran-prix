@@ -14,6 +14,8 @@ export interface DataRow {
   x: number[];
   y: number;
   s: string;
+  /** Own-text characters of the unit (Dataset 1.1 `w`); present on every row iff the manifest declares `row_weight`. */
+  w?: number;
 }
 
 const dec = new TextDecoder();
@@ -51,7 +53,10 @@ export function readDataset(h: ArtifactHandle, split: SplitParam): { manifest: D
         throw new Error(`${file}: row ${i + 1} is not a binary dataset-row (needs g, u, x, y in {0,1}, s)`);
       }
       if (r["x"].length !== manifest.dim) throw new Error(`${file}: row ${i + 1} has ${r["x"].length} features, the manifest says dim ${manifest.dim}`);
-      rows.push({ g: r["g"], u: r["u"] as number, x: r["x"] as number[], y: r["y"], s: r["s"] });
+      const w = r["w"];
+      if (w !== undefined && !(Number.isInteger(w) && (w as number) >= 0)) throw new Error(`${file}: row ${i + 1} has w = ${String(w)}, expected a non-negative integer`);
+      if (manifest.row_weight !== undefined && w === undefined) throw new Error(`${file}: row ${i + 1} has no w, but the manifest declares row_weight "${manifest.row_weight}"`);
+      rows.push({ g: r["g"], u: r["u"] as number, x: r["x"] as number[], y: r["y"], s: r["s"], ...(w !== undefined ? { w: w as number } : {}) });
     });
   }
   return { manifest, rows };
@@ -96,9 +101,9 @@ export interface BaselineSystem {
   id: string;
   /** Predicted keep per unit (`g` + NUL + `u`). Units not listed are not covered. */
   keep: Map<string, boolean>;
+  /** Where the predictions come from (for the notes). */
+  origin?: string;
 }
-
-
 
 function toKeep(p: unknown, threshold: number, where: string): boolean {
   if (typeof p !== "number" || !Number.isFinite(p) || p < 0 || p > 1) throw new Error(`${where}: p must be a number in [0, 1]`);

@@ -135,8 +135,10 @@ describe("baselines", () => {
     const { intrinsic: i, details } = evaluateCore({ groups: GROUPS, rows: ROWS, baselines: [b] }, OPTS);
     expect(i.baselines["always_keep"]?.overall).toMatchObject({ n: 200, tp: 150, fp: 50, tn: 0, fn: 0 });
     expect(i.baselines["always_keep"]?.by_stratum["s2"]).toMatchObject({ n: 0 });
-    const cmp = i.comparison.filter((c) => c.baseline === "always_keep");
-    expect(cmp.map((c) => c.stratum)).toEqual(["s1"]); // s2 has no covered unit
+    const all = i.comparison.filter((c) => c.baseline === "always_keep");
+    expect(all.map((c) => c.stratum)).toEqual(["overall", "s1"]); // s2 has no covered unit
+    expect(all[0]).toMatchObject({ n_groups: 1 }); // overall: only the pages the baseline covers
+    const cmp = all.filter((c) => c.stratum !== "overall");
     expect(cmp[0]?.model).toBeCloseTo(200 / 280, 12);
     expect(cmp[0]?.baseline_value).toBeCloseTo(300 / 350, 12);
     expect(cmp[0]?.delta).toBeCloseTo(cmp[0] ? cmp[0].model - cmp[0].baseline_value : NaN, 12);
