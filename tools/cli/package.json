@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@gran-prix/contracts": "workspace:*",
+    "@gran-prix/infer-ts": "workspace:*",
     "@gran-prix/model": "workspace:*"
   },
   "devDependencies": {

@@ -6,7 +6,12 @@
  */
 import type { StagePlugin } from "../stage.js";
 import { DEMO_STAGES } from "./demo.js";
+import { packageStage } from "./package.js";
+import { trainStage } from "./train.js";
 
 export const ALL_STAGES: StagePlugin[] = [
   ...DEMO_STAGES,
+  // L1 (engine): train (gp-train, rust) and package (deployable bundle)
+  trainStage,
+  packageStage,
 ];
