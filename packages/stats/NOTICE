@@ -1,0 +1,12 @@
+@gran-prix/stats reimplements, in TypeScript, algorithms of NumPy (numpy.random), so that the
+protocol's pre-registered generator numpy.random.default_rng(seed) is reproducible without Python.
+
+  NumPy 2.5.x, numpy/random/bit_generator.pyx (SeedSequence), numpy/random/src/pcg64/pcg64.h
+  (PCG64 XSL-RR 128/64, derived from the PCG reference implementation by Melissa O'Neill, MIT),
+  numpy/random/src/distributions/distributions.c (bounded integers, Lemire's method),
+  numpy/lib/_function_base_impl.py (percentile, method "linear").
+
+NumPy is Copyright (c) 2005-2025, NumPy Developers, BSD 3-Clause License
+(https://github.com/numpy/numpy/blob/main/LICENSE.txt). The PCG algorithm is Copyright 2014
+Melissa O'Neill, MIT License (https://www.pcg-random.org). Only the algorithms were ported;
+the correctness reference is the installed numpy itself (see test/numpy-parity.test.ts).
