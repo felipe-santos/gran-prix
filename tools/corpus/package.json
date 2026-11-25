@@ -1,0 +1,28 @@
+{
+  "name": "@gran-prix/corpus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Frame builder, sampler/collector and split check of the pre-registered dom-v0 corpus (E2.3). Page content never leaves the gitignored data dir (D12).",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "gp-corpus": "./src/cli.mjs"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "corpus": "node src/cli.mjs"
+  },
+  "dependencies": {
+    "@gran-prix/contracts": "workspace:*",
+    "@gran-prix/features": "workspace:*",
+    "robots-parser": "^3.1.1",
+    "tinyld": "^1.3.4",
+    "tldts": "~7.5.3"
+  },
+  "devDependencies": {
+    "vitest": "^5.1.1"
+  }
+}
