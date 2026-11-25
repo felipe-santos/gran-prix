@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Labelers for the Gran-Prix DOM pipeline: Readability on jsdom (ids + text alignment), a truth-rule importer, label merging with a fixed source precedence, the LLM labeler interface (disabled), and the dataset builder.",
+  "description": "Labelers for the Gran-Prix DOM pipeline: Readability on jsdom (ids + text alignment), a truth-rule importer, label merging with a fixed source precedence, the LLM labeler (guide-built prompt, routing by disagreement, ledger-gated calls, content-hash cache; no call without a key and a budget), and the dataset builder.",
   "license": "MIT",
   "engines": {
     "node": ">=22.13"
