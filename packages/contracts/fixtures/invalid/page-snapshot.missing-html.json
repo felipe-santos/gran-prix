@@ -1,7 +1,7 @@
 {
   "format": "gran-prix.page-snapshot",
-  "format_version": "1.0.0",
-  "snapshot_id": "sha256:7bea1d7cb7d85e9f430c9fe2fa73c2e97acdc9e409c4957b3b3728fa61a149dd",
+  "format_version": "1.1.0",
+  "snapshot_id": "sha256:7836fa26993fb87114485d1d43b13c8e8c9fb95cb01480f19406e3cc54fd2b86",
   "page": {
     "url": "https://a.example/post/1?utm_source=x",
     "final_url": "https://a.example/post/1",
@@ -9,7 +9,12 @@
     "group_key": "a.example",
     "category": "article",
     "title": "Synthetic page",
-    "lang": "en"
+    "lang": "en",
+    "og_type": "article",
+    "jsonld_types": [
+      "Article",
+      "BreadcrumbList"
+    ]
   },
   "doc": {
     "viewport_w": 1366,
@@ -22,7 +27,7 @@
       "attrs": {},
       "own_text": "",
       "own_text_len": 0,
-      "text_len": 44,
+      "text_len": 62,
       "link_text_len": 4,
       "child_elems": 1,
       "style": {
@@ -52,9 +57,9 @@
       "attrs": {},
       "own_text": "",
       "own_text_len": 0,
-      "text_len": 44,
+      "text_len": 62,
       "link_text_len": 4,
-      "child_elems": 2,
+      "child_elems": 5,
       "style": {
         "display": "block",
         "visibility": "visible",
@@ -79,7 +84,9 @@
       "tag": "body"
     },
     {
-      "attrs": {},
+      "attrs": {
+        "id": "title"
+      },
       "own_text": "Example heading",
       "own_text_len": 15,
       "text_len": 15,
@@ -140,7 +147,8 @@
     },
     {
       "attrs": {
-        "href": "/next"
+        "href": "/next",
+        "role": "link"
       },
       "own_text": "next",
       "own_text_len": 4,
@@ -169,8 +177,150 @@
       "parent": 3,
       "depth": 3,
       "tag": "a"
+    },
+    {
+      "attrs": {
+        "type": "search",
+        "name": "q",
+        "role": "searchbox"
+      },
+      "own_text": "",
+      "own_text_len": 0,
+      "text_len": 0,
+      "link_text_len": 0,
+      "child_elems": 0,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": {
+        "x": 10,
+        "y": 600,
+        "w": 300,
+        "h": 32
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 5,
+      "parent": 1,
+      "depth": 2,
+      "tag": "input"
+    },
+    {
+      "attrs": {},
+      "own_text": "",
+      "own_text_len": 0,
+      "text_len": 18,
+      "link_text_len": 0,
+      "child_elems": 1,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": {
+        "x": 10,
+        "y": 640,
+        "w": 600,
+        "h": 24
+      },
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 6,
+      "parent": 1,
+      "depth": 2,
+      "tag": "details"
+    },
+    {
+      "attrs": {},
+      "own_text": "Hidden FAQ answer.",
+      "own_text_len": 18,
+      "text_len": 18,
+      "link_text_len": 0,
+      "child_elems": 0,
+      "style": {
+        "display": "block",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": null,
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0,
+        "disclosure": true
+      },
+      "idx": 7,
+      "parent": 6,
+      "depth": 3,
+      "tag": "p"
+    },
+    {
+      "attrs": {},
+      "own_text": "",
+      "own_text_len": 0,
+      "text_len": 0,
+      "link_text_len": 0,
+      "child_elems": 0,
+      "style": {
+        "display": "none",
+        "visibility": "visible",
+        "opacity": 1,
+        "position": "static",
+        "font_size": 16,
+        "font_weight": 400
+      },
+      "rect": null,
+      "flags": {
+        "in_shadow": false,
+        "iframe_depth": 0
+      },
+      "idx": 8,
+      "parent": 1,
+      "depth": 2,
+      "tag": "script"
     }
   ],
+  "text_units": [
+    {
+      "id": "n2#t0",
+      "owner": 2,
+      "t": "Example heading"
+    },
+    {
+      "id": "n3#t0",
+      "owner": 3,
+      "t": "Synthetic paragraph text. "
+    },
+    {
+      "id": "n4#t0",
+      "owner": 4,
+      "t": "next"
+    },
+    {
+      "id": "n7#t0",
+      "owner": 7,
+      "t": "Hidden FAQ answer."
+    }
+  ],
+  "probe": {
+    "id_scheme": "gp-composed-preorder/1",
+    "version": "0.1.0",
+    "own_text_cap": 1000
+  },
   "capture": {
     "captured_at": "2026-11-25T12:00:00Z",
     "collector_version": "0.1.0",
@@ -183,6 +333,15 @@
     "wait_strategy": "networkidle+2s",
     "scrolled_to_bottom": true,
     "truncated": false,
-    "auth": "none"
+    "auth": "none",
+    "settle": {
+      "reason": "quiet",
+      "waited_ms": 812,
+      "mutations": 37,
+      "shadow_roots": 0,
+      "tracked_from_start": true,
+      "late_unstamped": 0
+    },
+    "network": "idle"
   }
 }

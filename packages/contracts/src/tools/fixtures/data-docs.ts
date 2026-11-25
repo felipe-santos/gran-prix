@@ -13,6 +13,7 @@ export const DATASET_SALT = "fixture-v1";
 const THREE: LabelSpace = { kind: "multiclass", classes: ["main", "support", "noise"] };
 const SOURCE_BY_UNIT = ["human", "llm", "heuristic"] as const;
 const LABEL_BY_UNIT = [0, 0, 1]; // 3-class labels of units 2, 3, 4
+const WEIGHT_BY_UNIT = [15, 25, 4]; // own_text_len of units 2, 3, 4 in the fixture snapshot
 
 export interface DatasetFixture {
   manifest: DatasetManifest;
@@ -51,6 +52,7 @@ export function buildDataset(): DatasetFixture {
       c: 0.9,
       s: SOURCE_BY_UNIT[k] as DatasetRow["s"],
       l: LABEL_BY_UNIT[k] as number,
+      w: WEIGHT_BY_UNIT[k] as number,
     }));
     rows.push(...own);
     groups.push({
@@ -61,6 +63,7 @@ export function buildDataset(): DatasetFixture {
       bucket: d.bucket,
       n_rows: own.length,
       n_pos: own.filter((r) => r.y === 1).length,
+      tags: i % 2 === 0 ? ["lang:en"] : ["lang:pt", "logged_in"],
     });
   });
   groups.sort((a, b) => (a.group_id < b.group_id ? -1 : 1));
@@ -93,12 +96,23 @@ export function buildDataset(): DatasetFixture {
     e.rows += g.n_rows;
   }
 
+  const by_tag: NonNullable<DatasetManifest["stats"]["by_tag"]> = {};
+  for (const g of groups) {
+    for (const t of g.tags ?? []) {
+      const e = (by_tag[t] ??= { groups: 0, rows: 0, pos_rate: 0 });
+      e.pos_rate = (e.pos_rate * e.rows + g.n_pos) / (e.rows + g.n_rows);
+      e.groups++;
+      e.rows += g.n_rows;
+    }
+  }
+
   const manifest: DatasetManifest = {
     format: "gran-prix.dataset-manifest",
-    format_version: "1.0.0",
+    format_version: "1.1.0",
     dataset_id: sha("placeholder"),
     feature_schema_id: sha("feature-schema-placeholder"), // replaced by the caller
     dim: 4,
+    row_weight: "own_text_chars",
     label_space: { kind: "binary", classes: ["drop", "keep"] },
     label_projection: { from: THREE, keep_classes: ["main", "support"] },
     sources: groups.map((g) => ({
@@ -128,7 +142,7 @@ export function buildDataset(): DatasetFixture {
       kfold: { k: 5 },
     },
     files: fileMeta,
-    stats: { by_split, by_stratum },
+    stats: { by_split, by_stratum, by_tag },
   };
   return { manifest, files, rows };
 }

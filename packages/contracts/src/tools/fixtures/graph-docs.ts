@@ -125,3 +125,28 @@ export function buildPipeline(): PipelineSpec {
     layout: { collect: { x: 0, y: 0 }, extract: { x: 200, y: 0 } },
   };
 }
+
+/** v1.1: a `demo` stage kind (the runner's own demo stages stop borrowing real kinds). Declared 1.1.0 because it uses `demo`. */
+export function buildDemoStageKind(): StageKindSpec {
+  return {
+    format: "gran-prix.stage-kind-spec",
+    format_version: "1.1.0",
+    kind: "demo",
+    impl: "ts:demo.echo@1.0.0",
+    inputs: [port("urls", "UrlList")],
+    outputs: [port("echo", "UrlList")],
+    params_schema: { type: "object", properties: { message: { type: "string" } } },
+    runtime: "node",
+    determinism: "pure",
+  };
+}
+
+export function buildDemoPipeline(): PipelineSpec {
+  return {
+    format: "gran-prix.pipeline-spec",
+    format_version: "1.1.0",
+    name: "fixture-demo-pipeline",
+    externals: { urls: { type: "UrlList", path: "data/urls.csv" } },
+    stages: [{ id: "echo", kind: "demo", impl: "ts:demo.echo@1.0.0", params: { message: "hello" }, inputs: { urls: ext("urls") } }],
+  };
+}

@@ -1,9 +1,10 @@
 {
   "format": "gran-prix.dataset-manifest",
-  "format_version": "1.0.0",
-  "dataset_id": "sha256:c0ce37df7f75ab2b96d887f62f1fc1d9aeb1112a8778046685272ecd92e7e326",
-  "feature_schema_id": "sha256:f96fab2e444e45a20fc3a482f9790f64f82d913cb040a0ad6b7ccb25c93e6d65",
+  "format_version": "1.1.0",
+  "dataset_id": "sha256:d53b1deba730dc799ce1ced7dc44f9368ec9a8d5a99e101c810b599f95c889f3",
+  "feature_schema_id": "sha256:1ee5428f83b192818529edcc949804efcb116e98db3385d0fb161c73a2db3d26",
   "dim": 4,
+  "row_weight": "own_text_chars",
   "label_space": {
     "kind": "binary",
     "classes": [
@@ -70,7 +71,10 @@
       "split": "train",
       "bucket": 22,
       "n_rows": 3,
-      "n_pos": 3
+      "n_pos": 3,
+      "tags": [
+        "lang:en"
+      ]
     },
     {
       "group_id": "g01_site1",
@@ -79,7 +83,11 @@
       "split": "train",
       "bucket": 27,
       "n_rows": 3,
-      "n_pos": 3
+      "n_pos": 3,
+      "tags": [
+        "lang:pt",
+        "logged_in"
+      ]
     },
     {
       "group_id": "g02_site10",
@@ -88,7 +96,10 @@
       "split": "test",
       "bucket": 89,
       "n_rows": 3,
-      "n_pos": 3
+      "n_pos": 3,
+      "tags": [
+        "lang:en"
+      ]
     },
     {
       "group_id": "g03_site20",
@@ -97,7 +108,11 @@
       "split": "val",
       "bucket": 78,
       "n_rows": 3,
-      "n_pos": 3
+      "n_pos": 3,
+      "tags": [
+        "lang:pt",
+        "logged_in"
+      ]
     }
   ],
   "split": {
@@ -127,24 +142,24 @@
   "files": {
     "train": {
       "path": "train.jsonl",
-      "sha256": "sha256:1ea6fee2492ea0e199517f6b756d191e2894bcf8d64cc92546ac25b5dd21a101",
-      "bytes": 592,
+      "sha256": "sha256:4a671711d25ea569c6f9d2b19010b0975fb5bf2f353ae756aace85f5d55b3870",
+      "bytes": 702,
       "media_type": "application/x-ndjson",
       "rows": 6,
       "pos_rate": 1
     },
     "val": {
       "path": "val.jsonl",
-      "sha256": "sha256:d68666d107b18fa3c65abf701a805b09977d3c167350862d36189557011b4f6c",
-      "bytes": 299,
+      "sha256": "sha256:70c26ad159259313f8090ad93b186c1c8ce2745243f26268a82d0dfb2be939af",
+      "bytes": 354,
       "media_type": "application/x-ndjson",
       "rows": 3,
       "pos_rate": 1
     },
     "test": {
       "path": "test.jsonl",
-      "sha256": "sha256:d3e914c9192465c568ead6ed0d92f833a8a4c629ec688863e1d7920de8916d5b",
-      "bytes": 299,
+      "sha256": "sha256:b23dad93aa305e26b30ce9aff6cddc8b45569024765b8758904f3eefad5af4b5",
+      "bytes": 354,
       "media_type": "application/x-ndjson",
       "rows": 3,
       "pos_rate": 1
@@ -172,6 +187,23 @@
         "pos_rate": 1
       },
       "docs": {
+        "groups": 2,
+        "rows": 6,
+        "pos_rate": 1
+      }
+    },
+    "by_tag": {
+      "lang:en": {
+        "groups": 2,
+        "rows": 6,
+        "pos_rate": 1
+      },
+      "lang:pt": {
+        "groups": 2,
+        "rows": 6,
+        "pos_rate": 1
+      },
+      "logged_in": {
         "groups": 2,
         "rows": 6,
         "pos_rate": 1

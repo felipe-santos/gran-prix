@@ -3,9 +3,9 @@
   "format_version": "1.0.0",
   "source": {
     "url": "https://a.example/post/1",
-    "snapshot_id": "sha256:7bea1d7cb7d85e9f430c9fe2fa73c2e97acdc9e409c4957b3b3728fa61a149dd",
-    "model_id": "sha256:c9d32f7cbc93b2f85052c3e250bfd062fd63c1189c834fe0075f22391458ba26",
-    "feature_schema_id": "sha256:f96fab2e444e45a20fc3a482f9790f64f82d913cb040a0ad6b7ccb25c93e6d65",
+    "snapshot_id": "sha256:7836fa26993fb87114485d1d43b13c8e8c9fb95cb01480f19406e3cc54fd2b86",
+    "model_id": "sha256:0f9d02f522026bc2243030c833f8a8f218b3eb0fbc2a74bf53bff4087d69cec6",
+    "feature_schema_id": "sha256:1ee5428f83b192818529edcc949804efcb116e98db3385d0fb161c73a2db3d26",
     "threshold": 0.5,
     "mode": "balanced"
   },

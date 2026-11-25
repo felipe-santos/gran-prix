@@ -1,0 +1,151 @@
+{
+  "format": "gran-prix.qa-task-set",
+  "format_version": "1.0.0",
+  "task_set_id": "sha256:e0021551a9f42fd7b8a5ba468b393324855d2db568852cea721a0a441b256e3c",
+  "dataset_id": "sha256:62727e07e55ccdd7005e466f0d2c6f6bef1d2f9e7a2d0ff42add0a7cf5096653",
+  "generator": {
+    "model": "generator-model",
+    "prompt_sha256": "sha256:4fbe6df75b0fbce81ac4200cee9403d1ec8b127aa7605c385e25aadb060ba707",
+    "source": "D2 full-page markdown",
+    "converter": "turndown@7.2.0+gfm"
+  },
+  "pages": [
+    {
+      "group_id": "g00_site0",
+      "snapshot_id": "sha256:7836fa26993fb87114485d1d43b13c8e8c9fb95cb01480f19406e3cc54fd2b86",
+      "stratum": "article",
+      "split": "test",
+      "prediction": "frozen_model"
+    },
+    {
+      "group_id": "g01_site1",
+      "snapshot_id": "sha256:ff0078cf7c30c972c8dcbd06ed5911345782c7dba736acf89b6abb07aa424571",
+      "stratum": "docs",
+      "split": "val",
+      "prediction": "oof"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "q001",
+      "group_id": "g00_site0",
+      "stratum": "docs",
+      "kind": "main",
+      "question": "What is the heading of the page?",
+      "answer": "Example heading",
+      "answer_variants": [
+        "the Example heading"
+      ],
+      "evidence": {
+        "unit_ids": [
+          2
+        ],
+        "quote": "Example heading",
+        "class": "main"
+      },
+      "validation": {
+        "status": "accepted",
+        "by": "human",
+        "candidate_rank": 1
+      }
+    },
+    {
+      "id": "q002",
+      "group_id": "g00_site0",
+      "stratum": "article",
+      "kind": "support",
+      "question": "Where does the link in the paragraph lead?",
+      "answer": "/next",
+      "answer_variants": [
+        "next page",
+        "/next"
+      ],
+      "evidence": {
+        "unit_ids": [
+          3,
+          4
+        ],
+        "quote": "Synthetic paragraph text. next",
+        "class": "support"
+      },
+      "validation": {
+        "status": "accepted",
+        "by": "human",
+        "candidate_rank": 2
+      }
+    },
+    {
+      "id": "q003",
+      "group_id": "g01_site1",
+      "stratum": "docs",
+      "kind": "category",
+      "question": "What does the collapsed FAQ entry say?",
+      "answer": "Hidden FAQ answer.",
+      "answer_variants": [
+        "Hidden FAQ answer"
+      ],
+      "evidence": {
+        "unit_ids": [
+          7
+        ],
+        "quote": "Hidden FAQ answer.",
+        "class": "support"
+      },
+      "validation": {
+        "status": "accepted",
+        "by": "human"
+      }
+    },
+    {
+      "id": "q004",
+      "group_id": "g01_site1",
+      "stratum": "docs",
+      "kind": "main",
+      "question": "Which element is the page about?",
+      "answer": "an example",
+      "answer_variants": [],
+      "evidence": {
+        "unit_ids": [
+          2
+        ],
+        "quote": "Example heading",
+        "class": "main"
+      },
+      "validation": {
+        "status": "accepted",
+        "by": "human"
+      }
+    }
+  ],
+  "review": {
+    "n_candidates": 6,
+    "n_accepted": 4,
+    "n_rejected": 2,
+    "rejection_rate": 0.3333333333333333,
+    "human_reviewed": true
+  },
+  "provenance": {
+    "produced_by": {
+      "run_id": "run-0001",
+      "stage_id": "qa_tasks",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.qa-task-set@1.0.0",
+      "params_sha256": "sha256:e339fe3105d5c703ee926725883c251224bec3831a5e9c4c2bc60cb1859ded83",
+      "cache_key": "sha256:b85293218fa5e4b954f9ffa2200303e8cff6bd9f8a5759f67003ea79389a7f65"
+    },
+    "inputs": [
+      {
+        "port": "dataset",
+        "artifact_id": "sha256:73012280d08122f0b49688994ac67c1dd284287c5c952dde88c9f38506d629c8"
+      }
+    ],
+    "pipeline_spec_id": "sha256:ae450a2ee9a8d118d5a2137fa52fd78536551e81d8a6107ac05862b079195843",
+    "tool_versions": {
+      "gp_cli": "0.1.0",
+      "node": "v24.13.1",
+      "wasm_sha256": "sha256:50ac2f3c4e70c05dc50b06ba827c46cf3ee513432661ba323c468ffcf4d5e94b"
+    },
+    "created_at": "2026-11-25T12:00:00Z",
+    "duration_ms": 1234
+  }
+}

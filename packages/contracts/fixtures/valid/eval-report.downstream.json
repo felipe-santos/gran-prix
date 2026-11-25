@@ -1,0 +1,157 @@
+{
+  "format": "gran-prix.eval-report",
+  "format_version": "1.1.0",
+  "report_id": "sha256:c25653d43c7a88bb57947c69f2eb1be3497734942750d2c73cb1cbadba385fa9",
+  "mode": "downstream",
+  "model_id": "sha256:0f9d02f522026bc2243030c833f8a8f218b3eb0fbc2a74bf53bff4087d69cec6",
+  "dataset_id": "sha256:62727e07e55ccdd7005e466f0d2c6f6bef1d2f9e7a2d0ff42add0a7cf5096653",
+  "split": "test",
+  "threshold": 0.5,
+  "system": {
+    "kind": "model",
+    "family": "mlp",
+    "name": "gp-mlp-fixture",
+    "version": "0.1.0"
+  },
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 20261125,
+    "cluster_by": "group_key",
+    "method": "percentile",
+    "stratified": false
+  },
+  "downstream": {
+    "task_set_id": "sha256:aa600ec47ff28bb2e012b54ddfddcec7cc52f0a0193a8e73fe43ee6d711520da",
+    "llm": {
+      "model": "respondent-r1",
+      "prompt_sha256": "sha256:c14ce7c63c1cb945b4790010cbc9c6ee66c7d3dd8f57be01011e8f697d97390f"
+    },
+    "judge": {
+      "kind": "llm",
+      "model": "judge-mid",
+      "rubric_sha256": "sha256:f7d9143bbe0383567373b3d75bc3a884073e199b1992e6d8cb8be119803123eb",
+      "human_agreement": 0.93
+    },
+    "arms": {
+      "full_page": {
+        "n": 4,
+        "score_mean": 0.75,
+        "score_ci95": [
+          0.4,
+          1
+        ],
+        "tokens_in_mean": 5200,
+        "cost_usd": 0.04
+      },
+      "pruned_model": {
+        "n": 4,
+        "score_mean": 0.75,
+        "score_ci95": [
+          0.4,
+          1
+        ],
+        "tokens_in_mean": 900,
+        "cost_usd": 0.01,
+        "evidence_retention": {
+          "mean": 0.96,
+          "ci95": [
+            0.8,
+            1
+          ],
+          "n_questions": 4,
+          "token_fraction_mean": 0.98,
+          "by_stratum": {
+            "article": {
+              "mean": 1,
+              "n_questions": 3
+            },
+            "docs": {
+              "mean": 0.8,
+              "n_questions": 1
+            }
+          }
+        }
+      },
+      "oracle": {
+        "n": 4,
+        "score_mean": 1,
+        "score_ci95": [
+          0.6,
+          1
+        ],
+        "tokens_in_mean": 800,
+        "cost_usd": 0.01,
+        "evidence_retention": {
+          "mean": 1,
+          "n_questions": 4
+        }
+      }
+    },
+    "paired_deltas": [
+      {
+        "a": "pruned_model",
+        "b": "full_page",
+        "mean_delta": 0,
+        "ci95": [
+          -0.2,
+          0.2
+        ],
+        "p_value": 1
+      }
+    ]
+  },
+  "gates": [
+    {
+      "id": "g3_qa_accuracy_r1",
+      "name": "G3 QA accuracy loss (R1)",
+      "rule": "CI lower bound of the paired accuracy delta >= -0.05",
+      "value": -0.2,
+      "passed": false,
+      "comparator": ">=",
+      "threshold": -0.05,
+      "unit": "accuracy",
+      "stratum": "overall",
+      "observed": 0,
+      "ci95": [
+        -0.2,
+        0.2
+      ],
+      "use_ci_lower": true
+    },
+    {
+      "id": "g3_evidence_retention",
+      "name": "G3 evidence retention",
+      "rule": "retention >= 95%",
+      "value": 0.96,
+      "passed": true,
+      "comparator": ">=",
+      "threshold": 0.95,
+      "unit": "ratio",
+      "observed": 0.96
+    }
+  ],
+  "provenance": {
+    "produced_by": {
+      "run_id": "run-0001",
+      "stage_id": "qa",
+      "kind": "evaluate",
+      "impl": "ts:evaluate.downstream@1.0.0",
+      "params_sha256": "sha256:e5ffecebe2cf5eb8e2f5f31b55846dda762c76efd85a3d987bcdc0561af25927",
+      "cache_key": "sha256:2d61f6c9a49b83b1b59e6a1e54c9ec23af78b7c45ec5f0a265382446a9874bc0"
+    },
+    "inputs": [
+      {
+        "port": "dataset",
+        "artifact_id": "sha256:73012280d08122f0b49688994ac67c1dd284287c5c952dde88c9f38506d629c8"
+      }
+    ],
+    "pipeline_spec_id": "sha256:ae450a2ee9a8d118d5a2137fa52fd78536551e81d8a6107ac05862b079195843",
+    "tool_versions": {
+      "gp_cli": "0.1.0",
+      "node": "v24.13.1",
+      "wasm_sha256": "sha256:50ac2f3c4e70c05dc50b06ba827c46cf3ee513432661ba323c468ffcf4d5e94b"
+    },
+    "created_at": "2026-11-25T12:00:00Z",
+    "duration_ms": 1234
+  }
+}

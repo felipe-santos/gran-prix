@@ -292,5 +292,409 @@
     "contract": "stage-kind-spec",
     "code": "schema",
     "path": "inputs[0].type"
+  },
+  "page-snapshot.text-unit-wrong-owner.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[1].id",
+    "message": "does not name its owner"
+  },
+  "page-snapshot.text-unit-duplicate.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[1].id"
+  },
+  "page-snapshot.text-unit-bad-id.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "text_units[0].id",
+    "message": "pattern"
+  },
+  "page-snapshot.text-unit-blank.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[2].t",
+    "message": "NON-BLANK"
+  },
+  "page-snapshot.text-unit-owner-out-of-range.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[3].owner"
+  },
+  "page-snapshot.text-unit-child-order.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "text_units[2].id",
+    "message": "document order"
+  },
+  "page-snapshot.own-text-over-cap.json": {
+    "contract": "page-snapshot",
+    "code": "invariant",
+    "path": "nodes[2].own_text",
+    "message": "own_text_cap"
+  },
+  "page-snapshot.unknown-id-scheme.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "probe.id_scheme"
+  },
+  "page-snapshot.settle-unknown-reason.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "capture.settle.reason"
+  },
+  "page-snapshot.unknown-network-outcome.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "capture.network"
+  },
+  "page-snapshot.disclosure-not-boolean.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "nodes[7].flags.disclosure"
+  },
+  "page-snapshot.jsonld-types-not-strings.json": {
+    "contract": "page-snapshot",
+    "code": "schema",
+    "path": "page.jsonld_types[0]"
+  },
+  "feature-schema.context-unknown-source.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[3].context.source",
+    "message": "not a feature"
+  },
+  "feature-schema.context-own-source.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[3].context.source",
+    "message": "own source"
+  },
+  "feature-schema.context-source-is-context.json": {
+    "contract": "feature-schema",
+    "code": "invariant",
+    "path": "features[1].context.source",
+    "message": "context feature"
+  },
+  "feature-schema.context-bad-rel.json": {
+    "contract": "feature-schema",
+    "code": "schema",
+    "path": "features[3].context.rel"
+  },
+  "feature-schema.log1p-scale-zero.json": {
+    "contract": "feature-schema",
+    "code": "schema",
+    "path": "features[0].transform.scale"
+  },
+  "dataset-manifest.tags-unsorted.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "groups[1].tags[1]",
+    "message": "sorted"
+  },
+  "dataset-manifest.tag-bad-pattern.json": {
+    "contract": "dataset-manifest",
+    "code": "schema",
+    "path": "groups[0].tags[0]",
+    "message": "pattern"
+  },
+  "dataset-manifest.by-tag-count-mismatch.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "stats.by_tag.lang:en.groups"
+  },
+  "dataset-manifest.by-tag-unknown-tag.json": {
+    "contract": "dataset-manifest",
+    "code": "invariant",
+    "path": "stats.by_tag.logged_out",
+    "message": "no group carries"
+  },
+  "dataset-manifest.unknown-row-weight.json": {
+    "contract": "dataset-manifest",
+    "code": "schema",
+    "path": "row_weight"
+  },
+  "dataset-row.negative-weight.json": {
+    "contract": "dataset-row",
+    "code": "schema",
+    "path": "w"
+  },
+  "eval-report.gate-passed-contradicts-value.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[2].passed",
+    "message": "<="
+  },
+  "eval-report.gate-ci-bound-is-not-value.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[0].value",
+    "message": "CI bound"
+  },
+  "eval-report.gate-ci-lower-without-ci.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[0].ci95",
+    "message": "requires ci95"
+  },
+  "eval-report.gate-comparator-without-threshold.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[1].threshold",
+    "message": "together"
+  },
+  "eval-report.gate-unknown-comparator.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "gates[1].comparator"
+  },
+  "eval-report.gate-value-is-not-observed.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "gates[1].value",
+    "message": "observed"
+  },
+  "eval-report.comparison-unknown-metric.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.comparison[1].metric"
+  },
+  "eval-report.comparison-unknown-aggregate.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.comparison[2].stratum",
+    "message": "aggregates"
+  },
+  "eval-report.pr-curve-unsorted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.pr_curve.points[1].threshold",
+    "message": "ascending"
+  },
+  "eval-report.pr-operating-threshold-differs.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.pr_curve.operating_threshold"
+  },
+  "eval-report.metric-ci-inverted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.metric_ci.model.overall.f1"
+  },
+  "eval-report.metric-ci-unknown-stratum.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.metric_ci.model.forum"
+  },
+  "eval-report.token-iqr-inverted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.token_reduction.d2.iqr_ratio"
+  },
+  "eval-report.aggregate-unknown-stratum.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.aggregates[0].strata[0]"
+  },
+  "eval-report.by-tag-counts-dont-add-up.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "intrinsic.by_tag.lang:en",
+    "message": "tp+fp+tn+fn"
+  },
+  "eval-report.bootstrap-unknown-cluster.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "bootstrap.cluster_by"
+  },
+  "eval-report.bootstrap-without-resamples.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "bootstrap.resamples",
+    "message": "required"
+  },
+  "eval-report.system-unknown-kind.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "system.kind"
+  },
+  "eval-report.unknown-weighting.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.weighting"
+  },
+  "eval-report.runtime-without-p95.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "intrinsic.runtime.p95_ms",
+    "message": "required"
+  },
+  "eval-report.note-unknown-kind.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "notes[0].kind"
+  },
+  "eval-report.evidence-retention-over-one.json": {
+    "contract": "eval-report",
+    "code": "schema",
+    "path": "downstream.arms.pruned_model.evidence_retention.mean"
+  },
+  "eval-report.evidence-retention-ci-inverted.json": {
+    "contract": "eval-report",
+    "code": "invariant",
+    "path": "downstream.arms.pruned_model.evidence_retention.ci95"
+  },
+  "pipeline-spec.misspelled-demo-kind.json": {
+    "contract": "pipeline-spec",
+    "code": "schema",
+    "path": "stages[0].kind"
+  },
+  "label-agreement.kappa-not-recomputable.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].kappa",
+    "message": "recomputed"
+  },
+  "label-agreement.observed-agreement-wrong.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].observed_agreement"
+  },
+  "label-agreement.n-differs-from-confusion.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].n"
+  },
+  "label-agreement.confusion-not-square.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].confusion",
+    "message": "x 2"
+  },
+  "label-agreement.binary-with-three-classes.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].classes",
+    "message": "exactly 2"
+  },
+  "label-agreement.self-pair.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].b",
+    "message": "itself"
+  },
+  "label-agreement.unknown-labeler.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].b",
+    "message": "labelers"
+  },
+  "label-agreement.unknown-stratum.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[1].stratum"
+  },
+  "label-agreement.duplicate-pair.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[3]",
+    "message": "duplicate pair"
+  },
+  "label-agreement.population-units-dont-sum.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "population.n_units"
+  },
+  "label-agreement.gate-contradicts-kappa.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "gates[0].passed"
+  },
+  "label-agreement.ci-inverted.json": {
+    "contract": "label-agreement",
+    "code": "invariant",
+    "path": "pairs[0].results[0].ci95"
+  },
+  "label-agreement.kappa-over-one.json": {
+    "contract": "label-agreement",
+    "code": "schema",
+    "path": "pairs[0].results[0].kappa"
+  },
+  "label-agreement.single-labeler.json": {
+    "contract": "label-agreement",
+    "code": "schema",
+    "path": "labelers"
+  },
+  "label-agreement.stale-id.json": {
+    "contract": "label-agreement",
+    "code": "id-mismatch",
+    "path": "agreement_id"
+  },
+  "qa-task-set.evidence-in-noise.json": {
+    "contract": "qa-task-set",
+    "code": "schema",
+    "path": "tasks[0].evidence.class"
+  },
+  "qa-task-set.answer-over-20-words.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[0].answer",
+    "message": "20"
+  },
+  "qa-task-set.unknown-page.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[0].group_id"
+  },
+  "qa-task-set.stratum-differs-from-page.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[0].stratum"
+  },
+  "qa-task-set.duplicate-task-id.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[1].id",
+    "message": "duplicate"
+  },
+  "qa-task-set.evidence-units-not-increasing.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "tasks[1].evidence.unit_ids[1]"
+  },
+  "qa-task-set.evidence-without-units.json": {
+    "contract": "qa-task-set",
+    "code": "schema",
+    "path": "tasks[0].evidence.unit_ids"
+  },
+  "qa-task-set.review-counts.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "review.n_candidates"
+  },
+  "qa-task-set.rejection-rate-wrong.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "review.rejection_rate"
+  },
+  "qa-task-set.accepted-count-differs-from-tasks.json": {
+    "contract": "qa-task-set",
+    "code": "invariant",
+    "path": "review.n_accepted"
+  },
+  "qa-task-set.unknown-task-kind.json": {
+    "contract": "qa-task-set",
+    "code": "schema",
+    "path": "tasks[0].kind"
+  },
+  "qa-task-set.empty-tasks.json": {
+    "contract": "qa-task-set",
+    "code": "schema",
+    "path": "tasks"
+  },
+  "qa-task-set.stale-id.json": {
+    "contract": "qa-task-set",
+    "code": "id-mismatch",
+    "path": "task_set_id"
   }
 }

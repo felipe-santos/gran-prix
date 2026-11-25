@@ -9,6 +9,7 @@ import type { IssueCode } from "../../validate/result.js";
 import type { ContractName } from "../../registry.js";
 import type { Universe } from "./universe.js";
 import { sha } from "./extract-docs.js";
+import { buildInvalidCasesV11 } from "./invalid-v11.js";
 
 export interface InvalidCase {
   /** File under fixtures/invalid/. */
@@ -248,5 +249,5 @@ export function buildInvalidCases(u: Universe): InvalidCase[] {
     e["inputs"][0].type = "Spreadsheet";
     add("stage-kind-spec", "unknown-port-type", e, "schema", "inputs[0].type");
   }
-  return cases;
+  return [...cases, ...buildInvalidCasesV11(u)];
 }
