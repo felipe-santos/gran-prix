@@ -28,4 +28,6 @@ demo-web/dist
 
 gran-prix-wasm/target
 
-IDEIAS//home/ubuntu/files/PRIX/gran-prix/gran-prix-wasm/pkg-node/
+IDEIAS/
+gran-prix-wasm/pkg-node/
+
