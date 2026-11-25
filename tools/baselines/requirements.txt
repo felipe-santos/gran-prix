@@ -1,0 +1,6 @@
+# Exact pins for the baseline sidecars (install with --target, never system-wide):
+#   pip install --target tools/baselines/.pylibs -r tools/baselines/requirements.txt
+#   PYTHONPATH=tools/baselines/.pylibs python3 ...
+trafilatura==2.4.0
+scikit-learn==1.9.1
+numpy==2.5.5

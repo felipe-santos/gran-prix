@@ -5,6 +5,7 @@
  * Keep the list ordered by lane so parallel merges stay trivial.
  */
 import type { StagePlugin } from "../stage.js";
+import { BASELINE_LABEL_STAGES } from "./baselines/label-baselines.js";
 import { COLLECT_STAGES } from "./collect-stages.js";
 import { DEMO_STAGES } from "./demo.js";
 import { EVALUATE_STAGES } from "./evaluate/index.js";
@@ -24,6 +25,7 @@ export const ALL_STAGES: StagePlugin[] = [
   // L1 (engine): train (gp-train, rust) and package (deployable bundle)
   trainStage,
   packageStage,
-  // L5 (science): evaluate.intrinsic
+  // L5 (science): evaluate.intrinsic + baseline labelers (label.trafilatura, label.defuddle, label.router)
+  ...BASELINE_LABEL_STAGES,
   ...EVALUATE_STAGES,
 ];

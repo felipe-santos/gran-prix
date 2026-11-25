@@ -1,0 +1,6 @@
+# U2 reference run ONLY (never the experiment's baselines): the versions/implementations the WCXB numbers most likely come from.
+#   pip install --target tools/baselines/.pylibs-ref -r tools/baselines/requirements-ref.txt
+#   python3 tools/baselines/u2/run_u2.py --data-dir data/wcxb --reference
+trafilatura==2.0.0
+readability-lxml==0.9
+lxml_html_clean==0.4.6

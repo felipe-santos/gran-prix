@@ -132,7 +132,7 @@ export function readabilityLabel(html: string, opts: ReadabilityOptions = {}): R
 }
 
 /** The first `<h1>` (document order) whose text duplicates the title is main content, kept or not by Readability. */
-function applyH1TitleRule(
+export function applyH1TitleRule(
   page: FlatPage,
   owners: readonly number[],
   decisions: Map<number, ElementDecision>,

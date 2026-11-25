@@ -9,6 +9,14 @@ export {
   type ReadabilityOptions,
   type ReadabilityPageResult,
 } from "./readability.js";
+export { applyH1TitleRule } from "./readability.js";
+export {
+  labelPageExtraction,
+  type ExtractionLabelParams,
+  type ExtractionLabeler,
+  type ExtractionOutput,
+  type ExtractionStatus,
+} from "./extraction.js";
 export { assertTruthRules, classIndex, importTruth, type TruthClass, type TruthImport, type TruthRule } from "./truth.js";
 export { LABELER_VERSION, buildNodeLabels, type BuildNodeLabelsInput, type NodeLabelsDoc } from "./node-labels.js";
 export { SOURCE_PRECEDENCE, mergeLabels } from "./merge.js";

@@ -38,6 +38,7 @@
     "@gran-prix/labels": "workspace:*",
     "@gran-prix/model": "workspace:*",
     "@gran-prix/report": "workspace:*",
+    "defuddle": "0.19.13",
     "tldts": "~7.5.3"
   },
   "devDependencies": {

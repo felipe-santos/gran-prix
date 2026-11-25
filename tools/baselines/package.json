@@ -1,0 +1,19 @@
+{
+  "name": "@gran-prix/baselines",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Baseline tooling of the DOM experiment (E2.7): Trafilatura sidecar, the U2 sanity check on WCXB, the offline GBDT (G0). Python lives next to the TypeScript stages in tools/cli; see README.md.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "u2": "python3 u2/run_u2.py",
+    "test:py": "python3 -m unittest discover -s test -p 'test_*.py'"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "jsdom": "^27.0.0"
+  }
+}
