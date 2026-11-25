@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Gran-Prix: captura local</title>
+<style>
+  body { font: 13px/1.4 system-ui, sans-serif; margin: 0; padding: 12px; width: 300px; }
+  #status { font-weight: 600; margin: 0 0 8px; }
+  #status.error { color: #b00020; }
+  #detail { margin: 0 0 8px; color: #444; word-break: break-all; }
+  .warn { margin: 8px 0 0; padding: 6px 8px; background: #fff4d6; border-radius: 4px; }
+  button { margin-top: 4px; }
+</style>
+</head>
+<body>
+<p id="status">Capturando&hellip; (alguns segundos)</p>
+<p id="detail"></p>
+<button id="again" hidden>Capturar de novo</button>
+<p class="warn">Fica no seu disco; n&atilde;o envie a ningu&eacute;m.</p>
+<script src="popup.js"></script>
+</body>
+</html>

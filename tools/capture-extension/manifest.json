@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Gran-Prix: captura local",
+  "version": "0.1.0",
+  "description": "Captura a página aberta (DOM renderizado) com o mesmo probe do coletor do Gran-Prix e baixa os arquivos para o seu disco. Sem rede, sem envio.",
+  "minimum_chrome_version": "110",
+  "permissions": ["activeTab", "scripting", "downloads"],
+  "action": {
+    "default_title": "Gran-Prix: capturar esta página",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

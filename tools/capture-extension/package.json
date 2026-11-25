@@ -1,0 +1,26 @@
+{
+  "name": "@gran-prix/capture-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome MV3 extension, loaded unpacked, that runs the collector's probe on the current tab and downloads a PageSnapshot + html.gz (stratum logged_in of dom-v0, section 2.5). Local research tool, not the product extension (E4).",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@gran-prix/cli": "workspace:*",
+    "@gran-prix/contracts": "workspace:*",
+    "@gran-prix/features": "workspace:*",
+    "@gran-prix/labels": "workspace:*",
+    "@types/node": "24.19.2",
+    "esbuild": "0.27.3",
+    "playwright-core": "1.65.1",
+    "tldts": "7.5.5",
+    "vitest": "5.1.1"
+  }
+}
