@@ -49,7 +49,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: gran-prix-wasm
+          workspaces: .
           key: wasm
       - name: Install wasm-pack
         uses: taiki-e/install-action@v2
