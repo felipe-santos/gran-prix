@@ -19,7 +19,7 @@ import { dependenciesOf, select, topologicalOrder } from "./graph.js";
 import { Ledger } from "./ledger.js";
 import { dataPaths } from "./paths.js";
 import { StageRegistry, implVersion, type StageContext, type StageLedger, type StageOutputs, type StagePlugin } from "./stage.js";
-import { DEMO_STAGES } from "./stages/demo.js";
+import { ALL_STAGES } from "./stages/index.js";
 import { ArtifactStore, type ArtifactHandle } from "./store.js";
 import { PipelineValidationError, type CacheEntry, type PortIds, type RunSummary, type StageReceipt, type StageResult, type StageStatus } from "./types.js";
 import { GP_VERSION } from "./version.js";
@@ -75,7 +75,7 @@ interface Prepared {
 }
 
 export async function runPipeline(raw: unknown, opts: RunOptions): Promise<RunSummary> {
-  const registry = new StageRegistry(opts.plugins ?? DEMO_STAGES);
+  const registry = new StageRegistry(opts.plugins ?? ALL_STAGES);
   const checked = checkPipeline(raw, registry);
   if (!checked.ok) throw new PipelineValidationError(checked.issues);
   return new Run(checked.spec, registry, opts).execute();
