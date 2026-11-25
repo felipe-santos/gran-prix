@@ -212,16 +212,109 @@ fn js_err(e: GPError) -> JsValue {
 /// Runs `f` with the graph in training mode (Dropout active) and always
 /// restores eval mode afterwards, on the success and the error path.
 ///
+/// Generic over the error type so the training loops can return a typed
+/// `GPError` (testable natively; `JsValue` panics off wasm32) and be mapped
+/// to `JsValue` only at the `#[wasm_bindgen]` boundary.
+///
 /// The `Trainer` is in eval mode at rest: every `predict*` path relies on
 /// that, and additionally forces eval mode itself before running.
-fn with_training_mode<T>(
+fn with_training_mode<T, E>(
     graph: &mut Graph,
-    f: impl FnOnce(&mut Graph) -> Result<T, JsValue>,
-) -> Result<T, JsValue> {
+    f: impl FnOnce(&mut Graph) -> Result<T, E>,
+) -> Result<T, E> {
     graph.set_training(true);
     let result = f(graph);
     graph.set_training(false);
     result
+}
+
+impl Trainer {
+    /// Per-sample forward + backward over a binary batch, accumulating the
+    /// parameter gradients (the caller clears them, sets training mode and
+    /// steps the optimizer). Returns the summed loss. Typed `GPError` so the
+    /// error path is testable natively.
+    fn binary_batch_loop(
+        &self,
+        graph: &mut Graph,
+        order: &[NodeId],
+        inputs: &[f32],
+        targets: &[f32],
+    ) -> Result<f32, GPError> {
+        let batch_size = targets.len();
+        let target = NodeId(self.output_node);
+        let loss_fn = gran_prix::loss::BCEWithLogits;
+        let mut total_loss = 0.0;
+        for i in 0..batch_size {
+            {
+                let mut input_buffer = self.input_tensor.borrow_mut();
+                if let Ok(slice) = input_buffer.as_slice_mut() {
+                    let start = i * self.input_dim;
+                    for d in 0..self.input_dim {
+                        slice[d] = inputs[start + d];
+                    }
+                }
+                if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(self.input_node) {
+                    t.copy_from(&input_buffer)?;
+                }
+            }
+
+            let result = graph.execute_with_order(order, target)?;
+            let target_tensor = Tensor::from_shape_vec(&[1, 1], vec![targets[i]])?;
+
+            let mut grad = loss_fn.gradient(&result, &target_tensor)?;
+            grad.map_inplace(|v| *v /= batch_size as f32)?;
+
+            total_loss += loss_fn.calculate(&result, &target_tensor)?;
+            graph.backward(target, grad)?;
+        }
+        Ok(total_loss)
+    }
+
+    /// Multi-class counterpart of [`Self::binary_batch_loop`]
+    /// (`CrossEntropyWithLogits`, one-hot targets from `class_indices`).
+    fn multi_class_batch_loop(
+        &self,
+        graph: &mut Graph,
+        order: &[NodeId],
+        inputs: &[f32],
+        class_indices: &[u32],
+    ) -> Result<f32, GPError> {
+        let batch_size = class_indices.len();
+        let target = NodeId(self.output_node);
+        let loss_fn = gran_prix::loss::CrossEntropyWithLogits;
+        let mut total_loss = 0.0_f32;
+        for i in 0..batch_size {
+            // Inject input row i into the graph's input node.
+            {
+                let mut input_buffer = self.input_tensor.borrow_mut();
+                let slice = input_buffer.as_slice_mut()?;
+                let start = i * self.input_dim;
+                for d in 0..self.input_dim {
+                    slice[d] = inputs[start + d];
+                }
+                if let Some(gran_prix::graph::Node::Input(ref mut t)) =
+                    graph.nodes_mut().get_mut(self.input_node)
+                {
+                    t.copy_from(&input_buffer)?;
+                }
+            }
+
+            // Build one-hot target [1, output_dim] for this sample.
+            let mut one_hot = vec![0.0_f32; self.output_dim];
+            one_hot[class_indices[i] as usize] = 1.0;
+            let target_tensor = Tensor::from_shape_vec(&[1, self.output_dim], one_hot)?;
+
+            let result = graph.execute_with_order(order, target)?;
+            let mut grad = loss_fn.gradient(&result, &target_tensor)?;
+            // Scale by 1/batch_size so the accumulated gradient is the
+            // mean-batch gradient (matches `train_batch`'s convention).
+            grad.map_inplace(|v| *v /= batch_size as f32)?;
+
+            total_loss += loss_fn.calculate(&result, &target_tensor)?;
+            graph.backward(target, grad)?;
+        }
+        Ok(total_loss)
+    }
 }
 
 #[wasm_bindgen]
@@ -377,7 +470,6 @@ impl Trainer {
             return Err(JsValue::from_str("Input vector size mismatch"));
         }
 
-        let mut total_loss = 0.0;
         let target = NodeId(self.output_node);
         let order = graph.topological_sort(target).map_err(js_err)?;
 
@@ -386,36 +478,10 @@ impl Trainer {
         graph.clear_gradients();
 
         // Training mode so Dropout is active; eval mode is restored on exit.
-        with_training_mode(&mut graph, |graph| {
-            for i in 0..batch_size {
-                // Inject input
-                {
-                    let mut input_buffer = self.input_tensor.borrow_mut();
-                    if let Ok(slice) = input_buffer.as_slice_mut() {
-                        let start = i * self.input_dim;
-                        for d in 0..self.input_dim {
-                            slice[d] = inputs[start + d];
-                        }
-                    }
-                    if let Some(gran_prix::graph::Node::Input(ref mut t)) = graph.nodes_mut().get_mut(self.input_node) {
-                        t.copy_from(&input_buffer).map_err(js_err)?;
-                    }
-                }
-
-                let result = graph.execute_with_order(&order, target).map_err(js_err)?;
-
-                let target_tensor = Tensor::from_shape_vec(&[1, 1], vec![targets[i]]).map_err(js_err)?;
-                let loss_fn = gran_prix::loss::BCEWithLogits;
-
-                let mut grad = loss_fn.gradient(&result, &target_tensor).map_err(js_err)?;
-                grad.map_inplace(|v| *v /= batch_size as f32).map_err(js_err)?;
-
-                total_loss += loss_fn.calculate(&result, &target_tensor).map_err(js_err)?;
-
-                graph.backward(NodeId(self.output_node), grad).map_err(js_err)?;
-            }
-            Ok(())
-        })?;
+        let total_loss = with_training_mode(&mut graph, |graph| {
+            self.binary_batch_loop(graph, &order, &inputs, &targets)
+        })
+        .map_err(js_err)?;
 
         use gran_prix::optim::Optimizer;
         let mut opt = self.optimizer.borrow_mut();
@@ -481,44 +547,11 @@ impl Trainer {
         // parameter gradients in the ParamStore (node gradients are per call).
         graph.clear_gradients();
 
-        let mut total_loss = 0.0_f32;
-        let loss_fn = gran_prix::loss::CrossEntropyWithLogits;
-
         // Training mode so Dropout is active; eval mode is restored on exit.
-        with_training_mode(&mut graph, |graph| {
-            for i in 0..batch_size {
-                // Inject input row i into the graph's input node.
-                {
-                    let mut input_buffer = self.input_tensor.borrow_mut();
-                    let slice = input_buffer.as_slice_mut().map_err(js_err)?;
-                    let start = i * self.input_dim;
-                    for d in 0..self.input_dim {
-                        slice[d] = inputs[start + d];
-                    }
-                    if let Some(gran_prix::graph::Node::Input(ref mut t)) =
-                        graph.nodes_mut().get_mut(self.input_node)
-                    {
-                        t.copy_from(&input_buffer).map_err(js_err)?;
-                    }
-                }
-
-                // Build one-hot target [1, output_dim] for this sample.
-                let mut one_hot = vec![0.0_f32; self.output_dim];
-                one_hot[class_indices[i] as usize] = 1.0;
-                let target_tensor =
-                    Tensor::from_shape_vec(&[1, self.output_dim], one_hot).map_err(js_err)?;
-
-                let result = graph.execute_with_order(&order, target).map_err(js_err)?;
-                let mut grad = loss_fn.gradient(&result, &target_tensor).map_err(js_err)?;
-                // Scale by 1/batch_size so the accumulated gradient is the
-                // mean-batch gradient (matches `train_batch`'s convention).
-                grad.map_inplace(|v| *v /= batch_size as f32).map_err(js_err)?;
-
-                total_loss += loss_fn.calculate(&result, &target_tensor).map_err(js_err)?;
-                graph.backward(target, grad).map_err(js_err)?;
-            }
-            Ok(())
-        })?;
+        let total_loss = with_training_mode(&mut graph, |graph| {
+            self.multi_class_batch_loop(graph, &order, &inputs, &class_indices)
+        })
+        .map_err(js_err)?;
 
         use gran_prix::optim::Optimizer;
         let mut opt = self.optimizer.borrow_mut();
@@ -644,6 +677,17 @@ impl Trainer {
             .into_iter()
             .map(String::from)
             .collect()
+    }
+
+    /// Returns, for every parameter in `getWeights()` order, a
+    /// `{ name, shape: number[], offset, len }` entry: `offset`/`len` locate
+    /// the parameter inside the flat weight vector and `shape` is its tensor
+    /// shape (row-major), e.g. a `Linear` weight is `[in, out]` and its bias
+    /// `[1, out]`. Lets consumers slice the weights without knowing the
+    /// layout rules. Allocates on every call.
+    #[wasm_bindgen(js_name = paramShapes)]
+    pub fn param_shapes(&self) -> JsValue {
+        crate::network_info::param_shapes_to_js(self.graph.borrow().params())
     }
 
     /// Returns whether the parameter at `index` is currently frozen.

@@ -5,6 +5,7 @@ pub mod population;
 pub mod mutation;
 pub mod trainer;
 pub mod errors;
+pub mod network_info;
 #[cfg(all(test, target_arch = "wasm32"))]
 pub mod diag;
 

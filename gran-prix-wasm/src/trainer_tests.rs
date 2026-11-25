@@ -319,3 +319,78 @@ fn dropout_trainer_still_converges() {
     assert!(acc >= 0.95, "dropout MLP accuracy {acc}");
     assert!(last < first, "loss did not fall: first20={first} last20={last}");
 }
+
+// ── E0 inherited: eval mode is restored when the training loop errors ─────
+//
+// Native tests cannot reach the `JsValue` error path (`JsValue` panics off
+// wasm32), so the loops are typed `GPError` inner functions and the
+// `#[wasm_bindgen]` methods only map the error. These tests drive the real
+// loops to a genuine `GPError` through `with_training_mode`.
+
+#[test]
+fn with_training_mode_restores_eval_on_ok_and_err() {
+    let trainer = Trainer::from_network_def(&dropout_net(Some(0.5), 1)).unwrap();
+    let mut graph = trainer.graph.borrow_mut();
+    assert!(!graph.is_training(), "trainer must start in eval mode");
+
+    let ok: Result<u8, GPError> = with_training_mode(&mut graph, |g| {
+        assert!(g.is_training(), "closure must run in training mode");
+        Ok(7)
+    });
+    assert_eq!(ok.unwrap(), 7);
+    assert!(!graph.is_training(), "eval mode not restored after Ok");
+
+    let err: Result<u8, GPError> = with_training_mode(&mut graph, |g| {
+        assert!(g.is_training(), "closure must run in training mode");
+        Err(GPError::InferenceError("boom".into()))
+    });
+    assert!(err.is_err());
+    assert!(!graph.is_training(), "eval mode not restored after Err");
+}
+
+/// An out-of-bounds node in the execution order makes
+/// `execute_with_order` fail inside the per-sample loop.
+const BAD_ORDER: [NodeId; 1] = [NodeId(usize::MAX)];
+#[test]
+fn binary_loop_error_restores_eval_mode_and_keeps_predictions_deterministic() {
+    let trainer = Trainer::from_network_def(&dropout_net(Some(0.5), 1)).unwrap();
+    deterministic_weights(&trainer);
+    let (x, y) = dropout_batch();
+    let probe = x[..4].to_vec();
+    let before = trainer.predict(probe.clone()).unwrap();
+
+    {
+        let mut graph = trainer.graph.borrow_mut();
+        let res = with_training_mode(&mut graph, |g| trainer.binary_batch_loop(g, &BAD_ORDER, &x, &y));
+        assert!(res.is_err(), "out-of-bounds execution order must fail inside the loop");
+        assert!(!graph.is_training(), "loop error left the graph in training mode");
+    }
+
+    let a = trainer.predict(probe.clone()).unwrap();
+    let b = trainer.predict(probe).unwrap();
+    assert_eq!(a.to_bits(), b.to_bits(), "predict not deterministic after a failed step");
+    assert_eq!(a.to_bits(), before.to_bits(), "failed step changed predictions");
+}
+
+#[test]
+fn multi_class_loop_error_restores_eval_mode_and_keeps_predictions_deterministic() {
+    let trainer = Trainer::from_network_def(&dropout_net(Some(0.5), 3)).unwrap();
+    deterministic_weights(&trainer);
+    let mut rng = Lcg(5);
+    let x: Vec<f32> = (0..16 * 4).map(|_| rng.next()).collect();
+    let y: Vec<u32> = (0..16).map(|i| (i % 3) as u32).collect();
+    let probe = x[..4].to_vec();
+    let before = trainer.predict_probs(probe.clone()).unwrap();
+
+    {
+        let mut graph = trainer.graph.borrow_mut();
+        let res = with_training_mode(&mut graph, |g| trainer.multi_class_batch_loop(g, &BAD_ORDER, &x, &y));
+        assert!(res.is_err(), "out-of-bounds execution order must fail inside the loop");
+        assert!(!graph.is_training(), "loop error left the graph in training mode");
+    }
+
+    let a = trainer.predict_probs(probe.clone()).unwrap();
+    let b = trainer.predict_probs(probe).unwrap();
+    assert_eq!(a, b, "predict_probs not deterministic after a failed step");
+    assert_eq!(a, before, "failed step changed predictions");
+}
