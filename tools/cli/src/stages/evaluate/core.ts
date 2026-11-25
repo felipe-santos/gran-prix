@@ -214,9 +214,10 @@ export function evaluateCore(input: { groups: readonly GroupInfo[]; rows: readon
     if (list) list.push(g);
     else clusterMap.set(k, [g]);
   }
-  const clusters: Cluster[] = [...clusterMap.keys()].sort().map((k) => {
+  // The canonical bootstrap (@gran-prix/stats) fixes the order of strata and clusters itself, by (stratum, key).
+  const clusters: Cluster[] = [...clusterMap.keys()].map((k) => {
     const gs = clusterMap.get(k) as number[];
-    return { stratum: (groups[gs[0] as number] as GroupInfo).stratum, groups: gs };
+    return { stratum: (groups[gs[0] as number] as GroupInfo).stratum, key: k, groups: gs };
   });
   const cis = clusterBootstrap({ clusters, nGroups: nG, estimators: est, resamples: opts.resamples, seed: opts.seed, stratified: opts.stratified });
   const one = ones(nG);
@@ -338,7 +339,7 @@ export function evaluateCore(input: { groups: readonly GroupInfo[]; rows: readon
   });
   notes.push({
     kind: "note",
-    text: `Confidence intervals: ${opts.resamples} percentile bootstrap resamples, seed ${opts.seed}, clustered by ${opts.clusterBy} (${clusters.length} clusters of ${act.all.length} groups)${opts.stratified ? ", redrawn within strata" : ""}. Differences are paired (same resample for both systems). metric_ci is the interval of the MICRO metric.`,
+    text: `Confidence intervals: ${opts.resamples} percentile bootstrap resamples, seed ${opts.seed} (numpy default_rng stream, canonical order of strata and clusters), clustered by ${opts.clusterBy} (${clusters.length} clusters of ${act.all.length} groups)${opts.stratified ? ", redrawn within strata" : ""}. Differences are paired (same resample for both systems). metric_ci is the interval of the MICRO metric.`,
   });
   for (const b of baselines) {
     const c = coverage.get(b.id) as { units: number; covered: number; weight: number; coveredWeight: number };
