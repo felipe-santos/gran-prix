@@ -36,17 +36,17 @@ cargo install wasm-pack
 
 ## Run locally
 
-From the repository root, build the WASM bindings:
+From the repository root, build the WASM bindings. The app imports them as `@gran-prix/wasm`, which resolves to `packages/wasm/dist/web` (gitignored, never committed):
 
 ```bash
-cd gran-prix-wasm
-wasm-pack build --target web
+node scripts/build-wasm.mjs --target both \
+  --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 ```
 
 Then start the web app:
 
 ```bash
-cd ../demo-web
+cd demo-web
 npm install
 npm run dev
 ```
@@ -60,6 +60,8 @@ http://localhost:5173
 ---
 
 ## Build
+
+Build the WASM first (previous section), then:
 
 ```bash
 npm run build

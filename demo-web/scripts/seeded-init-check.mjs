@@ -2,15 +2,19 @@
 // Standalone on purpose (smoke-test.mjs is owned by another lane); the body of
 // `checkSeededInit` can be pasted at the end of smoke-test.mjs unchanged.
 //
-// Usage: node demo-web/scripts/seeded-init-check.mjs [pkg-node dir]
-// Needs: cd gran-prix-wasm && wasm-pack build --dev --target nodejs --out-dir pkg-node
+// Usage: node demo-web/scripts/seeded-init-check.mjs [node package dir]
+// Package dir: argument, else $GRAN_PRIX_WASM_NODE, else packages/wasm/dist/node.
+// Needs: node scripts/build-wasm.mjs --target both \
+//          --web-out packages/wasm/dist/web --node-out packages/wasm/dist/node
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const pkgDir = process.argv[2] ?? path.resolve(here, '../../gran-prix-wasm/pkg-node');
+const pkgDir = path.resolve(
+  process.argv[2] ?? process.env.GRAN_PRIX_WASM_NODE ?? path.join(here, '../../packages/wasm/dist/node'),
+);
 const { Trainer, LossKind } = createRequire(import.meta.url)(path.join(pkgDir, 'gran_prix_wasm.js'));
 
 function checkSeededInit() {

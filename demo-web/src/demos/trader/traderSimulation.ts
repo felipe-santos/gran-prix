@@ -1,4 +1,4 @@
-import * as wasm from '../../wasm/pkg/gran_prix_wasm';
+import * as wasm from '@gran-prix/wasm';
 import {
     TRADER_POPULATION_SIZE,
     TRADER_INPUTS,

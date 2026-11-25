@@ -4,6 +4,10 @@ import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
 import path from 'path'
 
+// Single WASM build (web target) produced by `node scripts/build-wasm.mjs`
+// (see packages/wasm). Nothing generated is committed to the repository.
+const wasmWebDir = path.resolve(__dirname, '../packages/wasm/dist/web')
+
 // https://vitejs.dev/config/
 export default defineConfig({
   base: '/gran-prix/',
@@ -14,7 +18,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src'),
+      '@gran-prix/wasm': path.join(wasmWebDir, 'gran_prix_wasm.js'),
     }
   },
   build: {
@@ -30,8 +35,8 @@ export default defineConfig({
   },
   server: {
     fs: {
-      // Allow serving files from one level up to the project root
-      allow: ['..'],
+      // Serve demo-web itself plus the built WASM package (../packages/wasm/dist)
+      allow: [__dirname, path.resolve(__dirname, '../packages')],
     },
   },
 })

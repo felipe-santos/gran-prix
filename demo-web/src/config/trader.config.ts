@@ -5,7 +5,7 @@
  * technical analysis and risk management.
  */
 
-import { MutationStrategy } from '../wasm/pkg/gran_prix_wasm';
+import { MutationStrategy } from '@gran-prix/wasm';
 
 /**
  * Evolution hyperparameters for trading strategies

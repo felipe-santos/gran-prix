@@ -4,7 +4,7 @@
  * Configuration for learning to walk with motor coordination.
  */
 
-import { MutationStrategy } from '../wasm/pkg/gran_prix_wasm';
+import { MutationStrategy } from '@gran-prix/wasm';
 
 /**
  * Evolution hyperparameters for bipedal locomotion

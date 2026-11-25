@@ -5,7 +5,7 @@
  * predators (foxes) and prey (rabbits).
  */
 
-import { MutationStrategy } from '../wasm/pkg/gran_prix_wasm';
+import { MutationStrategy } from '@gran-prix/wasm';
 
 /**
  * Predator evolution parameters

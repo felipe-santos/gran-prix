@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { BipedPhysics } from './BipedPhysics';
 import { useWasmPopulation } from '../../hooks/useWasmPopulation';
-import { MutationStrategy } from '../../wasm/pkg/gran_prix_wasm';
+import { MutationStrategy } from '@gran-prix/wasm';
 
 export interface BipedAgent {
     id: number;
