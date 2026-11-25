@@ -194,6 +194,9 @@ importers:
       '@gran-prix/model':
         specifier: workspace:*
         version: link:../../packages/model
+      '@gran-prix/report':
+        specifier: workspace:*
+        version: link:../../packages/report
     devDependencies:
       '@types/node':
         specifier: ^24.19.2
