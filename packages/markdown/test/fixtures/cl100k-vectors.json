@@ -1,0 +1,277 @@
+{
+ "tiktoken": "0.14.0",
+ "encoding": "cl100k_base",
+ "cases": [
+  {
+   "text": "tiktoken is great!",
+   "tokens": [
+    83,
+    1609,
+    5963,
+    374,
+    2294,
+    0
+   ],
+   "n": 6
+  },
+  {
+   "text": "hello world",
+   "tokens": [
+    15339,
+    1917
+   ],
+   "n": 2
+  },
+  {
+   "text": "Hello, world!",
+   "tokens": [
+    9906,
+    11,
+    1917,
+    0
+   ],
+   "n": 4
+  },
+  {
+   "text": "",
+   "tokens": [],
+   "n": 0
+  },
+  {
+   "text": " ",
+   "tokens": [
+    220
+   ],
+   "n": 1
+  },
+  {
+   "text": "\n\n",
+   "tokens": [
+    271
+   ],
+   "n": 1
+  },
+  {
+   "text": "a",
+   "tokens": [
+    64
+   ],
+   "n": 1
+  },
+  {
+   "text": "The quick brown fox jumps over the lazy dog.",
+   "tokens": [
+    791,
+    4062,
+    14198,
+    39935,
+    35308,
+    927,
+    279,
+    16053,
+    5679,
+    13
+   ],
+   "n": 10
+  },
+  {
+   "text": "# Title\n\nSome **bold** text and a [link](https://example.com/a?b=c).\n\n* item 1\n* item 2\n",
+   "tokens": [
+    2,
+    11106,
+    271,
+    8538,
+    3146,
+    15168,
+    334,
+    1495,
+    323,
+    264,
+    510,
+    2125,
+    9725,
+    2485,
+    1129,
+    8858,
+    916,
+    14520,
+    30,
+    65,
+    20105,
+    3677,
+    9,
+    1537,
+    220,
+    16,
+    198,
+    9,
+    1537,
+    220,
+    17,
+    198
+   ],
+   "n": 32
+  },
+  {
+   "text": "<div class=\"a\" id=\"b\"><p>Hello &amp; goodbye</p></div>",
+   "tokens": [
+    2691,
+    538,
+    429,
+    64,
+    1,
+    887,
+    429,
+    65,
+    3164,
+    79,
+    80597,
+    612,
+    1141,
+    26,
+    47555,
+    524,
+    79,
+    1500,
+    614,
+    29
+   ],
+   "n": 20
+  },
+  {
+   "text": "na\u00efve caf\u00e9 \u65e5\u672c\u8a9e\u306e\u30c6\u30ad\u30b9\u30c8 \ud83d\ude00 emoji",
+   "tokens": [
+    3458,
+    38672,
+    588,
+    53050,
+    76502,
+    22656,
+    45918,
+    252,
+    16144,
+    57933,
+    62903,
+    71634,
+    91416,
+    43465
+   ],
+   "n": 14
+  },
+  {
+   "text": "def f(x):\n    return x ** 2  # square\n",
+   "tokens": [
+    755,
+    282,
+    2120,
+    997,
+    262,
+    471,
+    865,
+    3146,
+    220,
+    17,
+    220,
+    674,
+    9518,
+    198
+   ],
+   "n": 14
+  },
+  {
+   "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "tokens": [
+    70540,
+    70540,
+    70540,
+    70540,
+    70540,
+    70540,
+    5418
+   ],
+   "n": 7
+  },
+  {
+   "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+   "tokens": [
+    1178,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    3492,
+    220
+   ],
+   "n": 41
+  },
+  {
+   "text": "<|endoftext|>",
+   "tokens": [
+    27,
+    91,
+    8862,
+    728,
+    428,
+    91,
+    29
+   ],
+   "n": 7
+  },
+  {
+   "text": "1234567890 3.14159 1,000,000",
+   "tokens": [
+    4513,
+    10961,
+    16474,
+    15,
+    220,
+    18,
+    13,
+    9335,
+    2946,
+    220,
+    16,
+    11,
+    931,
+    11,
+    931
+   ],
+   "n": 15
+  }
+ ],
+ "source": "python tiktoken 0.14.0 (openai/tiktoken), tiktoken.get_encoding(\"cl100k_base\").encode(text, disallowed_special=()); generated 2026-11-25 by test/fixtures/gen-cl100k-vectors.py; the first two cases are also the published README / cookbook examples"
+}

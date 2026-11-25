@@ -1,0 +1,41 @@
+{
+  "name": "@gran-prix/markdown",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Page text for the token-reduction measure (protocol experimento-dom-v0, section 10): D1 (rendered HTML without data-gp-*), D2 (full-page markdown: turndown + GFM over jsdom, unrendered elements removed), the pruned markdown of a keep set, and the cl100k_base token counter (js-tiktoken, offline). Deterministic; versions are pinned.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "js-tiktoken": "1.0.21",
+    "jsdom": "27.4.0",
+    "turndown": "7.2.5",
+    "turndown-plugin-gfm": "1.0.2"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^24.19.2",
+    "@types/turndown": "5.0.6",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}
