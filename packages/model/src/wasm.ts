@@ -10,11 +10,16 @@ export interface WasmTrainerApi {
   get_weights(): Float32Array;
   networkDefJson(): string;
   paramShapes(): Array<{ name: string; shape: number[]; offset: number; len: number }>;
-  paramCount(): number;
+  /** Number of parameter tensors (`paramShapes().length`). NOT the number of floats. */
+  paramTensorCount(): number;
+  /** Number of scalar weights (floats): `get_weights().length`. */
+  weightCount(): number;
   inputDim(): number;
   outputDim(): number;
   /** Output head applied: sigmoid for one output, row-wise softmax otherwise. */
   predictProbsBatch(inputs: Float32Array, n: number): Float32Array;
+  /** Raw network outputs (logits) for `n` row-major samples: the exact input of calibration and the output head. */
+  predictLogitsBatch(inputs: Float32Array, n: number): Float32Array;
 }
 
 export interface WasmValidation {
@@ -22,7 +27,8 @@ export interface WasmValidation {
   errors: string[];
   inputDim?: number;
   outputDim?: number;
-  paramCount?: number;
+  /** Number of scalar weights (floats): the expected length of weights.f32le / 4. */
+  weightCount?: number;
 }
 
 /** The slice of the node-target `@gran-prix/wasm` module the loader uses. */

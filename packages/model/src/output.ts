@@ -78,8 +78,10 @@ export function scoreFromLogits(spec: OutputSpec, raw: ArrayLike<number>, n: num
 const P_MIN = 1e-30;
 
 /**
- * Same final output from the probabilities the WASM Trainer returns (it
- * exposes no raw logits): sigmoid / softmax are inverted (logit, log p; the
+ * @deprecated The WASM Trainer now exposes raw logits (`predictLogitsBatch`):
+ * use `scoreFromLogits`, which is exact. Kept for existing callers.
+ *
+ * Same final output from the probabilities the WASM Trainer returns: sigmoid / softmax are inverted (logit, log p; the
  * additive constant of softmax cancels), calibrated, and re-activated.
  * Without calibration the WASM output is returned as is. WASM cannot express
  * the `identity` activation: callers must not use this for it.

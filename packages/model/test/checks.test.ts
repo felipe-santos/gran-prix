@@ -157,13 +157,13 @@ describe("check 6: dimensions", () => {
 });
 
 describe("check 7: weights length and layout", () => {
-  it("rejects weights whose length differs from the network's paramCount", () => {
+  it("rejects weights whose length differs from the network's weightCount", () => {
     const d = copyFixture();
     const def = fixtureDef();
     (def.layers[0] as { out_features: number }).out_features = 4;
     (def.layers[2] as { in_features: number }).in_features = 4;
     reseal(d, { networkDef: def });
-    expectFailure(d, "weights-layout", /paramCount 25/);
+    expectFailure(d, "weights-layout", /weightCount 25/);
   });
 
   it("rejects a param_layout that disagrees with paramShapes()", () => {

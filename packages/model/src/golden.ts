@@ -2,7 +2,7 @@ import { validate, type Golden } from "@gran-prix/contracts";
 import { createPredictor, type Head } from "@gran-prix/infer-ts";
 import type { LoadState } from "./checks.js";
 import { ModelPackageError, errorText } from "./errors.js";
-import { normalizeBatch, scoreFromLogits, scoreFromProbs } from "./output.js";
+import { normalizeBatch, scoreFromLogits } from "./output.js";
 
 export interface Tolerance {
   abs: number;
@@ -45,9 +45,10 @@ function compare(
 /**
  * 9. golden.json reproduces through BOTH runtimes. Inputs are the extractor's
  * output (pre-normalization): `feature_spec.normalization` is applied first.
- * infer-ts reproduces `raw` (logits) and `score`; the WASM Trainer exposes
- * only the activated output, so it is compared on `score` (calibration is
- * re-applied on the recovered logit).
+ * Both runtimes reproduce `raw` (logits) and `score`: infer-ts through
+ * `predictLogitsBatch` of the interpreter, WASM through
+ * `Trainer.predictLogitsBatch`; calibration and the output head are applied
+ * to the logits in this package.
  */
 export function checkGolden(s: LoadState, tolerance: Tolerance | undefined): void {
   const m = s.manifest as NonNullable<LoadState["manifest"]>;
@@ -97,17 +98,17 @@ export function checkGolden(s: LoadState, tolerance: Tolerance | undefined): voi
     problems.push(`infer-ts cannot run this network: ${errorText(e)}`);
   }
 
-  // WASM Trainer (weights already imported by check 8)
-  if (m.output_spec.activation === "identity") {
-    s.warnings.push("output_spec.activation is identity: the WASM Trainer always applies sigmoid/softmax, so it was not compared against golden.json");
-  } else {
-    try {
-      const probs = (s.trainer as NonNullable<LoadState["trainer"]>).predictProbsBatch(x, n);
-      const score = scoreFromProbs(m.output_spec, probs, n, outDim);
-      problems.push(...compare("wasm", "score", score, golden.cases, (c) => c.score, tol, outDim));
-    } catch (e) {
-      problems.push(`wasm Trainer failed on the golden inputs: ${errorText(e)}`);
-    }
+  // WASM Trainer (weights already imported by check 8): raw logits, so calibration
+  // and the output head are applied exactly as for infer-ts (no inversion of the head).
+  try {
+    const raw = (s.trainer as NonNullable<LoadState["trainer"]>).predictLogitsBatch(x, n);
+    const score = scoreFromLogits(m.output_spec, raw, n, outDim);
+    problems.push(
+      ...compare("wasm", "raw", raw, golden.cases, (c) => c.raw, tol, outDim),
+      ...compare("wasm", "score", score, golden.cases, (c) => c.score, tol, outDim),
+    );
+  } catch (e) {
+    problems.push(`wasm Trainer failed on the golden inputs: ${errorText(e)}`);
   }
   if (problems.length > 0) fail(s, problems);
 }
