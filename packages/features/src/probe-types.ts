@@ -51,4 +51,9 @@ export interface RawProbe {
 }
 
 export const ID_SCHEME = "gp-composed-preorder/1";
-export const PROBE_VERSION = "0.1.0";
+/**
+ * Behaviour version of the in-page probe, recorded in every snapshot (`probe.version`). A new behaviour gets a new
+ * version, so two snapshots with the same version were produced by the same rules.
+ * 0.1.0: E1 (ids, styles, rects, text units). 0.2.0: + `flags.disclosure` (collapsed disclosures, PageSnapshot v1.1).
+ */
+export const PROBE_VERSION = "0.2.0";
