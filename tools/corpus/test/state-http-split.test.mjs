@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PoliteHttp } from "../src/http.mjs";
 import { first20Markdown, summarize, urlsCsv } from "../src/report.mjs";
 import { PREREG_RANGES, firstSalt, satisfies, splitCounts } from "../src/split.mjs";
-import { WalkState, nonEnCap } from "../src/state.mjs";
+import { WalkState, effectiveRecords, nonEnCap } from "../src/state.mjs";
 import { CATEGORIES } from "../src/config.mjs";
 
 const acc = (category, domain, lang = "en", extra = {}) => ({ outcome: "accepted", category, walk_category: category, url: `https://${domain}/${category}`, domain, seq: 1, detail: { lang, group_key: domain }, ...extra });
@@ -28,6 +28,19 @@ describe("WalkState quotas (§2.2)", () => {
   it("replay marks walked keys, so a resumed run skips them", () => {
     const s = WalkState.replay([{ outcome: "excluded", category: "docs", walk_category: "docs", url: "https://x.com/d" }]);
     expect(s.walked.has(WalkState.key("docs", "https://x.com/d"))).toBe(true);
+  });
+});
+
+describe("effectiveRecords", () => {
+  it("a later record of the same (category, url) supersedes the earlier one; other categories are independent", () => {
+    const recs = [
+      { category: "spa", url: "https://a.com/", seq: 1, outcome: "excluded", reason: "capture" },
+      { category: "forum", url: "https://a.com/", seq: 2, outcome: "excluded", reason: "x" },
+      { category: "spa", url: "https://a.com/", seq: 3, outcome: "accepted", reason: "ok", supersedes: 1 },
+    ];
+    expect(effectiveRecords(recs).map((r) => r.seq)).toEqual([2, 3]);
+    const s = WalkState.replay(effectiveRecords(recs).map((r) => ({ ...r, walk_category: r.category, domain: "a.com", detail: { lang: "en", group_key: "a.com" } })));
+    expect(s.count("spa")).toBe(1);
   });
 });
 

@@ -85,9 +85,9 @@ on short snippets, and over `cld`/`cld3`, which need native builds.
   accepted-page screenshots exist so the owner can look.
 * Category membership is the dataset's label (WCXB) or a URL/JSON-LD rule (WebMainBench). The protocol asks that doubtful
   category cases be settled by URL and screenshot before labelling: the screenshots are in `screens/`.
-* The collect stage's flatten step (`tools/cli/src/stages/collect/flatten.ts`, outside the probe) still reads `el.shadowRoot`,
-  `host.getAttribute` and `document.*` the plain way: a page whose `<form>` has a control literally named `shadowRoot` (or
-  an `<img name="cloneNode">`) could still fail there. Not seen in attempt 2; reported, not fixed (out of the lane's scope).
+* The flatten step and the driver read the document through prototype getters captured when the expression runs, that is after the
+  page's scripts: a page that rewrites `Element.prototype` itself (not just names a form control) could still confuse them.
+  The probe is stricter: its accessors are captured at document start, before any page script.
 
 ## Notas de implementação, tentativa 2
 
@@ -118,3 +118,28 @@ the second collection started, and no rule changed once it started.
    * Profile / PII: one-segment URLs of big platforms (`github.com/<x>`) are profiles unless the segment is a reserved product
      word (`features`, `enterprise`, `pricing`, ...); `/people/` and `/members/` alone are sections, not profiles (XenForo
      `/members/name.1234/` still is); e-mail addresses at RFC 2606 / placeholder domains do not count towards the 5-address threshold.
+4. **Flatten step and driver (`tools/cli/src/stages/collect/flatten.ts`, `packages/features/src/node/driver.ts`; attempt 2b).**
+   The first fixes left two collector defects outside the probe. (a) The flatten expression emptied scripts with
+   `script.textContent = ""`, a Trusted Types sink: a page with `require-trusted-types-for 'script'` failed as `capture`
+   (popmalt.com). Scripts are now emptied by removing their child nodes. (b) It also read `el.shadowRoot`, `host.getAttribute` and
+   `document.cloneNode/querySelector` the plain way, and the driver read `document.documentElement.outerHTML` (an
+   `<img name="documentElement">` returned the image): all go through prototype getters now. A minimal copy of `probe/dom.ts` is
+   inlined in the expression because it runs in a separate `evaluate` and cannot share the bundle's closure. The snapshot ids,
+   flattened html and `outerHTML` of the 13 fixtures are identical before and after.
+   **Re-evaluation (`gp-corpus revisit`).** Only the candidates excluded as `capture` with an error message from these defects were
+   re-evaluated (transient errors such as `Execution context was destroyed` and navigation timeouts are not: their rule is the
+   single retry that already exists), with the same rules and the same state. The new record supersedes the old one
+   (`supersedes: <seq>`; every output reads the latest record per category and URL). In a complete category a passing candidate would
+   take its hash position and push out the last accepted page; that case is not implemented and aborts, because it did not occur:
+   the only candidate was `popmalt.com/forums/t/...` (SPA, below its target), which passed and was added (`attempt-diff.md`, 2b).
+
+## Freezing and checking the corpus
+
+* `gp-corpus lock` writes `corpus-v0.lock.json` in the data dir: time, code commit, probe version, the seed and prefix, the sha256 of
+  `frame.jsonl`, `walked.jsonl`, `exclusions.jsonl`, `urls.csv` and `snapshot-set/manifest.json`, the counts and the domain list per
+  category. It prints the sha256 of the lock itself. The lock is not committed (the data dir is ignored); publish its hash.
+* `gp-corpus verify-lock` recomputes everything and exits 1 when anything changed or a snapshot file is missing.
+* `gp-corpus review-page` writes `review.html` (static, no external resource, screenshots by relative path) with the accepted pages by
+  category, the first 20 exclusions and the exclusions decided by a heuristic rule; answers are kept in `localStorage` and exported as JSON.
+  Open it in a browser (VS Code's "Open with Live Server"/Simple Browser also works); it only collects a verdict, it decides nothing.
+

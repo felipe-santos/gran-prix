@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import { canonicalJson } from "@gran-prix/contracts";
 import { CATEGORIES } from "./config.mjs";
 import { writeJsonl, readJsonlSync } from "./jsonl.mjs";
-import { targetOf } from "./state.mjs";
+import { effectiveRecords, targetOf } from "./state.mjs";
 
 const csvCell = (s) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
 
@@ -47,9 +47,15 @@ export function summarize(records) {
 const FLAG_REASON = /^(flag:|http-status-)/;
 
 /** The aid for "check the first 20 excluded pages by hand" (§2.2). It lists; the verdict is the owner's. */
-export function first20Markdown(records, dataDir) {
+/** The two views of the first-20 aid: the first exclusions of any reason, and those decided by the page-flag detector. */
+export function firstTwenty(records) {
   const excluded = records.filter((r) => r.outcome === "excluded").sort((a, b) => a.seq - b.seq);
   const flagged = excluded.filter((r) => FLAG_REASON.test(r.reason) || (r.also ?? []).some((x) => FLAG_REASON.test(x)));
+  return { any: excluded.slice(0, 20), flagged: flagged.slice(0, 20), excluded };
+}
+
+export function first20Markdown(records, dataDir) {
+  const { excluded, flagged } = firstTwenty(records);
   const section = (title, rows, note) => {
     const lines = [`## ${title}`, "", note, ""];
     rows.slice(0, 20).forEach((r, i) => {
@@ -80,7 +86,7 @@ export function first20Markdown(records, dataDir) {
 
 /** Rewrites every derived output from walked.jsonl. */
 export async function writeOutputs(dataDir) {
-  const records = readJsonlSync(join(dataDir, "walked.jsonl"));
+  const records = effectiveRecords(readJsonlSync(join(dataDir, "walked.jsonl")));
   const accepted = records.filter((r) => r.outcome === "accepted");
   await writeJsonl(
     join(dataDir, "exclusions.jsonl"),

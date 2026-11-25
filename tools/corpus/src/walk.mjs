@@ -8,7 +8,7 @@ import { byOrderHash, etld1 } from "./hash.mjs";
 import { PoliteHttp } from "./http.mjs";
 import { appendJsonl, readJsonlSync } from "./jsonl.mjs";
 import { evaluatePage, serverVisibleChars } from "./rules.mjs";
-import { WalkState, targetOf } from "./state.mjs";
+import { WalkState, effectiveRecords, targetOf } from "./state.mjs";
 import { writeOutputs } from "./report.mjs";
 
 const PAGE_TIMEOUT_MS = 110_000;
@@ -62,7 +62,7 @@ class Collector {
     this.http = new PoliteHttp();
     this.walkedPath = join(dataDir, "walked.jsonl");
     this.setDir = join(dataDir, "snapshot-set");
-    this.state = WalkState.replay(readJsonlSync(this.walkedPath));
+    this.state = WalkState.replay(effectiveRecords(readJsonlSync(this.walkedPath)));
     this.seq = Math.max(0, ...readJsonlSync(this.walkedPath).map((r) => r.seq ?? 0));
     this.shot = { path: null, taken: false };
     this.captured = 0;
@@ -143,6 +143,7 @@ class Collector {
       source_type: cand.source_type,
       outcome,
       reason,
+      ...(cand.supersedes === undefined ? {} : { supersedes: cand.supersedes }),
       ...extra,
       at: new Date().toISOString(),
     };
@@ -261,6 +262,37 @@ export function phasesFor(category, frame, state) {
     // same hash order, that are not already part of the corpus. The rendering rule (§2.1) decides.
     { phase: "spa-fallback", rows: () => frame.filter((r) => r.category !== "spa" && !state.acceptedUrls.has(r.url)).sort(byOrderHash) },
   ];
+}
+
+/**
+ * Re-evaluates candidates whose exclusion was caused by a collector defect that has since been fixed (selected by the
+ * `capture` error message matching `messageRe`), with the same rules and the same state. The new record supersedes the old one
+ * (`supersedes: <old seq>`). Rule of the protocol: a candidate that now passes takes its hash position, so in a category that is
+ * already complete it would displace the last accepted page; that case is not implemented and aborts (it did not occur in
+ * dom-v0: the only candidate was an SPA page, and SPA is below its target, where a passing candidate just adds).
+ */
+export async function revisit(dataDir, messageRe) {
+  const all = readJsonlSync(join(dataDir, "walked.jsonl"));
+  const targets = effectiveRecords(all).filter((r) => r.outcome === "excluded" && r.reason === "capture" && messageRe.test(r.detail?.message ?? ""));
+  console.error(`revisit: ${targets.length} candidate(s) match ${messageRe}`);
+  if (targets.length === 0) return [];
+  const c = new Collector(dataDir);
+  await c.init();
+  const out = [];
+  try {
+    for (const old of targets) {
+      const cand = { category: old.category, phase: old.phase, url: old.url, order_hash: old.order_hash, domain: old.domain, source_dataset: old.source_dataset, source_type: old.source_type, supersedes: old.seq };
+      if (c.state.count(cand.category) >= targetOf(cand.category)) throw new Error(`revisit: ${cand.category} is complete; displacement of the last accepted page is not implemented`);
+      const pre = c.state.quotaReason(cand.category, cand.domain) ? null : await c.prescreen(cand, cand.category === "spa");
+      const rec = await c.visit(cand, pre);
+      console.error(`  revisit #${old.seq} -> #${rec.seq} ${cand.category} ${rec.outcome === "accepted" ? "ACCEPT" : "skip"} ${rec.reason}  ${cand.url.slice(0, 100)}`);
+      out.push({ url: cand.url, category: cand.category, was: old.reason, now: rec.outcome === "accepted" ? "accepted" : rec.reason, old_seq: old.seq, new_seq: rec.seq });
+    }
+  } finally {
+    await c.close();
+    await writeOutputs(dataDir);
+  }
+  return out;
 }
 
 export async function walk(dataDir, { category, limit, spaFallback = true } = {}) {

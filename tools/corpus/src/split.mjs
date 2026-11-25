@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { assignSplit } from "@gran-prix/contracts";
 import { CATEGORIES } from "./config.mjs";
 import { readJsonlSync } from "./jsonl.mjs";
+import { effectiveRecords } from "./state.mjs";
 
 /** §3: train [0,55), val [55,70), test [70,100). NOTE: the contracts' DEFAULT_SPLIT_RANGES is 70/15/15, not this. */
 export const PREREG_RANGES = { train: [0, 55], val: [55, 70], test: [70, 100] };
@@ -40,7 +41,7 @@ export function firstSalt(pages, maxI = 1000) {
 }
 
 export async function splitCheck(dataDir) {
-  const accepted = readJsonlSync(join(dataDir, "walked.jsonl")).filter((r) => r.outcome === "accepted");
+  const accepted = effectiveRecords(readJsonlSync(join(dataDir, "walked.jsonl"))).filter((r) => r.outcome === "accepted");
   const pages = accepted.map((r) => ({ category: r.category, group_key: r.detail.group_key }));
   const total = pages.length;
   const res = firstSalt(pages);
