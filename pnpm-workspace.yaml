@@ -1,0 +1,15 @@
+# JS workspace (migration step M4). A glob that matches no directory is ignored by pnpm,
+# so `tools/*` can be listed before any tool exists.
+packages:
+  - "packages/*"
+  - "demo-web"
+  - "tools/*"
+
+# pnpm 11 does not run dependency install scripts unless allowed here. Neither of these
+# needs its script: esbuild and @swc/core ship their native binaries through platform
+# specific optionalDependencies (esbuild's postinstall is only a startup optimization,
+# the @swc/core one is a sanity check). Keeping them off means installs never execute
+# third-party code, and CI and local builds behave the same.
+allowBuilds:
+  "@swc/core": false
+  esbuild: false
