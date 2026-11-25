@@ -167,3 +167,9 @@ Record the settle reason and the late-unstamped count in the snapshot.
 - **Spike-only shadow observer.** The in-page `attachShadow` wrapper used to observe shadow roots is fine for a spike, not for the extension.
 - **Untested loss mode.** Readability also copies a wrapper's attributes onto its single DIV/SECTION child (`Readability.js` ~545–556), which overwrites the child's `data-gp-id`. This was read from the source and not measured separately.
 - **Privacy.** No real page text is committed. Real snapshots live under `data/collect-align/` (gitignored).
+
+## Note 2026-11-25: truth revisions R1-R3 (annotation guide, section 8)
+
+The historical numbers above were computed with the original hand-written truth and are left as they were. Before the pre-registration freeze the annotation guide revised three fixture rules (`fixtures/pages/*.truth.json`): **R1** `article-1` gets `.comments button -> noise` ("Load more comments" is a control, not comment text), **R2** `forum-2` splits `.votes` into `.votes div -> support` (score and "Accepted") and `.votes button -> noise`, **R3** `product-1` keeps `.trust -> noise` but marks `.trust li:nth-child(-n+2)` as support (the 30-day returns and the warranty are concrete facts). `--lint-truth` still passes (every text-bearing element is covered).
+
+Re-running `node src/run.mjs --fixtures` on the revised truth: the numbers with positive = main (sections 1, 2 and 4) do not change, because R1-R3 only move elements between support and noise. Only positive = main + support moves (ALL row, P/R/F1 %): `rd-attr+shadow` 94.7/85.2/89.7 -> **94.9/85.2/89.8**, `rd-text` 93.3/86.6/89.8 -> **93.6/86.7/90.0**, `tr-text+2/3` 96.3/76.1/85.0 -> **96.3/76.0/84.9** (Trafilatura 2.4.0 re-run). The `@gran-prix/labels` fidelity test uses the new main + support constants.

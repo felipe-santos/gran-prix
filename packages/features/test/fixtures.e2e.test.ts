@@ -1,4 +1,4 @@
-// End to end on the 12 synthetic fixtures: probe in headless Chromium, vectorize in Node and in the page.
+// End to end on the 13 synthetic fixtures (12 corpus pages + docs-3, the disclosure fixture): probe in headless Chromium, vectorize in Node and in the page.
 import { validate, type NodeFeatures, type PageSnapshot } from "@gran-prix/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { featureSchemaV0, vectorize, vectorizeMatrix, type NodeFeaturesDoc } from "../src/index.js";
@@ -17,8 +17,8 @@ afterAll(async () => {
 });
 
 describe("probe on the fixtures", () => {
-  it("captures all 12 pages with a contract-valid PageSnapshot", () => {
-    expect(captured).toHaveLength(12);
+  it("captures all 13 pages with a contract-valid PageSnapshot", () => {
+    expect(captured).toHaveLength(13);
     for (const c of captured) {
       const r = validate("page-snapshot", c.snapshot);
       expect(r.issues, c.name).toEqual([]);
@@ -84,7 +84,7 @@ describe("(a) vectorize is deterministic", () => {
 });
 
 describe("(b) Node <-> Chromium parity", () => {
-  it("the same bundle, run inside a blank page, gives bit-identical vectors for all 12 fixtures", async () => {
+  it("the same bundle, run inside a blank page, gives bit-identical vectors for all 13 fixtures (docs-3 has collapsed content: flags.disclosure must not move a bit)", async () => {
     const page = await launched.context.newPage();
     try {
       await page.goto("about:blank");
@@ -119,7 +119,7 @@ describe("(b) Node <-> Chromium parity", () => {
       const sample = vectorizeMatrix((captured[0] as Captured).snapshot, featureSchemaV0).x;
       expect(sample.reduce((a, b) => a + b, 0)).toBeGreaterThan(100);
       expect(new Set(sample).size).toBeGreaterThan(50);
-      console.log(`[parity] 12/12 fixtures bit-identical, ${totalRows} rows x ${featureSchemaV0.dim} features`);
+      console.log(`[parity] ${captured.length}/${captured.length} fixtures bit-identical, ${totalRows} rows x ${featureSchemaV0.dim} features`);
     } finally {
       await page.close();
     }
@@ -176,7 +176,7 @@ describe("(d) sanity: the features separate main from noise (report only)", () =
       const a = sums[k] as { n: number; v: number[] };
       return a.n > 0 ? ((a.v[j] as number) / a.n).toFixed(3) : "-";
     })]);
-    console.log("[sanity] mean over text-bearing elements, 12 fixtures\n" + [header, ...rows].map((r) => r.join(" | ")).join("\n"));
+    console.log("[sanity] mean over text-bearing elements, 13 fixtures\n" + [header, ...rows].map((r) => r.join(" | ")).join("\n"));
     expect((sums["main"] as { n: number }).n).toBeGreaterThan(50);
     expect((sums["noise"] as { n: number }).n).toBeGreaterThan(20);
   });

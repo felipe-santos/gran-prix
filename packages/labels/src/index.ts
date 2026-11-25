@@ -9,17 +9,18 @@ export {
   type ReadabilityOptions,
   type ReadabilityPageResult,
 } from "./readability.js";
+export { applyH1TitleRule } from "./readability.js";
+export {
+  labelPageExtraction,
+  type ExtractionLabelParams,
+  type ExtractionLabeler,
+  type ExtractionOutput,
+  type ExtractionStatus,
+} from "./extraction.js";
 export { assertTruthRules, classIndex, importTruth, type TruthClass, type TruthImport, type TruthRule } from "./truth.js";
 export { LABELER_VERSION, buildNodeLabels, type BuildNodeLabelsInput, type NodeLabelsDoc } from "./node-labels.js";
 export { SOURCE_PRECEDENCE, mergeLabels } from "./merge.js";
-export {
-  LlmLabelerNotEnabledError,
-  llmLabelerStub,
-  type LlmBlock,
-  type LlmLabelRequest,
-  type LlmLabeler,
-  type LlmLedgerPort,
-} from "./llm.js";
+export * from "./llm/index.js";
 export {
   READABILITY_LABELER_ID,
   TRUTH_LABELER_ID,

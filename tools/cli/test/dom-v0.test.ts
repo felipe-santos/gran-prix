@@ -15,14 +15,22 @@ const registry = new StageRegistry(ALL_STAGES);
 const dom = readJson<PipelineSpec>("pipelines/dom-v0.json");
 const example = readJson<PipelineSpec>("packages/contracts/fixtures/valid/pipeline-spec.json");
 const exampleRegistry = readJson<StageKindSpec[]>("packages/contracts/fixtures/valid/pipeline-registry.json");
-const stems = readdirSync(join(REPO, "fixtures/pages"))
-  .filter((f) => f.endsWith(".html"))
-  .map((f) => f.replace(/\.html$/, ""))
-  .sort();
+// The E1 gate set is pinned: the 12 pages the pipeline was frozen with. Fixtures added later (docs-3, a probe fixture
+// for flags.disclosure) do not enter the gate by accident; adding one to the gate is a decision, made here on purpose.
+const stems = [
+  "article-1", "article-2", "docs-1", "docs-2", "forum-1", "forum-2",
+  "landing-1", "landing-2", "product-1", "product-2", "spa-1", "spa-2",
+];
+const fixturePages = readdirSync(join(REPO, "fixtures/pages")).filter((f) => f.endsWith(".html")).map((f) => f.replace(/\.html$/, ""));
 const truthOf = (stem: string) => readJson<{ category: string; rules: unknown[] }>(`fixtures/pages/${stem}.truth.json`);
 const stage = (id: string) => dom.stages.find((s) => s.id === id) as PipelineSpec["stages"][number] & { params: Record<string, any> };
 
 describe("pipelines/dom-v0.json", () => {
+  it("its gate set is 12 pages that all exist in fixtures/pages", () => {
+    expect(stems).toHaveLength(12);
+    for (const s of stems) expect(fixturePages, s).toContain(s);
+  });
+
   it("passes the same check as `gp validate` against the real stage registry", () => {
     const r = checkPipeline(dom, registry);
     expect(r.ok ? [] : r.issues).toEqual([]);

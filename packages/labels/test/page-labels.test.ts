@@ -10,7 +10,7 @@ import {
   readabilityLabel,
   textSimilarity,
 } from "../src/index.js";
-import { readTree } from "../src/testing/index.js";
+import { fixtureNames, readTree } from "../src/testing/index.js";
 import { loadCorpus } from "./helpers.js";
 
 const dir = inject("corpusDir");
@@ -93,7 +93,7 @@ describe("snapshot and features sets (the readers the collect stage shares)", ()
   const feats = new NodeFeaturesSetReader(source(featSet));
 
   it("follow the manifest: one entry per page, the snapshot, its flattened html and its features", () => {
-    expect(snaps.entries()).toHaveLength(12);
+    expect(snaps.entries()).toHaveLength(fixtureNames().length);
     expect(feats.entries().map((e) => e.snapshot_id)).toEqual(snaps.entries().map((e) => e.snapshot_id));
     const e = snaps.entries().find((x) => x.snapshot_id === byName("docs-1").snapshot.snapshot_id)!;
     expect(snaps.snapshot(e)).toEqual(byName("docs-1").snapshot);

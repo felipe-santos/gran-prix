@@ -2,12 +2,10 @@ import { inject, describe, expect, it } from "vitest";
 import type { LabelSource, NodeLabelItem } from "@gran-prix/contracts";
 import { validate } from "@gran-prix/contracts";
 import {
-  LlmLabelerNotEnabledError,
   SOURCE_PRECEDENCE,
   buildNodeLabels,
   labelPageReadability,
   labelPageTruth,
-  llmLabelerStub,
   mergeLabels,
   type NodeLabelsDoc,
 } from "../src/index.js";
@@ -75,25 +73,5 @@ describe("merge precedence", () => {
     expect(validate("node-labels", merged).issues).toEqual([]);
     expect(merged.items.every((i) => i.source === "human")).toBe(true);
     expect(merged.items.length).toBe(human.items.length);
-  });
-});
-
-describe("LLM labeler", () => {
-  it("is an interface plus a stub that throws and never touches the ledger", async () => {
-    let touched = 0;
-    const ledger = {
-      reserve: () => {
-        touched++;
-        return { commit: () => undefined, release: () => undefined };
-      },
-      capUSD: 1,
-      remainingUSD: () => 1,
-    };
-    const p = loadCorpus(inject("corpusDir"), ["article-1"])[0]!;
-    await expect(llmLabelerStub({ snapshot: p.snapshot, blocks: [], model: "m", prompt_id: "p", ledger })).rejects.toBeInstanceOf(
-      LlmLabelerNotEnabledError,
-    );
-    await expect(llmLabelerStub({ snapshot: p.snapshot, blocks: [], model: "m", prompt_id: "p", ledger })).rejects.toThrow(/not enabled/);
-    expect(touched).toBe(0);
   });
 });

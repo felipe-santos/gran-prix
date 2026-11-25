@@ -3,7 +3,7 @@
 Runs a `PipelineSpec` (ADR-004: pipeline as code) incrementally over a **content-addressed artifact
 store**, with a receipt per stage, lineage, and a hard-capped spending ledger. This is the runner
 core (E1.7) plus the real stages: `collect` and `extract` (E1.5), `train` (gp-train) and `package`
-(deployable bundle), `evaluate`, and the label and dataset stages (`label.truth`, `label.heuristic`, `label.merge`,
+(deployable bundle), `evaluate`, and the label and dataset stages (`label.truth`, `label.heuristic`, `label.merge`, `label.llm`,
 `dataset.jsonl`; they read the SnapshotSet and NodeFeaturesSet through the same readers collect and extract write with,
 shared from `@gran-prix/labels`). Demo stages (`ts:demo.*`) exercise the runner. The whole chain runs as
 `pipelines/dom-v0.json`; see "How to run the E1 gate".
@@ -250,6 +250,44 @@ against the contract. `NodeFeaturesSet` is a file-set artifact: `manifest.json` 
 ```
 
 A `.json` external is stored as a JSON artifact; pin it with `"id"` if the pipeline must refuse any other schema. See `tools/cli/test/pipelines/mini-collect-extract.pipeline.json`.
+## The `label.llm` stage (`ts:label.llm@1.0.0`, E2.6)
+
+The LLM labeler of `experimento-dom-v0` section 5. Inputs: `snapshots`, `features` and an optional `many` `layers`
+(NodeLabelsSets of the heuristic and human labelers, used for routing). Outputs: `labels` (a NodeLabelsSet, one
+document per page, `label_source: "llm"`, 3 classes, `labeler.llm` with model, prompt sha256 and the cache keys) and
+`report` (a Bundle: plan, routing, tokens, cost). `determinism: "cached-external"`.
+
+* **Prompt:** built at run time from sections 1-4 of the frozen guide (`guide_path`), whose sha256 must equal `guide_sha256`
+  (pin the value of `plano/prereg-dom-v0.txt`). The sha256 of the guide and of the final prompt are recorded in every
+  label document (`llm_run.guide_sha256`, `labeler.llm.prompt_sha256`).
+* **Input to the model:** blocks `n<idx>|tag|ancestor>path|"text"` in document order (id = the element's `data-gp-id`), in
+  chunks of `chunk_blocks` (400) with `ctx_blocks` (10) read-only context blocks. Answer: `{"labels":[{"id","c":"M|S|N","u","m"}]}`
+  under a JSON schema. Unknown, repeated or missing ids, or malformed JSON: ONE retry with a correction message. Ids still
+  missing after it stay unlabeled and are never guessed (`on_missing: "leave_unlabeled"`, the default, as protocol 5.3 says);
+  `on_missing: "fail_page"` fails the whole page instead. Malformed JSON, unknown or repeated ids after the retry always fail the
+  page, which then writes no labels. `u` (doubt) = confidence 0.5.
+* **Routing (`routing`):** `disagreement` (default) sends the units on which the `layers` voters disagree or abstain, plus a
+  deterministic 15% control sample of the unanimous ones, and the whole page when there is no voter, a voter's alignment was
+  discarded or abstains on more than 30%, or `readerable` is false; units a human layer already settled are never sent.
+  `all` sends everything (the audit pages). Pages of `private_categories` (default `logged_in`) never go to the model.
+* **Money:** `model` and `prices` (USD per Mtok) are REQUIRED params, nothing is assumed. Every call is preceded by
+  `ctx.ledger.reserve(worst case)` and followed by `commit(actual)`; the default cap is $0. When the ledger refuses, the stage
+  fails with `LlmBudgetStopError` (`on_budget: "fail"`, default) or returns the finished pages (`"partial"`; use `cache: "off"`
+  on the stage in that case, or the stage cache would keep the partial result). Every paid response is cached by
+  `llmCacheKey` under `<data dir>/llm-cache/`, so a re-run, even of another pipeline, never pays twice. `dry_run: true` plans
+  and logs (pages, routed blocks, chunks, cache hits, estimated tokens and USD) and calls and reserves nothing.
+* **Key:** only `ANTHROPIC_API_KEY`, read by `AnthropicTransport` when a call is really needed (never for a dry run or a cache
+  hit), sent only as the `x-api-key` header, scrubbed from errors, in no artifact, cache entry or ledger line. There is no SDK
+  dependency: the transport is `fetch` against `/v1/messages` with `cache_control` on the system prompt and structured output.
+
+```jsonc
+{ "id": "llm", "kind": "label", "impl": "ts:label.llm@1.0.0",
+  "params": { "model": "<exact model id>", "prices": { "input_usd_per_mtok": 0, "output_usd_per_mtok": 0 },
+              "guide_path": "../IDEIAS/plano/guia-de-anotacao.md", "guide_sha256": "55ea2273...c1e5", "dry_run": true },
+  "inputs": { "snapshots": { "external": "snapshots" }, "features": { "external": "features" },
+              "layers": [{ "stage": "heur", "output": "labels" }] } }
+```
+
 ## Engine stages (L1)
 
 | impl | ports | notes |

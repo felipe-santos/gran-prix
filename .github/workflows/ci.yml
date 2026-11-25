@@ -196,6 +196,24 @@ jobs:
         run: pnpm --filter @gran-prix/features exec playwright-core install --with-deps chromium
       - name: Check that the Chromium is where packages/features looks
         run: ls -l ~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome
+      # The baseline sidecars (Trafilatura, GBDT) and their Python tests need the pinned packages in
+      # tools/baselines/.pylibs (pip --target, never system-wide). Without them those tests skip, so
+      # the check step below turns a missing install into a failure.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache baseline Python packages
+        id: pylibs
+        uses: actions/cache@v4
+        with:
+          path: tools/baselines/.pylibs
+          key: pylibs-${{ runner.os }}-py3.12-${{ hashFiles('tools/baselines/requirements.lock.txt') }}
+      - name: Install baseline Python packages
+        if: steps.pylibs.outputs.cache-hit != 'true'
+        run: python -m pip install --target tools/baselines/.pylibs --no-deps -r tools/baselines/requirements.lock.txt
+      - name: Check that the baseline Python packages are importable
+        run: PYTHONPATH=tools/baselines/.pylibs python -c "import numpy, sklearn, trafilatura; print('numpy', numpy.__version__, 'sklearn', sklearn.__version__, 'trafilatura', trafilatura.__version__)"
       # @gran-prix/wasm is excluded: its dist comes from the artifacts above (no wasm-pack here).
       - name: Build packages and tools
         run: pnpm -r --filter "./packages/*" --filter "./tools/*" --filter "!@gran-prix/wasm" build

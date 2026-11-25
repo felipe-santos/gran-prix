@@ -171,6 +171,26 @@ threshold.
 Why deferred: process improvement, not code. The lesson — "do not
 change the release profile without measuring" — is documented.
 
+### Dependency freeze on the measurement path while the dom-v0 experiment runs
+
+The pre-registered experiment `dom-v0` (tag `prereg-dom-v0`) pins the capture browser and the baselines. Until it
+ends, these stay at their locked versions even when Dependabot proposes updates: `playwright-core` (and so the
+Chromium revision), `jsdom`, `@mozilla/readability`, `defuddle`, `tinyld`, the Python `trafilatura`/`scikit-learn`
+pins in `tools/baselines/requirements*.txt`, and the token converter/tokenizer once they land. Updates outside that
+path (Rust patch releases, CI actions, demo-web) are taken normally.
+
+### demo-web dependency refresh is blocked by `vite-plugin-top-level-await`
+
+An in-range refresh of demo-web's dependencies breaks its production build: `vite-plugin-top-level-await` 1.6.0 fails
+with `@swc/core` 1.16 ("missing field `type`") and, with `@swc/core` held back, with esbuild 0.28 (destructuring for the
+`chrome87`/`safari14` target). The fix is to drop the plugin (Vite 7 handles top-level await with
+`build.target: "esnext"` or `es2022`) and then take the updates. The open Dependabot PRs for demo-web wait on that.
+
+### `DEFAULT_SPLIT_RANGES` is not the dom-v0 split
+
+`@gran-prix/contracts`' `DEFAULT_SPLIT_RANGES` (train 0-70, val 70-85, test 85-100) is a general default. The dom-v0
+protocol uses train [0,55), val [55,70), test [70,100): pass the ranges explicitly, as `tools/corpus` does.
+
 ## Items closed
 
 Closed in stage E0 (2026-11):

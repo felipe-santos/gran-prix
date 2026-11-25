@@ -1,10 +1,17 @@
 // Port fidelity: the jsdom Readability labeler must reproduce the numbers of the spike
 // (experiments/spikes/collect-align/FINDINGS.md) on the same 12 fixtures, scored against the truth importer.
+// The fixture truth carries the revisions R1-R3 of the annotation guide (2026-11-25); the main-only numbers are the
+// historical ones, the main+support constants were re-run on the revised truth (see the note in FINDINGS.md).
 import { inject, describe, expect, it } from "vitest";
 import { importTruth, readabilityLabel, type ElementDecision, type TruthClass } from "../src/index.js";
 import { Counts, loadCorpus, scorePage, type Prf } from "./helpers.js";
 
-const corpus = loadCorpus(inject("corpusDir"));
+// The spike's 12 pages, pinned: fixtures added later (docs-3, the flags.disclosure probe fixture) are not in its numbers.
+const SPIKE_FIXTURES = [
+  "article-1", "article-2", "docs-1", "docs-2", "forum-1", "forum-2",
+  "landing-1", "landing-2", "product-1", "product-2", "spa-1", "spa-2",
+] as const;
+const corpus = loadCorpus(inject("corpusDir"), SPIKE_FIXTURES);
 
 const MAIN = new Set<TruthClass>(["main"]);
 const MAIN_SUPPORT = new Set<TruthClass>(["main", "support"]);
@@ -65,9 +72,13 @@ describe("port fidelity vs the spike (12 fixtures, char-weighted P/R/F1 %, posit
   it("rd-text ALL = 78.6/94.2/85.7", () => near(score(spikeRuns, "rd-text", MAIN), [78.6, 94.2, 85.7]));
   it("rd-hybrid ALL = 78.5/94.2/85.7", () => near(score(spikeRuns, "rd-hybrid", MAIN), [78.5, 94.2, 85.7]));
 
-  it("positive = main + support: rd-attr+shadow 94.7/85.2/89.7 and rd-text 93.3/86.6/89.8", () => {
-    near(score(spikeRuns, "rd-attr+shadow", MAIN_SUPPORT), [94.7, 85.2, 89.7]);
-    near(score(spikeRuns, "rd-text", MAIN_SUPPORT), [93.3, 86.6, 89.8]);
+  // Guide R1-R3 (2026-11-25) moved three fixture rules between support and noise (article-1 "Load more comments",
+  // forum-2 votes, product-1 trust badges), so the main+support numbers moved by <= 0.3 points: they were
+  // 94.7/85.2/89.7 (rd-attr+shadow) and 93.3/86.6/89.8 (rd-text) with the old truth, and were re-run with the
+  // spike on the revised truth. The positive = main numbers above are unchanged by construction.
+  it("positive = main + support (truth revised by guide R1-R3): rd-attr+shadow 94.9/85.2/89.8 and rd-text 93.6/86.7/90.0", () => {
+    near(score(spikeRuns, "rd-attr+shadow", MAIN_SUPPORT), [94.9, 85.2, 89.8]);
+    near(score(spikeRuns, "rd-text", MAIN_SUPPORT), [93.6, 86.7, 90.0]);
   });
 
   it("per category, rd-text F1 is within 2 points of the spike", () => {
