@@ -13,6 +13,8 @@
 //   * NOT entered: <iframe> documents (the iframe element itself is stamped), closed shadow roots,
 //     <template> content (a separate fragment), text nodes that sit directly in a shadow root.
 
+import { childNodesOf, nodeTypeOf, shadowRootOf } from "./dom.js";
+
 export const SKIP_TEXT_TAGS = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"]);
 
 export interface Visit {
@@ -35,8 +37,9 @@ export interface TextVisit {
 /** Composed-tree children of an element: open-shadow-root children first, then light children. */
 export function composedChildNodes(el: Element): Node[] {
   const out: Node[] = [];
-  if (el.shadowRoot) for (const c of el.shadowRoot.childNodes) out.push(c);
-  for (const c of el.childNodes) out.push(c);
+  const sr = shadowRootOf(el);
+  if (sr) for (const c of childNodesOf(sr)) out.push(c);
+  for (const c of childNodesOf(el)) out.push(c);
   return out;
 }
 
@@ -47,24 +50,26 @@ export function walkComposed(root: Element, onEl: (v: Visit) => void, onText?: (
   let k = 0;
   while (stack.length > 0) {
     const it = stack.pop() as Item;
-    if (it.n.nodeType === Node.TEXT_NODE) {
+    if (nodeTypeOf(it.n) === Node.TEXT_NODE) {
       if (onText) onText({ owner: it.owner, childIndex: it.childIndex, node: it.n as Text });
       continue;
     }
     const el = it.n as Element;
     const idx = k++;
     onEl({ el, idx, parent: it.parent, depth: it.depth, inShadow: it.inShadow });
-    const shadowKids = el.shadowRoot ? Array.from(el.shadowRoot.childNodes) : [];
-    const lightKids = Array.from(el.childNodes);
+    const sr = shadowRootOf(el);
+    const shadowKids = sr ? Array.from(childNodesOf(sr)) : [];
+    const lightKids = Array.from(childNodesOf(el));
     // Push in reverse so the stack pops in document order: shadow children first, then light children.
     for (let i = lightKids.length - 1; i >= 0; i--) {
       const c = lightKids[i] as Node;
-      if (c.nodeType === Node.ELEMENT_NODE) stack.push({ n: c, parent: idx, depth: it.depth + 1, inShadow: it.inShadow, owner: -1, childIndex: -1 });
-      else if (c.nodeType === Node.TEXT_NODE) stack.push({ n: c, parent: idx, depth: it.depth + 1, inShadow: it.inShadow, owner: idx, childIndex: i });
+      const type = nodeTypeOf(c);
+      if (type === Node.ELEMENT_NODE) stack.push({ n: c, parent: idx, depth: it.depth + 1, inShadow: it.inShadow, owner: -1, childIndex: -1 });
+      else if (type === Node.TEXT_NODE) stack.push({ n: c, parent: idx, depth: it.depth + 1, inShadow: it.inShadow, owner: idx, childIndex: i });
     }
     for (let i = shadowKids.length - 1; i >= 0; i--) {
       const c = shadowKids[i] as Node;
-      if (c.nodeType === Node.ELEMENT_NODE) stack.push({ n: c, parent: idx, depth: it.depth + 1, inShadow: true, owner: -1, childIndex: -1 });
+      if (nodeTypeOf(c) === Node.ELEMENT_NODE) stack.push({ n: c, parent: idx, depth: it.depth + 1, inShadow: true, owner: -1, childIndex: -1 });
     }
   }
   return k;

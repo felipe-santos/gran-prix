@@ -1,5 +1,7 @@
 // Page-level signals that live outside any one element: og:type and JSON-LD @type.
 
+import { getAttr, queryDoc, queryDocAll, textContentOf } from "./dom.js";
+
 const MAX_JSONLD_BYTES = 1_000_000;
 const MAX_TYPES = 16;
 
@@ -9,8 +11,8 @@ export function wellFormed(s: string): string {
 }
 
 export function ogType(): string | undefined {
-  const meta = document.querySelector('meta[property="og:type" i], meta[name="og:type" i]');
-  const v = meta?.getAttribute("content")?.trim().toLowerCase();
+  const meta = queryDoc('meta[property="og:type" i], meta[name="og:type" i]');
+  const v = meta ? getAttr(meta, "content")?.trim().toLowerCase() : undefined;
   return v ? wellFormed(v.slice(0, 64)) : undefined;
 }
 
@@ -29,8 +31,8 @@ export function jsonLdTypes(): string[] {
     if (Array.isArray(t)) t.forEach(add); else add(t);
     for (const k of Object.keys(o)) if (k !== "@type" && k !== "@context") visit(o[k], depth + 1);
   };
-  for (const s of document.querySelectorAll('script[type="application/ld+json" i]')) {
-    const text = s.textContent ?? "";
+  for (const s of queryDocAll('script[type="application/ld+json" i]')) {
+    const text = textContentOf(s) ?? "";
     if (text.length === 0 || text.length > MAX_JSONLD_BYTES) continue;
     try { visit(JSON.parse(text), 0); } catch { /* malformed JSON-LD is common; ignore */ }
   }
