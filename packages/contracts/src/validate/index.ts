@@ -3,17 +3,21 @@ import type { DatasetManifest, DatasetRow } from "../dataset.js";
 import type { EvalReport } from "../eval-report.js";
 import type { FeatureSchema } from "../feature-schema.js";
 import type { Golden } from "../golden.js";
+import type { LabelAgreement } from "../label-agreement.js";
 import type { ModelPackage } from "../model-package.js";
 import type { NetworkDef } from "../network-def.js";
 import type { NodeFeatures } from "../node-features.js";
 import type { NodeLabels } from "../node-labels.js";
 import type { PageSnapshot } from "../page-snapshot.js";
 import type { PipelineSpec } from "../pipeline-spec.js";
+import type { QaTaskSet } from "../qa-task-set.js";
 import { contractByName, UNENVELOPED, type ContractName } from "../registry.js";
 import type { StageKindSpec } from "../stage-kind-spec.js";
 import type { TrainConfig } from "../train-config.js";
 import { contentTreeInvariants, pipelineStructureIssues } from "./inv-graph.js";
-import { evalReportInvariants, goldenInvariants, modelPackageInvariants } from "./inv-model.js";
+import { labelAgreementInvariants, qaTaskSetInvariants } from "./inv-audit.js";
+import { evalReportInvariants } from "./inv-eval.js";
+import { goldenInvariants, modelPackageInvariants } from "./inv-model.js";
 import { datasetInvariants, datasetRowInvariants, trainConfigInvariants } from "./inv-train.js";
 import { featureSchemaInvariants, nodeFeaturesInvariants, nodeLabelsInvariants, snapshotInvariants } from "./inv-extract.js";
 import { ContractError, type ContractIssue, type Issues, type ValidationResult } from "./result.js";
@@ -33,6 +37,8 @@ export interface ContractTypes {
   "model-package": ModelPackage;
   golden: Golden;
   "eval-report": EvalReport;
+  "label-agreement": LabelAgreement;
+  "qa-task-set": QaTaskSet;
   "content-tree": ContentTree;
   "pipeline-spec": PipelineSpec;
   "stage-kind-spec": StageKindSpec;
@@ -50,6 +56,8 @@ const INVARIANTS: Partial<Record<ContractName, InvariantFn>> = {
   "model-package": modelPackageInvariants,
   golden: goldenInvariants,
   "eval-report": evalReportInvariants,
+  "label-agreement": labelAgreementInvariants,
+  "qa-task-set": qaTaskSetInvariants,
   "content-tree": contentTreeInvariants,
   "pipeline-spec": pipelineStructureIssues,
 };

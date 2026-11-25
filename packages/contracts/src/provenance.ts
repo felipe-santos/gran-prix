@@ -25,6 +25,9 @@ const ProvenanceBody = Type.Object(
       git_dirty: Type.Optional(Type.Boolean()),
       node: Type.String(),
       wasm_sha256: Type.Optional(Sha256),
+      tool_sha256: Type.Optional(
+        Sha256,
+      ),
       extractor: Type.Optional(Type.Object({ name: Type.String(), version: SemVer, bundle_sha256: Sha256 })),
     }),
     created_at: Iso8601,

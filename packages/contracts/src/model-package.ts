@@ -78,7 +78,7 @@ export type Thresholds = Static<typeof Thresholds>;
 export const ModelPackageContract = defineContract(
   "model-package",
   "gran-prix.model-package",
-  "1.0.0",
+  "1.1.0",
   contractObject(
     "model-package",
     "gran-prix.model-package",

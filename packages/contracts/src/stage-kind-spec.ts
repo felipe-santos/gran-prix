@@ -7,7 +7,12 @@ import { contractObject, defineContract } from "./base.js";
  * validate `params`. Ports reference artifact types, which map to contracts.
  */
 
-export const STAGE_KINDS = ["collect", "extract", "label", "dataset", "train", "evaluate", "package", "infer"] as const;
+/**
+ * `demo` (v1.1) is for stages that exist to exercise the runner (fixtures, examples, tests) and must not borrow
+ * a real kind. A real kind promises a contract-conforming output; a `demo` stage promises nothing, so a
+ * pipeline with a `demo` stage is never a candidate for a gate or a published artifact.
+ */
+export const STAGE_KINDS = ["collect", "extract", "label", "dataset", "train", "evaluate", "package", "infer", "demo"] as const;
 export const StageKind = Type.Union(STAGE_KINDS.map((k) => Type.Literal(k)));
 export type StageKind = (typeof STAGE_KINDS)[number];
 
@@ -28,6 +33,8 @@ export const ARTIFACT_CONTRACTS = {
   EvalReport: "eval-report",
   Bundle: null,
   ContentTree: "content-tree",
+  LabelAgreement: "label-agreement",
+  QaTaskSet: "qa-task-set",
 } as const;
 export type ArtifactType = keyof typeof ARTIFACT_CONTRACTS;
 export const ARTIFACT_TYPES = Object.keys(ARTIFACT_CONTRACTS) as ArtifactType[];
@@ -44,7 +51,7 @@ export type PortSpec = Static<typeof PortSpec>;
 export const StageKindSpecContract = defineContract(
   "stage-kind-spec",
   "gran-prix.stage-kind-spec",
-  "1.0.0",
+  "1.1.0",
   contractObject(
     "stage-kind-spec",
     "gran-prix.stage-kind-spec",

@@ -13,6 +13,11 @@ export interface StageCacheKeyInput {
   inputIds: StageInputIds;
   /** sha256 of the `.wasm` binary; only for stages that run it (train / evaluate). */
   wasmSha?: Sha256;
+  /**
+   * sha256 of the native tool binary a `runtime: "rust"` stage executes (e.g. `gp-train`). Hashed as
+   * `env.tool_sha256` only when given, so keys of stages that do not use it do not change. (v1.1)
+   */
+  toolSha?: Sha256;
   /** Optional: stage kind. Redundant with `impl` today; kept in the hash when given. */
   kind?: string;
   /** Optional: Node major version, for stages whose numeric output may depend on it. */
@@ -22,7 +27,7 @@ export interface StageCacheKeyInput {
 /**
  * Cache key of a pipeline stage (A1 section 3.3):
  *
- *     sha256(canonical({ v, kind?, impl, params, inputs, env: { wasm_sha256?, node_major? } }))
+ *     sha256(canonical({ v, kind?, impl, params, inputs, env: { wasm_sha256?, node_major?, tool_sha256? } }))
  *
  * Deterministic and independent of: run id, wall clock, host, input port
  * declaration order, editor layout. Dependent on: the exact `impl`, the
@@ -34,17 +39,19 @@ export interface StageCacheKeyInput {
  * existing keys of stages that do not use it.
  */
 export function stageCacheKey(input: StageCacheKeyInput): Sha256 {
-  const { impl, params, inputIds, wasmSha, kind, nodeMajor } = input;
+  const { impl, params, inputIds, wasmSha, toolSha, kind, nodeMajor } = input;
   if (typeof impl !== "string" || impl.length === 0) throw new TypeError("impl must be a non-empty string");
   for (const [port, v] of Object.entries(inputIds)) {
     if (Array.isArray(v)) v.forEach((id, i) => assertSha256(id, `inputIds.${port}[${i}]`));
     else assertSha256(v, `inputIds.${port}`);
   }
   if (wasmSha !== undefined) assertSha256(wasmSha, "wasmSha");
+  if (toolSha !== undefined) assertSha256(toolSha, "toolSha");
   if (nodeMajor !== undefined && !Number.isInteger(nodeMajor)) throw new TypeError("nodeMajor must be an integer");
   const env: Record<string, unknown> = {};
   if (wasmSha !== undefined) env["wasm_sha256"] = wasmSha;
   if (nodeMajor !== undefined) env["node_major"] = nodeMajor;
+  if (toolSha !== undefined) env["tool_sha256"] = toolSha;
   return sha256Of(
     canonicalJson({
       v: "gran-prix.stage-cache-key/1",

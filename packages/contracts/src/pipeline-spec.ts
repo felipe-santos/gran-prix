@@ -29,7 +29,7 @@ export type StageInstance = Static<typeof StageInstance>;
 export const PipelineSpecContract = defineContract(
   "pipeline-spec",
   "gran-prix.pipeline-spec",
-  "1.0.0",
+  "1.1.0",
   contractObject(
     "pipeline-spec",
     "gran-prix.pipeline-spec",
