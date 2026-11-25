@@ -1,5 +1,5 @@
 import { LABEL_SOURCES, type FeatureSchema, type LabelSource, type NodeLabels, type PageSnapshot, type SplitName, type SplitRanges } from "@gran-prix/contracts";
-import { NodeFeaturesSetReader, SnapshotSetReader, buildDataset, indexBySnapshot, readSetDocs, type DatasetSource } from "@gran-prix/labels";
+import { NodeFeaturesSetReader, SnapshotSetReader, buildDataset, indexBySnapshot, ownTextWeights, readSetDocs, type DatasetSource } from "@gran-prix/labels";
 import { defineStage, type StagePlugin } from "../stage.js";
 import type { ArtifactHandle } from "../store.js";
 
@@ -12,7 +12,8 @@ import type { ArtifactHandle } from "../store.js";
  * Split: `hash-bucket-v1` over `group_key` with `params.split.seed` as the salt; no PRNG, so adding
  * pages never moves an existing domain. The test split only takes `test_allowed_sources` (human by
  * default, ADR-006). Pages flagged at capture (http-error, error-page, captcha, paywall, tiny-dom) are
- * excluded by default and listed in `excluded_pages` of the manifest. Projection to binary: `keep_classes` (default main + support), written to the manifest.
+ * excluded by default and listed in `excluded_pages` of the manifest. Every row carries `w`, the characters of the unit's own
+ * text (`ownTextWeights`), and the manifest declares `row_weight: own_text_chars`, so evaluate weighs exactly. Projection to binary: `keep_classes` (default main + support), written to the manifest.
  */
 
 const SPLIT_NAMES = ["train", "val", "test"] as const satisfies readonly SplitName[];
@@ -102,6 +103,7 @@ export const datasetJsonl: StagePlugin = defineStage(
         page: { snapshot_id: s.snapshot_id, group_key: s.page.group_key, category: s.page.category, flags: captureFlags(s) },
         features: featuresReader.features(f),
         labels: l.doc,
+        weights: ownTextWeights(s),
       });
     }
     for (const id of labels.keys()) if (!features.has(id)) ctx.log(`snapshot ${id}: labels without features, left out of the dataset`);
