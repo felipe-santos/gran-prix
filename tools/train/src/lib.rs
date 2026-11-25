@@ -67,7 +67,7 @@ pub fn run_train(args: &TrainArgs) -> Result<(PackageSummary, train::TrainOutcom
 
     let outcome = train::train(&train_rows, &val_rows, &cfg, seed)?;
     let mut opts = args.opts.clone();
-    opts.duration_ms = started.elapsed().as_millis() as u64;
+    opts.duration_ms.get_or_insert(started.elapsed().as_millis() as u64);
     let inputs = PackageInputs { outcome: &outcome, train: &train_rows, val: &val_rows, manifest: &manifest, features: &features, config_raw: &raw };
     let summary = write_package(&args.out, &inputs, &opts)?;
     Ok((summary, outcome))

@@ -97,7 +97,7 @@ const wantScore = golden.cases.flatMap((c) => c.score);
   // The round trip of the NetworkDef through the core must keep its identity.
   const C = existsSync(contractsEntry) ? await import(pathToFileURL(contractsEntry).href) : null;
   if (C) assert.equal(C.artifactId(JSON.parse(t.networkDefJson())), model.digest.network_def, 'networkDefJson() round trip');
-  assert.equal(t.paramCount(), model.network.param_layout.length, 'paramCount (tensors)');
+  assert.equal(t.paramTensorCount(), model.network.param_layout.length, 'paramTensorCount (tensors)');
   assert.deepEqual(Array.from(t.get_weights()), Array.from(weights), 'weights survive import -> export bit for bit');
   const shapes = t.paramShapes();
   model.network.param_layout.forEach((p, i) => {

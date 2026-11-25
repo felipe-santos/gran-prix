@@ -21,8 +21,8 @@ try {
 
 `predict*` applies `feature_spec.normalization` (z-score: `(x - mean) / (std + eps)`), the network,
 then `output_spec` (calibration on the logit, then sigmoid / softmax / identity). The `ts` runtime
-is `@gran-prix/infer-ts`; the `wasm` runtime is `Trainer.predictProbsBatch` with calibration
-re-applied on the recovered logit (the Trainer exposes no raw logits).
+is `@gran-prix/infer-ts`; the `wasm` runtime is `Trainer.predictLogitsBatch` (raw logits), so calibration
+and the output head are applied exactly as in the `ts` runtime.
 
 ## The nine checks
 
@@ -34,13 +34,12 @@ re-applied on the recovered logit (the Trainer exposes no raw logits).
 | 4 | `network-def-digest` | `digest.network_def` equals `artifactId(JSON.parse(network_def.json))` (RFC 8785; whitespace-proof) |
 | 5 | `network-def-valid` | WASM `validateNetworkDef` is ok; layer types used are listed in `requires.layer_types` |
 | 6 | `dimensions` | network input dim == `network.input_dim` == `feature_spec.dim`; output dim == `network.output_dim` and consistent with `output_spec` (sigmoid: 1; else `labels.length`) |
-| 7 | `weights-layout` | weights hold exactly the Trainer's parameter count; `network.param_layout` equals `paramShapes()` (names, shapes, offsets, lengths) |
+| 7 | `weights-layout` | weights hold exactly the network's `weightCount` (floats; `Trainer.weightCount()` and `validateNetworkDef().weightCount`); `network.param_layout` equals `paramShapes()` (names, shapes, offsets, lengths) |
 | 8 | `round-trip` | `Trainer.fromNetworkDef` + `import_weights`, then `networkDefJson()` is canonically equal to the file (catches fields a runtime ignores silently) and `get_weights()` is bit-identical |
-| 9 | `golden` | `golden.json` is valid, bound to these weights, and reproduces through **both** infer-ts (`raw` and `score`) and the WASM Trainer (`score`) within `golden.tolerance` (override: `opts.tolerance`; fallback 1e-5) |
+| 9 | `golden` | `golden.json` is valid, bound to these weights, and reproduces through **both** infer-ts and the WASM Trainer (`raw` and `score` each, the latter through `predictLogitsBatch`) within `golden.tolerance` (override: `opts.tolerance`; fallback 1e-5) |
 
-Notes: the WASM Trainer cannot express an `identity` output; for such a package check 9 compares only
-infer-ts and records a warning. A network infer-ts refuses (BatchNorm, RNN, GRU) fails check 9, since
-a package must reproduce through both runtimes.
+Notes: since the WASM leg uses raw logits, an `identity` output is checked in both runtimes too. A network
+infer-ts refuses (BatchNorm, RNN, GRU) fails check 9, since a package must reproduce through both runtimes.
 
 ## Running
 

@@ -80,6 +80,20 @@ describe("softmax output with temperature calibration", () => {
     });
   }
 
+  it("the wasm runtime calibrates raw logits: same scores as ts, also where the softmax saturates", () => {
+    const dir = softmaxPackage({ kind: "temperature", t: 2 }, 2);
+    const ts = loadModelPackage(dir, { runtime: "ts" });
+    const wasmRt = loadModelPackage(dir, { runtime: "wasm" });
+    // Far outside the training range: the uncalibrated head is saturated (probabilities ~0 / ~1).
+    const rows = [60, -45, 80, 30, -70, 90, -55, 40, 0.6, 0.1, 1, 0.0625];
+    const a = ts.predictBatch(rows, 3);
+    const b = wasmRt.predictBatch(rows, 3);
+    expect(a.length).toBe(9);
+    a.forEach((v, i) => expect(Math.abs(v - (b[i] as number))).toBeLessThan(1e-6));
+    ts.dispose();
+    wasmRt.dispose();
+  });
+
   it("a golden that ignores the temperature fails check 9", () => {
     const dir = softmaxPackage({ kind: "temperature", t: 2 }, 1);
     expect(() => loadModelPackage(dir)).toThrow(ModelPackageError);

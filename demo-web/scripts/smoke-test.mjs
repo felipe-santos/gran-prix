@@ -51,7 +51,7 @@ function allFinite(arr) {
 
 async function main() {
   const mod = await import(PKG);
-  const { Trainer } = mod;
+  const { Trainer, validateNetworkDef } = mod;
   check('Trainer class is exported', typeof Trainer === 'function');
 
   // ── Construction via hidden_layers shorthand ─────────────────────────────
@@ -278,6 +278,24 @@ async function main() {
     batchTrainer.paramCount() === pnames.length,
     `paramCount=${batchTrainer.paramCount()}`
   );
+  // paramTensorCount / weightCount: unambiguous names for the two counts.
+  // paramCount stays as a deprecated alias of paramTensorCount (tensors).
+  check(
+    'paramTensorCount equals paramCount and paramNames.length (tensors)',
+    batchTrainer.paramTensorCount() === pnames.length && batchTrainer.paramTensorCount() === batchTrainer.paramCount(),
+    `paramTensorCount=${batchTrainer.paramTensorCount()}`
+  );
+  check(
+    'weightCount equals getWeights().length (floats) and differs from the tensor count',
+    batchTrainer.weightCount() === batchTrainer.get_weights().length && batchTrainer.weightCount() !== pnames.length,
+    `weightCount=${batchTrainer.weightCount()}`
+  );
+  const vnd = validateNetworkDef(batchTrainer.networkDefJson());
+  check(
+    'validateNetworkDef reports weightCount (floats) == Trainer.weightCount(); paramCount is its alias',
+    vnd.ok === true && vnd.weightCount === batchTrainer.weightCount() && vnd.paramCount === vnd.weightCount,
+    JSON.stringify(vnd)
+  );
   check(
     'paramName(0) matches paramNames[0]',
     batchTrainer.paramName(0) === pnames[0],
@@ -472,6 +490,39 @@ async function main() {
     }
   }
   check('every row of predict_probs_batch sums to 1', allRowsValid);
+
+  // predictLogitsBatch: raw outputs; the output head applied to them is predictProbsBatch.
+  const mcLogits = mcTrainer.predictLogitsBatch(mcInputs, 4);
+  check(
+    'predictLogitsBatch returns batch_size * output_dim raw values',
+    mcLogits instanceof Float32Array && mcLogits.length === 4 * 3,
+    `len=${mcLogits.length}`
+  );
+  let logitsMatchProbs = true;
+  for (let r = 0; r < 4; r += 1) {
+    const row = Array.from(mcLogits.slice(r * 3, r * 3 + 3));
+    const max = Math.max(...row);
+    const e = row.map((v) => Math.exp(v - max));
+    const sum = e.reduce((a, v) => a + v, 0);
+    for (let c = 0; c < 3; c += 1) {
+      if (Math.abs(e[c] / sum - mcBatchProbs[r * 3 + c]) > 1e-5) logitsMatchProbs = false;
+    }
+  }
+  check('softmax(predictLogitsBatch) == predictProbsBatch (multi-class)', logitsMatchProbs);
+  const binLogits = batchTrainer.predictLogitsBatch(new Float32Array([0.3, -0.2, 1.1, 0.4]), 2);
+  const binProbs = batchTrainer.predictBatch(new Float32Array([0.3, -0.2, 1.1, 0.4]), 2);
+  check(
+    'sigmoid(predictLogitsBatch) == predictBatch (binary)',
+    binLogits.length === 2 && binLogits.every((l, i) => Math.abs(1 / (1 + Math.exp(-l)) - binProbs[i]) < 1e-5)
+  );
+  check('predictLogitsBatch(0) returns empty', batchTrainer.predictLogitsBatch(new Float32Array([]), 0).length === 0);
+  let logitsBadRejected = false;
+  try {
+    batchTrainer.predictLogitsBatch(new Float32Array([1, 2, 3]), 2);
+  } catch {
+    logitsBadRejected = true;
+  }
+  check('predictLogitsBatch rejects a wrong input length', logitsBadRejected);
 
   // ── Multi-class learning sanity ─────────────────────────────────────────
   // Train on a tiny separable dataset: input = one-hot of class.

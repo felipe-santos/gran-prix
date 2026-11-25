@@ -15,7 +15,7 @@ import {
 } from "./checks.js";
 import { CHECKS, type CheckId } from "./errors.js";
 import { checkGolden, type Tolerance } from "./golden.js";
-import { normalizeBatch, oodFeatures, scoreFromLogits, scoreFromProbs } from "./output.js";
+import { normalizeBatch, oodFeatures, scoreFromLogits } from "./output.js";
 import { loadWasm, type WasmApi, type WasmTrainerApi } from "./wasm.js";
 
 export type Runtime = "ts" | "wasm";
@@ -114,10 +114,8 @@ export function loadModelPackage(dir: string, opts: LoadOptions = {}): LoadedMod
   const predictBatch = (features: ArrayLike<number>, n: number): Float32Array => {
     if (disposed) throw new Error("model handle was disposed");
     const x = normalizeBatch(manifest.feature_spec, features, n);
-    if (runtime === "ts" || manifest.output_spec.activation === "identity") {
-      return scoreFromLogits(manifest.output_spec, predictor.predictLogitsBatch(x, n), n, outDim);
-    }
-    return scoreFromProbs(manifest.output_spec, trainer.predictProbsBatch(x, n), n, outDim);
+    const raw = runtime === "ts" ? predictor.predictLogitsBatch(x, n) : trainer.predictLogitsBatch(x, n);
+    return scoreFromLogits(manifest.output_spec, raw, n, outDim);
   };
 
   return {

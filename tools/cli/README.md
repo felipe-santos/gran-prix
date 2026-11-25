@@ -2,9 +2,9 @@
 
 Runs a `PipelineSpec` (ADR-004: pipeline as code) incrementally over a **content-addressed artifact
 store**, with a receipt per stage, lineage, and a hard-capped spending ledger. This is the runner
-core (E1.7) plus real stages: `collect` and `extract` (E1.5) and `evaluate`, all documented below.
-Demo stages (`ts:demo.*`) exercise the runner; label, dataset, train and package plug into the same
-interface.
+core (E1.7) plus the real stages: `collect` and `extract` (E1.5), `train` (gp-train) and `package`
+(deployable bundle), and `evaluate`, all documented below. Demo stages (`ts:demo.*`) exercise the runner;
+label and dataset plug into the same interface.
 
 ```
 gp run <pipeline.json> [--from <stage>] [--to <stage>] [--force] [--data-dir data]
@@ -32,7 +32,9 @@ $ node tools/cli/dist/bin.js run tools/cli/examples/demo.pipeline.json --budget-
    written when it is invalid.
 2. `${vars.x}` is resolved; stages are ordered topologically (declaration order breaks ties).
 3. Per stage: `cache_key = stageCacheKey({ kind, impl, params, inputIds, wasmSha? })`. `wasmSha` is
-   the sha256 of the loaded `.wasm` and only enters the key of `node+wasm` stages. On a hit
+   the sha256 of the loaded `.wasm` and only enters the key of `node+wasm` stages; a plugin that runs an
+   external binary (`runtime: "rust"`) declares it with `toolDigests()` and its sha256 enters the key
+   too (see "Engine stages"). On a hit
    (`<data>/cache/<key>.json` whose artifacts are all in the store) the stage is not executed.
    On a miss the plugin runs and every output is stored.
 4. Receipts go to `<data>/runs/<run_id>/<stage_id>/stage.json` (status `ran` / `cached` / `failed` /
@@ -95,8 +97,8 @@ export const myStage = defineStage(
 );
 ```
 
-A stage must be a function of its resolved params and input artifacts (plus the wasm binary):
-the cache key assumes nothing else matters. Demo stages: `emit-json`, `emit-files`, `concat`,
+A stage must be a function of its resolved params and input artifacts (plus the wasm binary and any
+tool binary it declares in `toolDigests`): the cache key assumes nothing else matters. Demo stages: `emit-json`, `emit-files`, `concat`,
 `fail`, `spend`.
 
 ## `gp report`
@@ -216,6 +218,35 @@ against the contract. `NodeFeaturesSet` is a file-set artifact: `manifest.json` 
 
 A `.json` external is stored as a JSON artifact (`--root` moves the base of `path`); pin it with `"id"` if the pipeline must refuse any other
 schema. See `tools/cli/test/pipelines/mini-collect-extract.pipeline.json`.
+## Engine stages (L1)
+
+| impl | ports | notes |
+|---|---|---|
+| `rust:train.gp-train@1.0.0` | `dataset: Dataset` (+ optional `config: TrainConfig`) -> `model: ModelPackage` | runtime `rust`, `seeded`; params: `seed` (required, overrides the config's), `config` (inline TrainConfig when the input is not connected), `name`, `task_name`, `created_at` |
+| `ts:package.bundle@1.0.0` | `model: ModelPackage` -> `bundle: Bundle` | runtime `node+wasm`, `pure`; no params |
+
+**train** runs the `gp-train` binary (ADR-007): build it with `cargo build --release -p gp-train`. It is
+found through `$GP_TRAIN_BIN`, else `<$CARGO_TARGET_DIR or ./target>/release/gp-train`; a missing binary
+fails the stage with that hint. The **sha256 of the binary is part of the stage's cache key**
+(`StagePlugin.toolDigests`, folded in as the reserved input `$tool.gp-train`), so rebuilding the trainer
+re-runs `train` and everything downstream and nothing else; the digest is also written to the stage
+receipt and to the provenance of its artifacts (`tool_versions.tools`). The runner's cache key,
+pipeline spec id and the stage id are passed to `gp-train` (they land in `model.json`'s provenance);
+`run_id`, `created_at` and `duration_ms` there are deterministic (cache-key prefix, `params.created_at`
+or the epoch, 0), so the package is a pure function of (params, inputs, binary): a fresh data dir or
+another run id gives byte-identical artifacts. The real run id lives in the receipt and `meta.json`.
+The package must pass `loadModelPackage` (9/9) before the stage accepts it.
+
+**package** verifies the package the same way, then writes the bundle: the package files,
+`model.generated.ts` (`@gran-prix/infer-ts`, head taken from `output_spec`), `selftest.mjs` and
+`bundle.json` (`model_id`, sha256 and size of every other file, self-test result). The self-test runs
+on the real files in a child Node (`--experimental-strip-types`; native on Node >= 22.18) and the
+stage fails if golden.json is not reproduced; the same file ships in the bundle:
+`cd <bundle> && node selftest.mjs`. The generator's output for a fixed tiny network is part of the
+cache key, so a new `infer-ts` re-packages.
+
+The runner only loads single files as externals, so a Dataset must come from a stage;
+`test/stages-engine.test.ts` shows a three-stage pipeline over the contracts' dataset fixture.
 
 ## Tests
 

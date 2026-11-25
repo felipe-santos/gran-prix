@@ -83,7 +83,9 @@ pub struct PackageOpts {
     pub cache_key: Option<String>,
     pub pipeline_spec_id: Option<String>,
     pub created_at: Option<String>,
-    pub duration_ms: u64,
+    /// `provenance.duration_ms`. `None`: the measured wall time of the run. A pipeline runner
+    /// fixes it (0) so the whole package, `model.json` included, is byte-reproducible.
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -315,7 +317,7 @@ pub fn write_package(out_dir: &Path, inputs: &PackageInputs, opts: &PackageOpts)
                 "pipeline_spec_id": opts.pipeline_spec_id.clone().unwrap_or(empty_pipeline),
                 "tool_versions": { "gp_cli": format!("gp-train {}", env!("CARGO_PKG_VERSION")), "node": "none" },
                 "created_at": opts.created_at.clone().unwrap_or_else(now_iso8601),
-                "duration_ms": opts.duration_ms,
+                "duration_ms": opts.duration_ms.unwrap_or(0),
             }),
         );
     }

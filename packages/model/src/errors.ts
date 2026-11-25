@@ -9,7 +9,7 @@ export const CHECKS = [
   { n: 4, id: "network-def-digest", title: "network_def digest equals the RFC 8785 hash of the parsed network_def.json" },
   { n: 5, id: "network-def-valid", title: "validateNetworkDef (WASM) accepts the network" },
   { n: 6, id: "dimensions", title: "input/output dimensions agree with feature_spec and output_spec" },
-  { n: 7, id: "weights-layout", title: "weights length and layout equal paramCount / paramShapes" },
+  { n: 7, id: "weights-layout", title: "weights length and layout equal weightCount / paramShapes" },
   { n: 8, id: "round-trip", title: "Trainer.fromNetworkDef + import_weights + networkDefJson() reproduces network_def.json" },
   { n: 9, id: "golden", title: "golden.json reproduces through the WASM Trainer and infer-ts" },
 ] as const;

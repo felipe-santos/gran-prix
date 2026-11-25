@@ -185,6 +185,39 @@ fn synthetic_end_to_end_through_the_cli_is_deterministic_and_correct() {
 }
 
 #[test]
+fn a_fixed_duration_makes_the_whole_package_byte_reproducible() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let data = tmp.path().join("data");
+    write_synthetic_dataset(&data, [160, 60, 60], 3);
+    let cfg = tmp.path().join("train.json");
+    write_config(&cfg, |_| {});
+    let train = |out: &Path| {
+        let status = bin()
+            .args(["train", "--dataset"])
+            .arg(&data)
+            .arg("--config")
+            .arg(&cfg)
+            .arg("--out")
+            .arg(out)
+            .args(["--created-at", "2026-11-25T12:00:00Z", "--duration-ms", "0", "--run-id", "r", "--cache-key"])
+            .arg(sha256_id(b"key"))
+            .status()
+            .expect("runs");
+        assert!(status.success());
+    };
+    let (a, b) = (tmp.path().join("a"), tmp.path().join("b"));
+    train(&a);
+    train(&b);
+    let mut names: Vec<_> = std::fs::read_dir(&a).expect("ls").map(|e| e.expect("entry").file_name()).collect();
+    names.sort();
+    assert!(names.len() >= 5, "package files: {names:?}");
+    for n in names {
+        assert_eq!(std::fs::read(a.join(&n)).expect("a"), std::fs::read(b.join(&n)).expect("b"), "{n:?} differs between two runs");
+    }
+    assert_eq!(read_json(&a.join("model.json"))["provenance"]["duration_ms"], 0);
+}
+
+#[test]
 fn model_is_good_normalization_is_fit_on_train_and_package_is_valid() {
     let tmp = tempfile::tempdir().expect("tmp");
     let data = tmp.path().join("data");

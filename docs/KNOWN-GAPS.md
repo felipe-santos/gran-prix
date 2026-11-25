@@ -56,7 +56,7 @@ Pinned by `tests/batch_gradient_accumulation.rs`.
 `train_batch` and `train_batch_multi_class` (and `train_step`, which
 delegates) run in training mode, so Dropout is active; every `predict*` path
 runs in eval mode. Training mode is restored to eval on both the success and
-the error path. Pinned by `gran-prix-wasm/src/trainer_tests.rs` and the smoke
+the error path. Pinned by `gran-prix-wasm/src/trainer/tests.rs` and the smoke
 test.
 
 ### Seeded initialization is opt-in

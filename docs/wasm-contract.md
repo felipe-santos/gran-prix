@@ -86,7 +86,7 @@ Important convention: binary classifiers should usually output logits, not sigmo
 
 ## Trainer
 
-Location: `gran-prix-wasm/src/trainer.rs`
+Location: `gran-prix-wasm/src/trainer/` (split by concern: `build`, `training`, `params`, `inference`, `forward`, `loss_kind`)
 
 `Trainer` is the WASM API for online supervised learning.
 

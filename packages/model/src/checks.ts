@@ -153,7 +153,7 @@ export const checkDimensions: CheckFn = (s) => {
   if (problems.length > 0) fail(s, "dimensions", problems);
 };
 
-/** 7. weights length == paramCount, and param_layout == Trainer.paramShapes(). */
+/** 7. weights length == weightCount, and param_layout == Trainer.paramShapes(). */
 export const checkWeightsLayout: CheckFn = (s) => {
   const m = mf(s);
   const bytes = s.weightsBytes as Uint8Array;
@@ -161,7 +161,7 @@ export const checkWeightsLayout: CheckFn = (s) => {
   const problems: string[] = [];
   if (bytes.byteLength % 4 !== 0) problems.push(`${m.files.weights.path} has ${bytes.byteLength} bytes, not a multiple of 4`);
   const v = s.validation as WasmValidation;
-  if (count !== v.paramCount) problems.push(`weights hold ${count} floats, validateNetworkDef reports paramCount ${v.paramCount}`);
+  if (count !== v.weightCount) problems.push(`weights hold ${count} floats, validateNetworkDef reports weightCount ${v.weightCount}`);
   let trainer: WasmTrainerApi;
   try {
     trainer = s.wasm.Trainer.fromNetworkDef(s.networkDefText as string);
@@ -169,7 +169,7 @@ export const checkWeightsLayout: CheckFn = (s) => {
     return fail(s, "weights-layout", `Trainer.fromNetworkDef failed: ${errorText(e)}`, e);
   }
   s.trainer = trainer;
-  const total = trainer.get_weights().length; // Trainer.paramCount() counts tensors, not floats
+  const total = trainer.weightCount();
   if (total !== count) problems.push(`weights hold ${count} floats, the Trainer has ${total} parameters`);
   const shapes = trainer.paramShapes();
   if (shapes.length !== m.network.param_layout.length) {
