@@ -32,6 +32,9 @@ export function causeOf(a1, a2, inFrame1) {
   if (r.reason === "personal-profile" || r.reason === "pii-evident") return "perfil/PII (heuristic)";
   if (r.reason === "capture" && /not iterable/.test(r.detail?.message ?? "")) return "capture (DOM clobbering in the probe)";
   if (r.reason === "capture" || r.reason === "navigation") return "capture/navigation (transient or site state)";
+  if (a2.rec.phase === "spa-fallback" && a2.dest.startsWith("excluded:")) return "cascade (not needed by its category in attempt 2; walked only in the SPA fallback)";
+  const net = /^excluded:(http-status|robots|navigation)/;
+  if (net.test(a1.dest) || net.test(a2.dest)) return `site state (${a1.dest} -> ${a2.dest}: the site answered differently)`;
   return `cascade or site state (${a1.dest} -> ${a2.dest})`;
 }
 

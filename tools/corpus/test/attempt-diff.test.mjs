@@ -14,6 +14,6 @@ describe("attempt-diff causes", () => {
     expect(causeOf(undefined, x("accepted:spa", {}), false)).toMatch(/^quadro/);
     expect(causeOf(x("accepted:article", { reason: "ok" }), undefined, true)).toMatch(/filled earlier/);
     expect(causeOf(undefined, x("accepted:article", {}), true)).toMatch(/never walked/);
-    expect(causeOf(x("excluded:http-status-403", { reason: "http-status-403" }), x("accepted:article", {}), true)).toMatch(/^cascade or site state/);
+    expect(causeOf(x("excluded:http-status-403", { reason: "http-status-403" }), x("accepted:article", {}), true)).toMatch(/^site state/);
   });
 });
