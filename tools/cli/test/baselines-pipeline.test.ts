@@ -78,7 +78,7 @@ function spec(ext: NonNullable<PipelineSpec["externals"]>, extraEval: boolean): 
               id: "evaluate_gbdt",
               kind: "evaluate" as const,
               impl: "ts:evaluate.intrinsic@1.0.0",
-              params: { seed: "${vars.seed}", split: "test", resamples: 100, gates: [], label_baseline: { names: BASELINE_NAMES } },
+              params: { seed: "${vars.seed}", split: "test", resamples: 100, gates: [], label_baseline: { names: BASELINE_NAMES }, reopen_reason: "test fixture: the same model is scored again on the same synthetic split with the GBDT bundle added" },
               inputs: {
                 model: { stage: "train", output: "model" },
                 dataset: { stage: "dataset", output: "dataset" },

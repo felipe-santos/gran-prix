@@ -2,7 +2,8 @@
 // says; (2) a SMALL VARIANT of it (the real stage definitions of one seed branch, over a synthetic Dataset, a tiny grid)
 // runs end to end with the real gp-train: train.cv -> package -> evaluate on dev (OOF bundle as a baseline) -> evaluate on
 // the test, opened once. It shows the path working; it claims nothing about quality.
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EvalReport, PipelineSpec, Sha256 } from "@gran-prix/contracts";
@@ -11,7 +12,6 @@ import { ArtifactStore, StageRegistry, checkPipeline, dataPaths, runPipeline, ty
 import { readOpenings } from "../src/stages/evaluate/openings.js";
 import { ALL_STAGES } from "../src/stages/index.js";
 import { TRAIN_CV_IMPL, createTrainCvStage } from "../src/stages/train-cv/stage.js";
-import { defaultWeight } from "./evaluate-fixtures.js";
 import { cleanupTmp, tmpDir } from "./helpers.js";
 import { CV_GROUPS, CV_ROWS, datasetFiles, gpTrainCopy } from "./train-cv-fixtures.js";
 
@@ -157,6 +157,49 @@ describe("a small variant of the experiment, end to end", () => {
 
     // the deployable bundle is there too (package: nine checks and the generated module's self-test)
     expect(JSON.parse(new TextDecoder().decode(store.handle(out("package_s1")["bundle"] as Sha256, "Bundle").file("bundle.json")))).toMatchObject({ self_test: expect.anything() });
-    void defaultWeight;
+  }, 600_000);
+});
+
+// ------------------------------------------------------------------------------ the GBDT beside the MLP, when Python is set up
+
+const BASELINES = fileURLToPath(new URL("../../baselines/", import.meta.url));
+const PYLIBS = join(BASELINES, ".pylibs");
+const hasGbdt = existsSync(join(PYLIBS, "sklearn")) && existsSync(join(PYLIBS, "numpy"));
+if (!hasGbdt) console.warn("[experiment-variant] GBDT + MLP in one dev report SKIPPED: scikit-learn is not in tools/baselines/.pylibs");
+
+(hasGbdt ? describe : describe.skip)("the MLP's OOF bundle and the GBDT's go through the same evaluate", () => {
+  it("both land in one dev report, covering every dev unit, with the same scoring of a prediction bundle", async () => {
+    const work = tmpDir("gp-gbdt-");
+    const datasetDir = join(work, "dataset");
+    mkdirSync(datasetDir);
+    for (const [name, text] of Object.entries(datasetFiles(false))) writeFileSync(join(datasetDir, name), text);
+    const gb = spawnSync("python3", [join(BASELINES, "gbdt/gbdt.py"), "--dataset", datasetDir, "--out", join(work, "gbdt"), "--folds", "3", "--inner-folds", "2", "--emit", "test"], {
+      encoding: "utf8",
+      env: { ...process.env, PYTHONPATH: PYLIBS, PYTHONDONTWRITEBYTECODE: "1", OMP_NUM_THREADS: "2" },
+    });
+    expect(gb.status, gb.stderr).toBe(0);
+    const gbdtReport = JSON.parse(readFileSync(join(work, "gbdt", "gbdt-report.json"), "utf8")) as { tau_star: number; dev_oof_macro_page_f1_at_tau: number };
+
+    const dataDir = tmpDir();
+    const store = new ArtifactStore(dataPaths(dataDir).artifacts);
+    const dataset = store.putFiles("Dataset", datasetFiles(false));
+    const bundleFiles = (dir: string): Record<string, string> => Object.fromEntries(readdirSync(dir).map((f) => [f, readFileSync(join(dir, f), "utf8")]));
+    const gbdt = store.putFiles("Bundle", bundleFiles(join(work, "gbdt", "bundle-dev-oof")));
+    const base = variant(dataset, store.putJson("Bundle", { id: "heur", predictions: CV_ROWS.map((r) => ({ g: r.g, u: r.u, p: 0 })) }));
+    const spec: PipelineSpec = {
+      ...base,
+      externals: { ...base.externals, gbdt: { type: "Bundle", id: gbdt } },
+      stages: base.stages.filter((s) => s.id === "cv_s1" || s.id === "eval_dev").map((s) => (s.id === "eval_dev" ? { ...s, inputs: { ...s.inputs, baselines: [{ stage: "cv_s1", output: "oof" }, { external: "gbdt" }] } } : s)),
+    };
+    const run = await runPipeline(spec, { dataDir, plugins: plugins() });
+    expect(run.stages.map((s) => `${s.stageId}:${s.status}${s.error ? ` (${s.error})` : ""}`)).toEqual(["cv_s1:ran", "eval_dev:ran"]);
+    const dev = store.handle((run.stages[1]?.outputs as Record<string, Sha256>)["report"] as Sha256, "EvalReport").json() as EvalReport;
+    expect(Object.keys(dev.intrinsic?.baselines ?? {}).sort()).toEqual(["gbdt", "mlp-s1"]);
+    for (const id of ["gbdt", "mlp-s1"]) expect(dev.intrinsic?.baselines[id]?.coverage, id).toBe(1);
+    const pages = dev.intrinsic?.per_group ?? [];
+    expect(pages.every((g) => typeof g.f1_by_baseline?.["gbdt"] === "number" && typeof g.f1_by_baseline?.["mlp-s1"] === "number")).toBe(true);
+    // evaluate reproduces the GBDT's own number up to its 6-decimal rounding of p (tools/baselines writes p rounded, tau* not)
+    const evaluated = pages.reduce((a, g) => a + (g.f1_by_baseline?.["gbdt"] as number), 0) / pages.length;
+    expect(Math.abs(evaluated - gbdtReport.dev_oof_macro_page_f1_at_tau)).toBeLessThan(0.02);
   }, 600_000);
 });
