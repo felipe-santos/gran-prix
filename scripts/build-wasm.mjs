@@ -12,8 +12,8 @@
  * `[package.metadata.wasm-pack.profile.release]` of gran-prix-wasm/Cargo.toml.
  *
  * Targets and output directories (relative paths resolve against the repo root):
- *   web     -> gran-prix-wasm/pkg        (ES module + initSync, used by demo-web)
- *   nodejs  -> gran-prix-wasm/pkg-node   (CommonJS, used by the smoke test)
+ *   web     -> gran-prix-wasm/pkg        (ES module + initSync; demo-web uses packages/wasm/dist/web)
+ *   nodejs  -> gran-prix-wasm/pkg-node   (CommonJS; Node scripts use packages/wasm/dist/node)
  *   both    -> both of the above; with --out-dir <dir> the web build goes to
  *              <dir> and the nodejs build to <dir>-node.
  *
