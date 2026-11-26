@@ -300,6 +300,12 @@ document per page, `label_source: "llm"`, 3 classes, `labeler.llm` with model, p
 * **`split_filter`** (`{salt, ranges?, include: ["train"|"val"|"test"]}`): only the pages whose split (`hash-bucket-v1` over the page's
   `group_key`; default ranges 55/70/100 of the protocol) is in `include`. It lets one pipeline send the dev pages by disagreement and
   the test pages with `routing: all` (`pipelines/dom-v0-labeling.json`).
+* **Labeling plan of dom-v0:** `pipelines/dom-v0-labeling.json` (dry run: extract, the three extractors of protocol 5.2, `label.llm` with
+  `split_filter`: train + val by disagreement, test with `routing: all`) and `node scripts/labeling-plan-dom-v0.mjs --root <repo with data/ and
+  IDEIAS/>` (runs it, then writes `data/labeling/plan-v0.json`, `plan-v0.md` and the Studio queues `queues/<task>.json`, format
+  `gran-prix.label-queue` 1.0.0, with the cost per model and phase). The script removes `ANTHROPIC_API_KEY` from its environment, runs the
+  ledger at cap 0 and refuses a pipeline whose `dry_run` var is not true. Real E2.6 = the same pipeline with `dry_run` false and the chosen
+  model/prices in `vars`, `--budget-usd 25`.
 * **Key:** only `ANTHROPIC_API_KEY`, read by `AnthropicTransport` when a call is really needed (never for a dry run or a cache
   hit), sent only as the `x-api-key` header, scrubbed from errors, in no artifact, cache entry or ledger line. There is no SDK
   dependency: the transport is `fetch` against `/v1/messages` with `cache_control` on the system prompt and structured output.
