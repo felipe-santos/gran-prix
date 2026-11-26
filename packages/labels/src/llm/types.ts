@@ -1,3 +1,5 @@
+import type { Effort, ThinkingMode } from "./models.js";
+
 /**
  * Shared types of the LLM labeler (experimento-dom-v0 section 5, guia de anotacao sections 1-4).
  *
@@ -45,6 +47,10 @@ export interface LlmRequest {
   maxTokens: number;
   /** Always 0 (protocol). `undefined` = leave the parameter out (models that reject sampling parameters). */
   temperature?: 0;
+  /** `off` = send the model's "no thinking" form (see models.ts); `model-default`/undefined = leave `thinking` out. */
+  thinking?: ThinkingMode;
+  /** Sent as `output_config.effort` when set; left out otherwise (model default). */
+  effort?: Effort;
   /** JSON Schema the answer must follow (structured output). */
   schema: Record<string, unknown>;
 }

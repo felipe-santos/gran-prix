@@ -1,7 +1,7 @@
 import { THREE_CLASS_SPACE, type NodeLabelItem, type NodeLabels, type PageSnapshot } from "@gran-prix/contracts";
 import { buildBlocks, chunkBlocks, type BlockParams } from "./blocks.js";
 import type { LlmResponseCache } from "./cache.js";
-import { isCacheHit, planChunk, runChunk, OUTPUT_CONTRACT, type CallConfig, type ChunkPlan } from "./chunk-call.js";
+import { assertCallConfig, isCacheHit, planChunk, runChunk, OUTPUT_CONTRACT, type CallConfig, type ChunkPlan } from "./chunk-call.js";
 import { usageCostUSD } from "./cost.js";
 import { buildNodeLabels, type NodeLabelsDoc } from "../node-labels.js";
 import { routePage, votersFromLabels, type RoutingParams } from "./routing.js";
@@ -118,6 +118,9 @@ function labelerParams(cfg: LlmRunConfig): Record<string, unknown> {
     guide_sha256: cfg.system.guide_sha256,
     output_contract: OUTPUT_CONTRACT,
     temperature_sent: cfg.send_temperature,
+    thinking: cfg.thinking ?? "model-default",
+    effort: cfg.effort ?? null,
+    thinking_headroom_tokens: cfg.thinking_headroom_tokens ?? 0,
     chunk_blocks: cfg.chunk_blocks,
     ctx_blocks: cfg.ctx_blocks,
     block_chars: cfg.block_chars,
@@ -165,6 +168,8 @@ function buildDoc(
         guide_sha256: cfg.system.guide_sha256,
         guide_sections_sha256: cfg.system.sections_sha256,
         temperature_sent: cfg.send_temperature,
+        thinking: cfg.thinking ?? "model-default",
+        effort: cfg.effort ?? null,
         usage,
         cost_usd_at_prices: usageCostUSD(usage, cfg.prices),
         ...extra,
@@ -185,6 +190,10 @@ export async function labelPagesWithLlm(pages: readonly PageJob[], cfg: LlmRunCo
   const docs: NodeLabelsDoc[] = [];
   const reports: PageReport[] = [];
   let budgetStop: LlmRunResult["budgetStop"] = null;
+  // Fails before anything is planned, reserved or sent (also on a dry run, which is the plan of the real one).
+  assertCallConfig(cfg);
+  // The first chunk that needs a call writes the system prompt into the cache; the next ones (minutes apart at most) read it.
+  let cacheWarm = false;
 
   for (const job of pages) {
     const snap = job.snapshot;
@@ -219,8 +228,9 @@ export async function labelPagesWithLlm(pages: readonly PageJob[], cfg: LlmRunCo
       est_input_tokens: pending.reduce((n, p) => n + p.est.input_tokens, 0),
       est_output_tokens: pending.reduce((n, p) => n + Math.min(p.maxTokens, p.chunk.labeled.length * cfg.expected_output_tokens_per_block), 0),
       est_worst_usd: pending.reduce((n, p) => n + p.est.worst_usd, 0),
-      est_expected_usd: pending.reduce((n, p) => n + p.est.expected_usd, 0),
+      est_expected_usd: pending.reduce((n, p, i) => n + (cacheWarm || i > 0 ? p.est.expected_cached_usd : p.est.expected_usd), 0),
     };
+    if (pending.length > 0) cacheWarm = true;
 
     if (cfg.dry_run) {
       const { doc } = buildDoc(job, cfg, "dry_run", [], [], sumUsage([]), { routing: routingRec });

@@ -41,13 +41,17 @@ export interface CallEstimate {
   max_output_tokens: number;
   /** Worst case: every input token billed as a cache WRITE (the dearest input rate) and `max_tokens` of output. */
   worst_usd: number;
-  /** Expected: system prompt as a cache write, the rest as plain input, `expected_output_tokens` of output. */
+  /** Expected, FIRST call of a cache window: system prompt as a cache write, the rest as plain input, `expected_output_tokens` of output. */
   expected_usd: number;
+  /** Expected, call inside a warm cache window (the previous call was < 5 min before): system prompt as a cache READ. */
+  expected_cached_usd: number;
 }
 
 /**
  * Estimate of one call. The worst case is what `ledger.reserve()` is asked for before the call:
  * `(system + user tokens) x safety x max(input, cache-write price) + max_tokens x output price`.
+ * `max_tokens` is the ceiling of EVERYTHING billed as output, thinking tokens included, so a thinking model is covered
+ * as long as the caller put the thinking headroom into `max_tokens` (chunk-call.ts does).
  */
 export function estimateCall(
   systemChars: number,
@@ -62,5 +66,6 @@ export function estimateCall(
   const dearestIn = Math.max(prices.input_usd_per_mtok, cacheWrite(prices));
   const worst = ((sys + usr) * est.safety_factor * dearestIn + maxTokens * prices.output_usd_per_mtok) / 1_000_000;
   const expected = (sys * cacheWrite(prices) + usr * prices.input_usd_per_mtok + expectedOutputTokens * prices.output_usd_per_mtok) / 1_000_000;
-  return { input_tokens: sys + usr, max_output_tokens: maxTokens, worst_usd: worst, expected_usd: expected };
+  const expectedCached = (sys * cacheRead(prices) + usr * prices.input_usd_per_mtok + expectedOutputTokens * prices.output_usd_per_mtok) / 1_000_000;
+  return { input_tokens: sys + usr, max_output_tokens: maxTokens, worst_usd: worst, expected_usd: expected, expected_cached_usd: expectedCached };
 }
