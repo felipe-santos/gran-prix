@@ -84,7 +84,7 @@ export function validateReview(exp, { lockSha, records, allowPartial = false }) 
   exclusions.sort((a, b) => a.rec.seq - b.rec.seq);
   const unreviewed = [...accepted.entries()].filter(([k]) => !answered.has(k)).map(([, r]) => r);
   if (unreviewed.length > 0 && !allowPartial) {
-    errors.push(`${unreviewed.length} accepted page(s) without an answer (every page needs sim, nao or duvida; --allow-partial applies the review anyway and records it):`, ...unreviewed.slice(0, 40).map((r) => `  ${r.category} ${r.url}`), ...(unreviewed.length > 40 ? [`  ... and ${unreviewed.length - 40} more`] : []));
+    errors.push([`${unreviewed.length} accepted page(s) without an answer (every page needs sim, nao or duvida; --allow-partial applies the review anyway and records it):`, ...unreviewed.slice(0, 40).map((r) => `  ${r.category} ${r.url}`), ...(unreviewed.length > 40 ? [`  ... and ${unreviewed.length - 40} more`] : [])].join("\n"));
   }
   const ignored_checks = Array.isArray(exp.exclusion_checks) ? exp.exclusion_checks.filter((c) => c?.answer === "nao" || c?.answer === "duvida") : [];
   return { errors, exclusions, kept, unreviewed, ignored_checks };
