@@ -242,7 +242,13 @@ describe("in Chromium, on the synthetic fixture pages (1 repetition, 4x throttle
     expect(doc.parity).toMatchObject({ checked: true });
     expect(doc.parity.rows).toBeGreaterThan(0);
     expect(doc.parity.max_abs_diff).toBeLessThanOrEqual(1e-5);
-    expect(doc.throttle_check.ratio).toBeGreaterThan(1.5);
+    // The measured throttle factor depends on the machine's load, so only its shape is asserted: it exists, it is a
+    // positive finite number, and the report warns exactly when it lands far from the requested rate.
+    const check = doc.throttle_check;
+    expect(Number.isFinite(check.ratio) && check.ratio > 0).toBe(true);
+    expect(Number.isFinite(check.unthrottled_ms) && check.unthrottled_ms > 0).toBe(true);
+    expect(Number.isFinite(check.throttled_ms) && check.throttled_ms > 0).toBe(true);
+    expect((doc.warnings as string[]).some((w) => /busy-loop check slowed down/.test(w))).toBe(check.ratio < 4 * 0.6);
     expect(doc.environment.browser).toMatch(/^\d+\./);
     expect(doc.load_average.before).toHaveLength(3);
     // too few pages for the gate: the decision script says so
