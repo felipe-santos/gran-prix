@@ -1,3 +1,4 @@
+import { ModelParamsError, thinkingField, validateModelParams } from "./models.js";
 import { LlmTransportError, MissingApiKeyError, type LlmRequest, type LlmResponse, type LlmTransport } from "./types.js";
 
 /**
@@ -11,6 +12,8 @@ import { LlmTransportError, MissingApiKeyError, type LlmRequest, type LlmRespons
  *    cache window, and `usage` reports `cache_creation_input_tokens` / `cache_read_input_tokens` separately.
  *  - Structured output: `output_config.format = json_schema`. No forced `tool_choice` (newer models reject it).
  *  - `temperature: 0` is sent unless the request leaves it out (models that reject sampling parameters).
+ *  - `thinking` (only for `off`) and `output_config.effort` are sent when the request sets them. The combination is
+ *    validated per model first (`validateModelParams`), so a 400 that is known in advance never costs a call.
  *  - NOT retried here: a retry is a second paid call and must go through the ledger (the labeler owns it).
  */
 
@@ -29,6 +32,22 @@ export interface AnthropicTransportOptions {
   fetch?: FetchLike;
   baseUrl?: string;
   timeoutMs?: number;
+}
+
+/** The exact JSON body of one request (pure: tests and the plan look at it without a transport or a key). */
+export function buildMessagesBody(req: LlmRequest): Record<string, unknown> {
+  validateModelParams({ model: req.model, temperature_sent: req.temperature !== undefined, thinking: req.thinking, effort: req.effort });
+  const body: Record<string, unknown> = {
+    model: req.model,
+    max_tokens: req.maxTokens,
+    system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
+    messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+    output_config: { format: { type: "json_schema", schema: req.schema }, ...(req.effort !== undefined ? { effort: req.effort } : {}) },
+  };
+  if (req.temperature !== undefined) body["temperature"] = req.temperature;
+  const thinking = thinkingField(req.model, req.thinking);
+  if (thinking) body["thinking"] = thinking;
+  return body;
 }
 
 const FATAL_STATUS = new Set([400, 401, 403, 404]);
@@ -63,15 +82,14 @@ export class AnthropicTransport implements LlmTransport {
   }
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
+    let body: Record<string, unknown>;
+    try {
+      body = buildMessagesBody(req);
+    } catch (e) {
+      if (e instanceof ModelParamsError) throw new LlmTransportError(e.message, null, true);
+      throw e;
+    }
     const key = this.#key();
-    const body: Record<string, unknown> = {
-      model: req.model,
-      max_tokens: req.maxTokens,
-      system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }],
-      messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
-      output_config: { format: { type: "json_schema", schema: req.schema } },
-    };
-    if (req.temperature !== undefined) body["temperature"] = req.temperature;
     const scrub = (s: string): string => s.split(key).join("[redacted]");
     let res: Awaited<ReturnType<FetchLike>>;
     let text: string;

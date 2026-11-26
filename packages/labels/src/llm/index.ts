@@ -18,10 +18,23 @@ export { OUTPUT_INSTRUCTIONS, PROMPT_FORMAT, buildSystemPrompt, extractGuideSect
 export { DEFAULT_BLOCK_PARAMS, buildBlocks, chunkBlocks, renderUserMessage, type BlockParams, type Chunk, type PageHeader } from "./blocks.js";
 export { ANSWER_SCHEMA, correctionMessage, isClean, validateAnswer, type Validation } from "./validate.js";
 export { CACHE_RECORD_FORMAT, FsLlmCache, MemoryLlmCache, type CacheRecord, type LlmResponseCache } from "./cache.js";
-export { ANTHROPIC_API_VERSION, ANTHROPIC_DEFAULT_BASE_URL, AnthropicTransport, type AnthropicTransportOptions } from "./anthropic.js";
+export { ANTHROPIC_API_VERSION, ANTHROPIC_DEFAULT_BASE_URL, AnthropicTransport, buildMessagesBody, type AnthropicTransportOptions } from "./anthropic.js";
+export {
+  EFFORTS,
+  MODEL_RULES,
+  ModelParamsError,
+  THINKING_MODES,
+  modelRules,
+  thinkingField,
+  validateModelParams,
+  type Effort,
+  type ModelCallParams,
+  type ModelRules,
+  type ThinkingMode,
+} from "./models.js";
 export { FakeTransport, blockLines, defaultFakeAnswer, type FakeResponder } from "./fake.js";
 export { DEFAULT_ROUTING, routePage, votersFromLabels, type RouteReason, type RoutingDecision, type RoutingParams, type Voter } from "./routing.js";
-export { OUTPUT_CONTRACT, isCacheHit, planChunk, runChunk, type CallConfig, type ChunkOutcome, type ChunkPlan, type ChunkRuntime } from "./chunk-call.js";
+export { OUTPUT_CONTRACT, assertCallConfig, outputContractOf, isCacheHit, planChunk, runChunk, type CallConfig, type ChunkOutcome, type ChunkPlan, type ChunkRuntime } from "./chunk-call.js";
 export {
   LLM_LABELER_ID,
   LLM_REPORT_FORMAT,

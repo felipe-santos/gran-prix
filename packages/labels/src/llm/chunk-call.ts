@@ -5,6 +5,7 @@ import type { CacheRecord, LlmResponseCache } from "./cache.js";
 import { CACHE_RECORD_FORMAT } from "./cache.js";
 import { estimateCall, usageCostUSD, type CallEstimate, type EstimateParams } from "./cost.js";
 import type { SystemPrompt } from "./guide.js";
+import { validateModelParams, type Effort, type ThinkingMode } from "./models.js";
 import {
   ANSWER_SCHEMA,
   correctionMessage,
@@ -30,6 +31,15 @@ export interface CallConfig {
   system: SystemPrompt;
   /** Send `temperature: 0`. false = leave it out (models that reject sampling parameters); recorded, never faked. */
   send_temperature: boolean;
+  /** `off` = the model's "no thinking" form; `model-default` (default) leaves `thinking` out. Validated per model (models.ts). */
+  thinking?: ThinkingMode | undefined;
+  /** `output_config.effort`; left out when undefined. */
+  effort?: Effort | undefined;
+  /**
+   * Tokens added to `max_tokens` so that thinking (billed as output, counted in `max_tokens`) cannot starve the answer.
+   * 0 (default) when thinking is off. The ledger reserves `max_tokens` at the output price, so the reserve covers it.
+   */
+  thinking_headroom_tokens?: number | undefined;
   /** Max output tokens per labeled block (worst case) and fixed overhead; `max_tokens = per * blocks + overhead`. */
   output_tokens_per_block: number;
   output_overhead_tokens: number;
@@ -43,6 +53,19 @@ export interface CallConfig {
   retry_failed: boolean;
 }
 
+/**
+ * The output contract of the cache key. `thinking` and `effort` change the request (and so the answer) but the key's
+ * `params` are fixed by @gran-prix/contracts (temperature, max_tokens), so a non-default value is appended here; the
+ * default request keeps the bare id, which keeps every key of a run that predates these params bit-identical.
+ */
+export const outputContractOf = (cfg: Pick<CallConfig, "thinking" | "effort">): string =>
+  OUTPUT_CONTRACT + (cfg.thinking === "off" ? "+thinking=off" : "") + (cfg.effort !== undefined ? `+effort=${cfg.effort}` : "");
+
+/** Throws `ModelParamsError` when the API would reject this combination of model, sampling, thinking and effort. */
+export function assertCallConfig(cfg: CallConfig): void {
+  validateModelParams({ model: cfg.model, temperature_sent: cfg.send_temperature, thinking: cfg.thinking, effort: cfg.effort });
+}
+
 export interface ChunkPlan {
   chunk: Chunk;
   user: string;
@@ -54,7 +77,10 @@ export interface ChunkPlan {
 
 export function planChunk(header: PageHeader, chunk: Chunk, cfg: CallConfig, cache: LlmResponseCache): ChunkPlan {
   const user = renderUserMessage(header, chunk);
-  const maxTokens = Math.min(cfg.max_output_tokens, chunk.labeled.length * cfg.output_tokens_per_block + cfg.output_overhead_tokens);
+  const maxTokens = Math.min(
+    cfg.max_output_tokens,
+    chunk.labeled.length * cfg.output_tokens_per_block + cfg.output_overhead_tokens + (cfg.thinking_headroom_tokens ?? 0),
+  );
   const key = llmCacheKey({
     provider: cfg.provider,
     model: cfg.model,
@@ -62,7 +88,7 @@ export function planChunk(header: PageHeader, chunk: Chunk, cfg: CallConfig, cac
     inputSha256: sha256Of(user),
     // -1 = "temperature not sent": a different request than temperature 0, hence a different key.
     params: { temperature: cfg.send_temperature ? 0 : -1, max_tokens: maxTokens },
-    outputContract: OUTPUT_CONTRACT,
+    outputContract: outputContractOf(cfg),
   });
   const est = estimateCall(
     cfg.system.system.length,
@@ -129,6 +155,7 @@ export async function runChunk(plan: ChunkPlan, cfg: CallConfig, rt: ChunkRuntim
   if (cached && isCacheHit(plan, cfg)) return { record: cached, hit: true, spent_usd: 0, calls: 0 };
   const { transport, ledger } = rt;
   if (!transport || !ledger) throw new Error("LLM call needed but no transport/ledger was provided");
+  assertCallConfig(cfg);
   transport.assertReady?.();
 
   const asked = plan.chunk.labeled.map((b) => b.id);
@@ -174,6 +201,8 @@ export async function runChunk(plan: ChunkPlan, cfg: CallConfig, rt: ChunkRuntim
         messages,
         maxTokens: plan.maxTokens,
         ...(cfg.send_temperature ? { temperature: 0 as const } : {}),
+        ...(cfg.thinking !== undefined ? { thinking: cfg.thinking } : {}),
+        ...(cfg.effort !== undefined ? { effort: cfg.effort } : {}),
         schema: ANSWER_SCHEMA,
       });
     } catch (e) {
