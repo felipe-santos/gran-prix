@@ -366,3 +366,49 @@ table.pages progress {
 .keys td {
   padding: 2px 0;
 }
+
+.badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #eceae2;
+  font-size: 12px;
+}
+.badge.mode-blind {
+  background: #1d1d1b;
+  color: #fff;
+  border-color: #1d1d1b;
+}
+.badge.mode-review {
+  background: #fff3d6;
+  border-color: var(--warn);
+}
+.task-meta {
+  margin: 4px 16px;
+}
+.ok-text {
+  color: var(--ok);
+}
+.cal-group {
+  margin: 8px 16px;
+}
+.cal-targets {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.cal-errors {
+  border-collapse: collapse;
+  margin-top: 6px;
+  width: 100%;
+}
+.cal-errors th,
+.cal-errors td {
+  border-bottom: 1px solid var(--line);
+  padding: 2px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.cal-result {
+  margin-top: 6px;
+}

@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Mode } from "../core/types.js";
-import { api, type PageRow } from "./api.js";
+import { api, pageApi, type PageRow } from "./api.js";
 import { formatDuration } from "./useActiveTimer.js";
 
 interface Props {
   annotator: string;
   onOpen(hex: string): void;
+  /** Back to the tasks (present when the data dir has some). */
+  onTasks?(): void;
   refreshKey: number;
   onTotals(otherSeconds: (hex: string) => number): void;
 }
 
 /** The pages of the data dir with progress (labeled / |U|), mode and time; the entry point of a labeling session. */
-export function PageList({ annotator, onOpen, refreshKey, onTotals }: Props): React.ReactElement {
+export function PageList({ annotator, onOpen, onTasks, refreshKey, onTotals }: Props): React.ReactElement {
   const [rows, setRows] = useState<PageRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export function PageList({ annotator, onOpen, refreshKey, onTotals }: Props): Re
     const has = (r.labeled ?? 0) > 0;
     if (has && !window.confirm(`${r.url} already has labels in ${r.mode} mode. Switching to ${mode} discards them. Continue?`)) return;
     try {
-      await api.save(r.hex, { labels: { explicit: {}, flags: {} }, mode, reset: has });
+      await pageApi(null).save(r.hex, { labels: { explicit: {}, flags: {} }, mode, reset: has });
       load();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -49,6 +51,11 @@ export function PageList({ annotator, onOpen, refreshKey, onTotals }: Props): Re
   return (
     <div className="list-view">
       <header className="bar">
+        {onTasks && (
+          <button onClick={onTasks} data-testid="back-tasks">
+            ← tarefas
+          </button>
+        )}
         <h1>Gran-Prix Studio</h1>
         <span className="muted">annotator</span> <b data-testid="annotator">{annotator}</b>
         <span className="grow" />

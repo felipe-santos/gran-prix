@@ -4,45 +4,67 @@ import { disagreements, effectiveLabels, progressOf } from "../core/labels.js";
 import { buildModel } from "../core/model.js";
 import { initialState, reduce, type Action, type ReduceContext, type StudioState } from "../core/reducer.js";
 import { emptyLabelState, type LabelState, type Mode } from "../core/types.js";
-import { api, type ExportResult, type PageDoc } from "./api.js";
+import { pageApi, type ExportResult, type PageApi, type PageDoc } from "./api.js";
 import { FrameView } from "./FrameView.js";
 import type { OverlayView } from "./frameOverlay.js";
 import { GuidePanel } from "./GuidePanel.js";
 import { KeyHelp, NodeInfo, NodeList, useFilter } from "./SidePanel.js";
 import { formatDuration, useActiveTimer } from "./useActiveTimer.js";
 
+/** What a task puts beside the labeler (the calibration groups): gets the save status and a value that changes with every label. */
+export interface ExtraCtx {
+  hex: string;
+  saveStatus: "saved" | "saving" | "error";
+  labelsVersion: unknown;
+}
+
 interface Props {
   hex: string;
+  /** The task the page is opened in (its mode is fixed by the server); `null`: free mode, the mode is chosen per page. */
+  task: string | null;
   /** Seconds already worked on the other pages (for the grand total). */
   otherSeconds: number;
   guideFile: boolean;
   onBack(): void;
+  renderExtra?(c: ExtraCtx): React.ReactNode;
 }
 
 /** Loads a page document and (re)mounts the labeler; also owns the mode switch, which needs a reload. */
-export function PageView({ hex, otherSeconds, guideFile, onBack }: Props): React.ReactElement {
+export function PageView({ hex, task, otherSeconds, guideFile, onBack, renderExtra }: Props): React.ReactElement {
   const [doc, setDoc] = useState<PageDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [epoch, setEpoch] = useState(0);
+  const pages = useMemo(() => pageApi(task), [task]);
   useEffect(() => {
     let live = true;
     setDoc(null);
-    api
+    pages
       .page(hex)
       .then((d) => live && setDoc(d))
       .catch((e: unknown) => live && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       live = false;
     };
-  }, [hex, epoch]);
+  }, [hex, epoch, pages]);
   if (error) return <div className="center error">Could not load the page: {error} <button onClick={onBack}>back</button></div>;
   if (!doc) return <div className="center">Loading page…</div>;
-  return <Labeler key={`${hex}:${epoch}`} doc={doc} otherSeconds={otherSeconds} guideFile={guideFile} onBack={onBack} reload={() => setEpoch((e) => e + 1)} />;
+  return <Labeler key={`${task ?? ""}:${hex}:${epoch}`} doc={doc} task={task} pages={pages} otherSeconds={otherSeconds} guideFile={guideFile} onBack={onBack} reload={() => setEpoch((e) => e + 1)} renderExtra={renderExtra} />;
 }
 
 const stateOf = (d: PageDoc): LabelState => ({ explicit: d.state.explicit, flags: d.state.flags });
 
-function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDoc; otherSeconds: number; guideFile: boolean; onBack(): void; reload(): void }): React.ReactElement {
+interface LabelerProps {
+  doc: PageDoc;
+  task: string | null;
+  pages: PageApi;
+  otherSeconds: number;
+  guideFile: boolean;
+  onBack(): void;
+  reload(): void;
+  renderExtra: Props["renderExtra"];
+}
+
+function Labeler({ doc, task, pages, otherSeconds, guideFile, onBack, reload, renderExtra }: LabelerProps): React.ReactElement {
   const hex = doc.hex;
   const mode: Mode = doc.state.mode;
   const model = useMemo(() => buildModel(doc.nodes), [doc]);
@@ -84,13 +106,13 @@ function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDo
     if (labels === saved.current) return;
     setSaveStatus("saving");
     try {
-      await api.save(hex, { labels, mode, draft: doc.draft ? { labels_id: doc.draft.labels_id, labeler_id: doc.draft.labeler_id } : null });
+      await pages.save(hex, { labels, mode, draft: doc.draft ? { labels_id: doc.draft.labels_id, labeler_id: doc.draft.labeler_id } : null });
       saved.current = labels;
       setSaveStatus("saved");
     } catch {
       setSaveStatus("error");
     }
-  }, [hex, mode, doc.draft]);
+  }, [hex, mode, doc.draft, pages]);
   useEffect(() => {
     if (st.labels === saved.current) return;
     setSaveStatus("saving");
@@ -102,13 +124,13 @@ function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDo
   useEffect(
     () => () => {
       // leaving the page: best-effort write of anything still pending
-      if (stRef.current.labels !== saved.current) void api.save(hex, { labels: stRef.current.labels, mode }).catch(() => undefined);
+      if (stRef.current.labels !== saved.current) void pages.save(hex, { labels: stRef.current.labels, mode }).catch(() => undefined);
     },
-    [hex, mode],
+    [hex, mode, pages],
   );
 
   // ---- time ----
-  const clock = useActiveTimer(hex, () => mode);
+  const clock = useActiveTimer(hex, () => mode, pages);
   const pageSeconds = doc.seconds + clock.seconds;
 
   // ---- export ----
@@ -116,13 +138,13 @@ function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDo
     setExportError(null);
     await saveNow();
     try {
-      const r = await api.exportPage(hex);
+      const r = await pages.exportPage(hex);
       setExportResult(r);
       if (!r.ok && r.unlabeled[0]) dispatch({ type: "select", idx: r.unlabeled[0].unit_id });
     } catch (e) {
       setExportError(e instanceof Error ? e.message : String(e));
     }
-  }, [hex, saveNow, dispatch]);
+  }, [hex, saveNow, dispatch, pages]);
 
   // ---- keyboard (page document and frame document) ----
   const onKey = useCallback(
@@ -168,7 +190,7 @@ function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDo
     if (next === mode) return;
     const has = Object.keys(st.labels.explicit).length > 0;
     if (has && !window.confirm(`This page already has labels made in ${mode} mode. Switching to ${next} mode discards them. Continue?`)) return;
-    await api.save(hex, { labels: emptyLabelState(), mode: next, reset: has });
+    await pages.save(hex, { labels: emptyLabelState(), mode: next, reset: has });
     reload();
   };
 
@@ -185,18 +207,24 @@ function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDo
           }}
           data-testid="back"
         >
-          ← pages
+          {task === null ? "← pages" : "← tarefa"}
         </button>
         <div className="title" title={doc.url}>
           <b>{doc.title || doc.url}</b> <span className="muted">{doc.category}</span>
         </div>
-        <div className="modes" role="group" aria-label="mode">
-          {(["blind", "review"] as const).map((m) => (
-            <button key={m} className={m === mode ? "on" : ""} aria-pressed={m === mode} onClick={() => void changeMode(m)} data-testid={`mode-${m}`}>
-              {m}
-            </button>
-          ))}
-        </div>
+        {task === null ? (
+          <div className="modes" role="group" aria-label="mode">
+            {(["blind", "review"] as const).map((m) => (
+              <button key={m} className={m === mode ? "on" : ""} aria-pressed={m === mode} onClick={() => void changeMode(m)} data-testid={`mode-${m}`}>
+                {m}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span className={`badge mode-${mode}`} title="o modo é fixado pela tarefa e imposto pelo servidor" data-testid="mode-fixed">
+            {task} · {mode === "blind" ? "cego" : "revisão"}
+          </span>
+        )}
         <div className="progress" data-testid="progress">
           <progress max={progress.total} value={progress.labeled} />
           <span data-testid="progress-text">
@@ -212,9 +240,11 @@ function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDo
         <span className={`save ${saveStatus}`} data-testid="save-status">
           {saveStatus === "saved" ? "saved" : saveStatus === "saving" ? "saving…" : "SAVE FAILED"}
         </span>
-        <button id="export" className={done ? "primary" : ""} onClick={() => void doExport()} data-testid="export">
-          Export
-        </button>
+        {task !== "calibration" && (
+          <button id="export" className={done ? "primary" : ""} onClick={() => void doExport()} data-testid="export">
+            Export
+          </button>
+        )}
         <button onClick={() => setShowKeys((v) => !v)} aria-pressed={showKeys}>
           ? keys
         </button>
@@ -224,7 +254,7 @@ function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDo
       </header>
       <div className="work">
         <FrameView
-          src={api.frameUrl(hex)}
+          src={pages.frameUrl(hex)}
           view={view}
           onSelect={(i) => {
             clock.touch();
@@ -235,6 +265,7 @@ function Labeler({ doc, otherSeconds, guideFile, onBack, reload }: { doc: PageDo
         />
         <aside className="side">
           {mode === "review" && !draft && <div className="panel warn">Review mode, but no draft exists for this page (no NodeLabelsSet and Readability had no answer). Label it by hand.</div>}
+          {renderExtra?.({ hex, saveStatus, labelsVersion: st.labels })}
           <NodeInfo model={model} nodes={doc.nodes} eff={eff} labels={st.labels} selected={st.selected} draft={draft} draftName={draftName} />
           <div className="toggles">
             <label>
