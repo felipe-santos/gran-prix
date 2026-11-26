@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { assignSplit } from "@gran-prix/contracts";
 import { CATEGORIES } from "./config.mjs";
 import { readJsonlSync } from "./jsonl.mjs";
+import { effectiveRecords } from "./state.mjs";
 
 /** §3: train [0,55), val [55,70), test [70,100). NOTE: the contracts' DEFAULT_SPLIT_RANGES is 70/15/15, not this. */
 export const PREREG_RANGES = { train: [0, 55], val: [55, 70], test: [70, 100] };
@@ -26,13 +27,14 @@ export function splitCounts(pages, salt) {
   return out;
 }
 
-export const satisfies = (counts) => Object.values(counts).every((c) => c.test >= MIN_TEST && c.dev >= MIN_DEV);
+export const satisfies = (counts, only) => Object.entries(counts).every(([k, c]) => (only && !only.includes(k)) || (c.test >= MIN_TEST && c.dev >= MIN_DEV));
 
-export function firstSalt(pages, maxI = 1000) {
+/** `only` restricts the rule to some categories (used for the indicative i of the complete categories; never pre-registered). */
+export function firstSalt(pages, maxI = 1000, only) {
   const tried = [];
   for (let i = 0; i < maxI; i++) {
     const counts = splitCounts(pages, saltOf(i));
-    const ok = satisfies(counts);
+    const ok = satisfies(counts, only);
     tried.push({ i, ok, counts });
     if (ok) return { i, salt: saltOf(i), counts, tried };
   }
@@ -40,7 +42,7 @@ export function firstSalt(pages, maxI = 1000) {
 }
 
 export async function splitCheck(dataDir) {
-  const accepted = readJsonlSync(join(dataDir, "walked.jsonl")).filter((r) => r.outcome === "accepted");
+  const accepted = effectiveRecords(readJsonlSync(join(dataDir, "walked.jsonl"))).filter((r) => r.outcome === "accepted");
   const pages = accepted.map((r) => ({ category: r.category, group_key: r.detail.group_key }));
   const total = pages.length;
   const res = firstSalt(pages);
@@ -57,6 +59,12 @@ export async function splitCheck(dataDir) {
     }
     const sum = (f) => CATEGORIES.reduce((a, c) => a + res.counts[c.name][f], 0);
     lines.push(`  total    train ${sum("train")}  val ${sum("val")}  test ${sum("test")}  dev ${sum("dev")}`);
+  }
+  const complete = CATEGORIES.filter((c) => pages.filter((p) => p.category === c.name).length >= c.n).map((c) => c.name);
+  if (res.i === null && complete.length > 0 && complete.length < CATEGORIES.length) {
+    const ind = firstSalt(pages, 1000, complete);
+    lines.push(`INDICATIVE, NOT PRE-REGISTERED: first i for the complete categories only (${complete.join(", ")}): ${ind.i === null ? "none" : `${ind.i} (salt ${ind.salt})`}`);
+    if (ind.i !== null) for (const c of CATEGORIES) lines.push(`  ${c.name.padEnd(8)} train ${String(ind.counts[c.name].train).padStart(2)}  val ${String(ind.counts[c.name].val).padStart(2)}  test ${String(ind.counts[c.name].test).padStart(2)}  dev ${String(ind.counts[c.name].dev).padStart(2)}${complete.includes(c.name) ? "" : "   (incomplete, not part of the rule)"}`);
   }
   const provisional = CATEGORIES.some((c) => pages.filter((p) => p.category === c.name).length < c.n);
   if (provisional) lines.push(`PROVISIONAL: the corpus is incomplete (${CATEGORIES.map((c) => `${c.name} ${pages.filter((p) => p.category === c.name).length}/${c.n}`).join(", ")})`);

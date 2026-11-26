@@ -1,6 +1,16 @@
 // Quota bookkeeping of the walk, rebuilt from the append-only walked.jsonl (so a killed run resumes exactly).
 import { CATEGORIES, MAX_NON_EN_SHARE, MAX_PER_DOMAIN, MAX_PER_DOMAIN_CATEGORY } from "./config.mjs";
 
+/**
+ * The records that count: a record is superseded by a LATER record of the same (category, url), written by `revisit`
+ * (a candidate re-evaluated after a collector defect was fixed). walked.jsonl stays append-only; every output uses this view.
+ */
+export function effectiveRecords(records) {
+  const last = new Map();
+  records.forEach((r, i) => last.set(`${r.category}|${r.url}`, i));
+  return records.filter((r, i) => last.get(`${r.category}|${r.url}`) === i);
+}
+
 export const targetOf = (category) => CATEGORIES.find((c) => c.name === category)?.n ?? 0;
 /** Per-category cap of pages in pt/es: floor(30% of the target) = 9 for n=30, 7 for n=25. */
 export const nonEnCap = (category) => Math.floor(MAX_NON_EN_SHARE * targetOf(category));

@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CATEGORIES } from "./config.mjs";
 import { readJsonlSync } from "./jsonl.mjs";
+import { effectiveRecords } from "./state.mjs";
 
 /** url -> {dest, rec}: the accepted record if any, else the first record (a URL can be walked in its own category and again in the SPA fallback). */
 function destinations(records) {
@@ -40,7 +41,8 @@ export function causeOf(a1, a2, inFrame1) {
 
 export async function attemptDiff(dataDir) {
   const w1 = readJsonlSync(join(dataDir, "attempt-1", "walked.jsonl"));
-  const w2 = readJsonlSync(join(dataDir, "walked.jsonl"));
+  const w2all = readJsonlSync(join(dataDir, "walked.jsonl"));
+  const w2 = effectiveRecords(w2all);
   const frame1 = new Set(readJsonlSync(join(dataDir, "attempt-1", "frame.jsonl")).map((r) => r.url));
   const d1 = destinations(w1);
   const d2 = destinations(w2);
@@ -67,6 +69,17 @@ export async function attemptDiff(dataDir) {
   const rest = changes.filter((c) => !significant.includes(c));
   lines.push("", `## Other changes of excluded/not-walked pages (${rest.length})`, "", "Pages excluded in both attempts, or walked in only one, whose recorded reason or presence differs.", "", "| url | attempt 1 | attempt 2 | cause |", "|---|---|---|---|");
   for (const c of rest.sort((a, b) => a.cause.localeCompare(b.cause) || a.url.localeCompare(b.url))) lines.push(`| ${c.url.slice(0, 110)} | ${c.from} | ${c.to} | ${c.cause} |`);
+  const revisited = w2.filter((r) => r.supersedes !== undefined);
+  lines.push("", `## 2b. Candidates re-evaluated after the collector fixes (${revisited.length})`, "");
+  lines.push("Candidates whose exclusion came from a collector defect (Trusted Types in the flatten step, DOM clobbering outside the probe) and that were re-evaluated with the fixed code, same rules, same state. Transient errors (`Execution context was destroyed`, timeouts) are not re-evaluated: their rule is the single retry that already exists.", "");
+  if (revisited.length === 0) lines.push("_none_");
+  else {
+    lines.push("| url | category | before | after |", "|---|---|---|---|");
+    for (const r of revisited) {
+      const old = w2all.find((x) => x.seq === r.supersedes);
+      lines.push(`| ${r.url.slice(0, 110)} | ${r.category} | ${old ? `excluded:${old.reason} (${(old.detail?.message ?? "").slice(0, 80)})` : "?"} | ${r.outcome === "accepted" ? "accepted" : `excluded:${r.reason}`} |`);
+    }
+  }
   await writeFile(join(dataDir, "attempt-diff.md"), `${lines.join("\n")}\n`);
   console.log(`attempt-diff.md: ${changes.length} changed (${significant.length} entered or left the corpus)`, byCause);
   return { changes, byCause };
