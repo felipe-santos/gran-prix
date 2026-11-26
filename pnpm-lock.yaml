@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      '@gran-prix/stats':
+        specifier: workspace:*
+        version: link:packages/stats
 
   demo-web:
     dependencies:
@@ -243,6 +247,18 @@ importers:
         specifier: ^5.1.1
         version: 5.1.1(@types/node@24.19.2)(jsdom@29.1.1)(vite@7.3.2(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.30.2))
 
+  packages/stats:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@24.19.2)(jsdom@29.1.1)(vite@7.3.2(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.30.2))
+
   packages/wasm: {}
 
   tools/baselines:
@@ -253,6 +269,36 @@ importers:
       jsdom:
         specifier: ^27.0.0
         version: 27.4.0
+
+  tools/capture-extension:
+    devDependencies:
+      '@gran-prix/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@gran-prix/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@gran-prix/features':
+        specifier: workspace:*
+        version: link:../../packages/features
+      '@gran-prix/labels':
+        specifier: workspace:*
+        version: link:../../packages/labels
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      esbuild:
+        specifier: 0.27.3
+        version: 0.27.3
+      playwright-core:
+        specifier: 1.65.1
+        version: 1.65.1
+      tldts:
+        specifier: 7.5.5
+        version: 7.5.5
+      vitest:
+        specifier: 5.1.1
+        version: 5.1.1(@types/node@24.19.2)(jsdom@29.1.1)(vite@7.3.2(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.30.2))
 
   tools/cli:
     dependencies:
@@ -277,6 +323,9 @@ importers:
       '@gran-prix/report':
         specifier: workspace:*
         version: link:../../packages/report
+      '@gran-prix/stats':
+        specifier: workspace:*
+        version: link:../../packages/stats
       defuddle:
         specifier: 0.19.13
         version: 0.19.13
