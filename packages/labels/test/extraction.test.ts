@@ -91,3 +91,18 @@ describe("labelPageExtraction (labels from any extractor's text)", () => {
     expect(withExtra["extraction"]).toEqual({ tool: "fake", version: "1" });
   });
 });
+
+describe("parseFlattened on stylesheets the pinned jsdom cannot parse", () => {
+  // Found on a real page of the dom-v0 corpus (a video.js spinner rule). jsdom 27.4 throws while parsing it.
+  const CRASH = "a{border:inherit;border-color:transparent}";
+  const page = (css: string): string =>
+    `<html><head><title>T</title><style>${css}</style></head><body><article><h1 data-gp-id="n0">Title</h1><p data-gp-id="n1">Body text.</p></article></body></html>`;
+
+  it("parses the page with the styles emptied, keeping every element and its text", () => {
+    const bad = parseFlattened(page(CRASH), "https://example.test/a");
+    const good = parseFlattened(page("a{color:red}"), "https://example.test/a");
+    expect([...bad.elements.keys()]).toEqual([...good.elements.keys()]);
+    expect(bad.texts.map((t) => t.t)).toEqual(good.texts.map((t) => t.t));
+    expect(bad.texts.map((t) => t.t)).toEqual(["Title", "Body text."]);
+  });
+});

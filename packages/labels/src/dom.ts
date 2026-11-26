@@ -51,8 +51,28 @@ function safeUrl(url: string | undefined): string | undefined {
 
 type Item = { el: Element } | { unit: TextUnit };
 
+/** Style text that crashes the pinned jsdom while parsing (cssstyle: `border: inherit` then `border-color: ...`). */
+const STYLE_ELEMENT = /<style\b[^>]*>[\s\S]*?<\/style\s*>/gi;
+
+/**
+ * jsdom 27.4 (pinned with the baselines for the dom-v0 experiment) throws on some valid stylesheets, e.g.
+ * `a{border:inherit;border-color:transparent}` ("Cannot create property 'border-width' on string 'inherit'").
+ * Stylesheets carry no text and the labelers read only the DOM tree, so on that error the page is parsed again with
+ * every `<style>` emptied. Pages that parse are untouched.
+ */
+function openDom(html: string, url?: string): JSDOM {
+  const opts = { url: safeUrl(url) ?? "about:blank" };
+  try {
+    return new JSDOM(html, opts);
+  } catch (err) {
+    const retry = html.replace(STYLE_ELEMENT, "<style></style>");
+    if (retry === html) throw err;
+    return new JSDOM(retry, opts);
+  }
+}
+
 export function parseFlattened(html: string, url?: string): FlatPage {
-  const dom = new JSDOM(html, { url: safeUrl(url) ?? "about:blank" });
+  const dom = openDom(html, url);
   const doc = dom.window.document;
   const elements = new Map<number, Element>();
   const texts: TextUnit[] = [];

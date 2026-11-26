@@ -16,7 +16,7 @@
  * Trafilatura (GP_BASELINES_PYLIBS, see tools/baselines/README.md). Deterministic: the same inputs give the same files.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
@@ -271,11 +271,19 @@ async function main(argv) {
   writeFileSync(join(out, "plan-v0.json"), planText);
   writeFileSync(join(out, "plan-v0.md"), renderPlanMarkdown(plan));
   const notBefore = retestNotBefore(values["audit-completed-at"]);
-  for (const t of PURPOSES) writeFileSync(join(out, "queues", `${t}.json`), `${JSON.stringify(buildQueue(t, sel[t], planSha, t === "retest" ? notBefore : null), null, 2)}\n`);
+  // The retest queue is written only once its date is known: the Studio refuses an undated retest queue (5.4).
+  for (const t of PURPOSES) {
+    const file = join(out, "queues", `${t}.json`);
+    if (t === "retest" && !notBefore) {
+      rmSync(file, { force: true });
+      continue;
+    }
+    writeFileSync(file, `${JSON.stringify(buildQueue(t, sel[t], planSha, t === "retest" ? notBefore : null), null, 2)}\n`);
+  }
   console.log(`plan written to ${out}: ${pages.length} pages, plan ${planSha}`);
   for (const t of PURPOSES) console.log(`  ${t}: ${sel[t].length} pages (${TASKS[t].mode})`);
   for (const m of costModels) console.log(`  ${m.model}: expected $${m.totals.expected.usd.toFixed(2)}, upper $${m.totals.upper.usd.toFixed(2)} (cap $${capUsd})`);
-  if (!notBefore) console.log("  retest: not_before is null; re-run with --audit-completed-at <date> once the audit is done");
+  if (!notBefore) console.log("  retest: queue not written yet; re-run with --audit-completed-at <date> once the audit is done");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

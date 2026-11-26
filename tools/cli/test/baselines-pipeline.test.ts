@@ -133,5 +133,5 @@ maybe("mini pipeline: every baseline in one evaluate report", () => {
     expect(report2.intrinsic?.baselines["gbdt"]?.coverage).toBe(1);
     // the same test units for every system: the model's counts do not depend on the baselines
     expect(report2.intrinsic?.overall).toEqual(report1.intrinsic?.overall);
-  });
+  }, 600_000); // gp-train + the nested GBDT CV in Python: minutes on a loaded machine
 });
