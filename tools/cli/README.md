@@ -276,6 +276,30 @@ document per page, `label_source: "llm"`, 3 classes, `labeler.llm` with model, p
   on the stage in that case, or the stage cache would keep the partial result). Every paid response is cached by
   `llmCacheKey` under `<data dir>/llm-cache/`, so a re-run, even of another pipeline, never pays twice. `dry_run: true` plans
   and logs (pages, routed blocks, chunks, cache hits, estimated tokens and USD) and calls and reserves nothing.
+* **Current models (2026-11): sampling, thinking, effort.** The stage validates the combination BEFORE it reads any data, reserves
+  anything or calls anything (a dry run included), so a request the API would answer with a 400 never costs a call:
+  * `claude-sonnet-5-5`, `claude-opus-5-5` and `claude-haiku-5-5` reject `temperature` (Opus: the parameter itself; Sonnet and Haiku:
+    any non-default value, `0` too), so with them **`send_temperature: false` is required** (the default is still `true`, for older
+    models, and the stage then fails with a message that names the fix). Reproducibility comes from the response cache (`DESVIOS` #24).
+  * `thinking`: `"model-default"` (default) leaves the field out (Opus 5.5 always thinks; Sonnet 5.5 runs adaptive at effort `high`;
+    Haiku 5.5 adaptive at `medium`). `"off"` sends the model's no-thinking form: `{"type":"between_tools"}` alone on Sonnet 5.5,
+    `{"type":"disabled"}` on Haiku 5.5; it is refused for Opus 5.5 (400 at any effort) and for models outside the validated table
+    (`MODEL_RULES` in `packages/labels/src/llm/models.ts`; such models run only plain, without `effort`).
+  * `effort`: `low | medium | high`, sent as `output_config.effort`; left out when not set.
+  * **Thinking is billed as output and counted in `max_tokens`.** Every call gets `thinking_headroom_tokens` more room (default 8000
+    with `model-default`, 0 with `off`; `max_output_tokens` defaults to 16000 + the headroom). The ledger reserve is computed from
+    `max_tokens` at the output price, so it covers the worst case of the thinking. A thinking model that spends all of it fails
+    the chunk's JSON and the bounded retry pays again: raise the headroom or lower the effort.
+  * Both are written to every label document (`llm_run.thinking`, `llm_run.effort`, and into `labeler.params_sha256`) and are part of
+    the response-cache key (appended to the output contract, `block_labels_mcn@1+thinking=off+effort=low`; the default request keeps the
+    bare id).
+  * `prices` takes `cache_write_usd_per_mtok` and `cache_read_usd_per_mtok` besides input/output (defaults 1.25x and 0.1x of the input
+    price). The real cost reads `usage.cache_creation_input_tokens` and `cache_read_input_tokens`. The dry run charges the system prompt
+    as a cache write once per run and as reads afterwards. `MODEL_RULES[model].prices` holds the 2026-11 tables of the three models
+    for the plan script; the stage still takes the prices from the pipeline, never from there.
+* **`split_filter`** (`{salt, ranges?, include: ["train"|"val"|"test"]}`): only the pages whose split (`hash-bucket-v1` over the page's
+  `group_key`; default ranges 55/70/100 of the protocol) is in `include`. It lets one pipeline send the dev pages by disagreement and
+  the test pages with `routing: all` (`pipelines/dom-v0-labeling.json`).
 * **Key:** only `ANTHROPIC_API_KEY`, read by `AnthropicTransport` when a call is really needed (never for a dry run or a cache
   hit), sent only as the `x-api-key` header, scrubbed from errors, in no artifact, cache entry or ledger line. There is no SDK
   dependency: the transport is `fetch` against `/v1/messages` with `cache_control` on the system prompt and structured output.

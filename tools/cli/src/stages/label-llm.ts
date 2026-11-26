@@ -1,7 +1,10 @@
 import { join, resolve } from "node:path";
-import { canonicalJson, type NodeLabels } from "@gran-prix/contracts";
+import { assignSplit, canonicalJson, type NodeLabels, type SplitName, type SplitRanges } from "@gran-prix/contracts";
 import {
   AnthropicTransport,
+  assertCallConfig,
+  type Effort,
+  type ThinkingMode,
   DEFAULT_BLOCK_PARAMS,
   DEFAULT_ESTIMATE,
   DEFAULT_ROUTING,
@@ -39,6 +42,10 @@ import type { ArtifactHandle } from "../store.js";
  */
 
 const LABELS_FORMAT = "gran-prix.node-labels";
+/** Thinking is billed as output and counted in max_tokens: this much room is added to every call unless the pipeline says otherwise. */
+const DEFAULT_THINKING_HEADROOM = 8000;
+/** Protocol dom-v0 section 3: train [0,55), val [55,70), test [70,100). */
+const DOM_V0_SPLIT_RANGES: SplitRanges = { train: [0, 55], val: [55, 70], test: [70, 100] };
 const labelsPath = (doc: { snapshot_id: string }): string => `labels/${doc.snapshot_id.slice("sha256:".length, "sha256:".length + 12)}.json`;
 
 /** Thrown when the ledger stops the run and `on_budget` is `fail`: the finished work is in the response cache. */
@@ -130,7 +137,43 @@ export function createLabelLlmStage(deps: LlmStageDeps = REAL): StagePlugin {
           block_chars: { type: "integer", minimum: 1, description: "Characters of text per block (protocol: 200)." },
           path_depth: { type: "integer", minimum: 1, description: "Ancestor tags in the block path (default 3)." },
           confidence: { type: "number", minimum: 0, maximum: 1, description: "P(label correct) of a decided block (default 0.8, to be calibrated on the audit); doubt is always 0.5." },
-          send_temperature: { type: "boolean", description: "Send temperature 0 (default true). false for models that reject sampling parameters; recorded in the labels." },
+          send_temperature: {
+            type: "boolean",
+            description:
+              "Send temperature 0 (default true). MUST be false for claude-sonnet-5-5, claude-opus-5-5 and claude-haiku-5-5, which reject it (400): the stage fails before any call otherwise. Recorded in the labels.",
+          },
+          thinking: {
+            enum: ["model-default", "off"],
+            description:
+              'Reasoning of the model. "model-default" (default) leaves the `thinking` field out (Opus 5.5 always thinks; Sonnet 5.5 runs adaptive at effort high). "off" sends the model\'s no-thinking form ({type: "between_tools"} on Sonnet 5.5, {type: "disabled"} on Haiku 5.5) and is refused for Opus 5.5 and for models outside the validated table. Thinking tokens are billed as output.',
+          },
+          effort: { enum: ["low", "medium", "high"], description: "Sent as output_config.effort. Optional (model default: Sonnet high, Opus and Haiku medium). Models outside the validated table refuse it." },
+          thinking_headroom_tokens: {
+            type: "integer",
+            minimum: 0,
+            description: 'Added to max_tokens of every call so thinking cannot starve the answer (and so the ledger reserve covers it). Default 8000 with thinking "model-default", 0 with "off".',
+          },
+          split_filter: {
+            type: "object",
+            required: ["salt", "include"],
+            properties: {
+              salt: { type: "string", minLength: 1 },
+              ranges: {
+                type: "object",
+                required: ["train", "val", "test"],
+                properties: {
+                  train: { type: "array", items: { type: "integer" }, minItems: 2, maxItems: 2 },
+                  val: { type: "array", items: { type: "integer" }, minItems: 2, maxItems: 2 },
+                  test: { type: "array", items: { type: "integer" }, minItems: 2, maxItems: 2 },
+                },
+                additionalProperties: false,
+              },
+              include: { type: "array", items: { enum: ["train", "val", "test"] }, minItems: 1 },
+            },
+            additionalProperties: false,
+            description:
+              "Only pages whose split (hash-bucket-v1 over the page's group_key with this salt; default ranges 55/70/100 of the dom-v0 protocol) is in `include`. Lets one pipeline route the dev pages by disagreement and the test pages with `routing: all`.",
+          },
           on_missing: { enum: ["fail_page", "leave_unlabeled"], description: "Ids still missing after the one retry: leave them unlabeled (default; pre-registered protocol 5.3) or fail the whole page." },
           on_budget: { enum: ["fail", "partial"], description: "When the ledger stops the run: fail the stage (default; finished work stays in the cache) or return the finished pages." },
           retry_failed: { type: "boolean", description: "Pay again for chunks whose cached outcome is a failure." },
@@ -153,15 +196,21 @@ export function createLabelLlmStage(deps: LlmStageDeps = REAL): StagePlugin {
       assertPrices(prices);
       const system = buildSystemPrompt(resolve(ctx.root, p["guide_path"] as string), p["guide_sha256"] as string, typeof p["prompt_id"] === "string" ? p["prompt_id"] : undefined);
       const routingIn = (p["routing"] ?? {}) as Partial<typeof DEFAULT_ROUTING>;
+      const thinking: ThinkingMode = p["thinking"] === "off" ? "off" : "model-default";
+      const effort = typeof p["effort"] === "string" ? (p["effort"] as Effort) : undefined;
+      const headroom = num(p, "thinking_headroom_tokens", thinking === "off" ? 0 : DEFAULT_THINKING_HEADROOM);
       const cfg: LlmRunConfig = {
         provider: deps.provider,
         model: p["model"] as string,
         prices,
         system: { ...system, prompt_id: `${system.prompt_id}+guide-${system.guide_sha256.slice(0, 12)}` },
         send_temperature: p["send_temperature"] !== false,
+        thinking,
+        ...(effort ? { effort } : {}),
+        thinking_headroom_tokens: headroom,
         output_tokens_per_block: num(p, "output_tokens_per_block", 24),
         output_overhead_tokens: num(p, "output_overhead_tokens", 512),
-        max_output_tokens: num(p, "max_output_tokens", 16000),
+        max_output_tokens: num(p, "max_output_tokens", 16000 + headroom),
         expected_output_tokens_per_block: num(p, "expected_output_tokens_per_block", 20),
         estimate: { chars_per_token: num(p, "chars_per_token", DEFAULT_ESTIMATE.chars_per_token), safety_factor: num(p, "safety_factor", DEFAULT_ESTIMATE.safety_factor) },
         on_missing: p["on_missing"] === "fail_page" ? "fail_page" : "leave_unlabeled",
@@ -176,8 +225,10 @@ export function createLabelLlmStage(deps: LlmStageDeps = REAL): StagePlugin {
         dry_run: p["dry_run"] === true,
         on_budget: p["on_budget"] === "partial" ? "partial" : "fail",
       };
-      if (cfg.chunk_blocks * cfg.output_tokens_per_block + cfg.output_overhead_tokens > cfg.max_output_tokens) {
-        throw new Error("chunk_blocks x output_tokens_per_block + overhead exceeds max_output_tokens: a full chunk could not be answered");
+      // Before the data is read and before any call: a combination the API rejects is a configuration error.
+      assertCallConfig(cfg);
+      if (cfg.chunk_blocks * cfg.output_tokens_per_block + cfg.output_overhead_tokens + headroom > cfg.max_output_tokens) {
+        throw new Error("chunk_blocks x output_tokens_per_block + overhead + thinking headroom exceeds max_output_tokens: a full chunk could not be answered");
       }
 
       const snaps = new SnapshotSetReader(ctx.inputs["snapshots"] as ArtifactHandle);
@@ -191,8 +242,14 @@ export function createLabelLlmStage(deps: LlmStageDeps = REAL): StagePlugin {
           else layersBySnapshot.set(m.doc.snapshot_id, [m.doc]);
         }
       }
-      const featureEntries = feats.entries();
+      let featureEntries = feats.entries();
       if (featureEntries.length === 0) throw new Error("the features set holds no NodeFeatures document");
+      const sf = p["split_filter"] as { salt: string; ranges?: SplitRanges; include: SplitName[] } | undefined;
+      if (sf) {
+        const ranges = sf.ranges ?? DOM_V0_SPLIT_RANGES;
+        featureEntries = featureEntries.filter((fe) => sf.include.includes(assignSplit(sf.salt, fe.group_key, { ranges }).split));
+        if (featureEntries.length === 0) throw new Error(`split_filter ${sf.include.join("+")} (salt ${sf.salt}) selects no page`);
+      }
       const include = Array.isArray(p["include_url_contains"]) ? (p["include_url_contains"] as string[]) : undefined;
       let jobs: PageJob[] = featureEntries.map((fe) => {
         const se = entries.get(fe.snapshot_id);

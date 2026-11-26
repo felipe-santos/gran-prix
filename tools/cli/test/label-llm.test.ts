@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { validate, type NodeLabels, type PipelineSpec } from "@gran-prix/contracts";
+import { assignSplit, validate, type NodeLabels, type PipelineSpec } from "@gran-prix/contracts";
 import { AnthropicTransport, defaultFakeAnswer, type AnthropicTransportOptions, type LlmReport } from "@gran-prix/labels";
 import { afterAll, describe, expect, it, inject } from "vitest";
 import { ArtifactStore, StageRegistry, checkPipeline, dataPaths, runPipeline, type StagePlugin } from "../src/index.js";
@@ -230,6 +230,92 @@ describe("ts:label.llm@1.0.0", () => {
     expect(llm.error).toMatch(/ANTHROPIC_API_KEY is not set/);
     expect(api.calls).toBe(0);
     expect(existsSync(dataPaths(dataDir).ledger)).toBe(false);
+  });
+
+  it("current models: a combination the API rejects fails the stage before any call or ledger line (dry run included)", async () => {
+    const dataDir = tmpDir();
+    const ext = externals(dataDir);
+    const api = fakeApi();
+    for (const llm of [
+      { model: "claude-opus-5-5" }, // send_temperature defaults to true: Opus rejects the parameter
+      { model: "claude-sonnet-5-5", dry_run: true },
+      { model: "claude-haiku-5-5" },
+      { model: "claude-opus-5-5", send_temperature: false, thinking: "off" },
+      { model: "some-future-model", send_temperature: false, effort: "low" },
+    ]) {
+      const r = await runPipeline(spec(ext, guideFile(), llm), { dataDir, plugins: plugins(api), budgetUSD: 5 });
+      const s = r.stages.find((x) => x.stageId === "llm")!;
+      expect(s.status, JSON.stringify(llm)).toBe("failed");
+      expect(s.error).toMatch(/send_temperature to false|always thinks|not in the validated table/);
+    }
+    expect(api.calls).toBe(0);
+    expect(existsSync(dataPaths(dataDir).ledger)).toBe(false);
+  });
+
+  it("current models: thinking off + effort + no temperature go in the body, the thinking headroom in max_tokens, and into the labels", async () => {
+    const dataDir = tmpDir();
+    const ext = externals(dataDir);
+    const bodies: Array<Record<string, unknown>> = [];
+    const base = fakeApi();
+    const api = {
+      fetch: ((url, init) => {
+        bodies.push(JSON.parse(init.body) as Record<string, unknown>);
+        return base.fetch(url, init);
+      }) as typeof base.fetch,
+      get calls() {
+        return base.calls;
+      },
+    };
+    const prices = { input_usd_per_mtok: 2, output_usd_per_mtok: 10, cache_write_usd_per_mtok: 2.5, cache_read_usd_per_mtok: 0.1 };
+    const sonnet = { model: "claude-sonnet-5-5", prices, send_temperature: false, include_url_contains: ["article-1.html"] };
+
+    const off = await runPipeline(spec(ext, guideFile(), { ...sonnet, thinking: "off", effort: "low" }), { dataDir, plugins: plugins(api), budgetUSD: 5 });
+    expect(off.stages.map((s) => s.error).filter(Boolean)).toEqual([]);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({ model: "claude-sonnet-5-5", thinking: { type: "between_tools" } });
+    expect((bodies[0]!["output_config"] as { effort: string }).effort).toBe("low");
+    expect(bodies[0]).not.toHaveProperty("temperature");
+    const maxOff = bodies[0]!["max_tokens"] as number;
+
+    // default thinking: no `thinking` field, 8000 more tokens of room (billed as output, reserved at the output price)
+    const on = await runPipeline(spec(ext, guideFile(), sonnet), { dataDir, plugins: plugins(api), budgetUSD: 5 });
+    expect(on.stages.map((s) => s.error).filter(Boolean)).toEqual([]);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).not.toHaveProperty("thinking");
+    expect((bodies[1]!["output_config"] as Record<string, unknown>)["effort"]).toBeUndefined();
+    expect(bodies[1]!["max_tokens"]).toBe(maxOff + 8000);
+
+    const store = new ArtifactStore(dataPaths(dataDir).artifacts);
+    const labels = (r: typeof off): Array<Record<string, unknown>> => {
+      const set = store.handle(r.stages.find((s) => s.stageId === "llm")!.outputs["labels"] as `sha256:${string}`, "NodeLabelsSet");
+      return set.files().map((f) => JSON.parse(Buffer.from(set.file(f)).toString("utf8")) as Record<string, unknown>);
+    };
+    expect(labels(off)[0]!["llm_run"]).toMatchObject({ thinking: "off", effort: "low", temperature_sent: false });
+    expect(labels(on)[0]!["llm_run"]).toMatchObject({ thinking: "model-default", effort: null, temperature_sent: false });
+  });
+
+  it("split_filter keeps only the pages of the given splits (hash-bucket-v1 over group_key), so one pipeline can route dev and test differently", async () => {
+    const dataDir = tmpDir();
+    const ext = externals(dataDir);
+    const entries = (JSON.parse(readFileSync(join(corpus, "features-set", "manifest.json"), "utf8")) as { entries: Array<{ group_key: string }> }).entries;
+    const ranges = { train: [0, 50], val: [50, 50], test: [50, 100] } as const;
+    // a salt that cuts the 6 pages in two non-empty halves
+    const half = (salt: string, name: "train" | "test"): number => entries.filter((e) => assignSplit(salt, e.group_key, { ranges: ranges as never }).split === name).length;
+    const salt = Array.from({ length: 200 }, (_, i) => `gp-test-s${i}`).find((s) => half(s, "train") > 0 && half(s, "test") > 0)!;
+    expect(salt).toBeDefined();
+    const count = async (include: string[]): Promise<number> => {
+      const r = await runPipeline(spec(ext, guideFile(), { dry_run: true, split_filter: { salt, ranges, include } }), { dataDir, plugins: plugins(fakeApi(), {}) });
+      expect(r.ok).toBe(true);
+      const llm = r.stages.find((s) => s.stageId === "llm")!;
+      const store = new ArtifactStore(dataPaths(dataDir).artifacts);
+      return (store.handle(llm.outputs["report"] as `sha256:${string}`, "Bundle").json() as LlmReport).totals.pages;
+    };
+    const train = await count(["train"]);
+    const test = await count(["test"]);
+    expect(train).toBe(half(salt, "train"));
+    expect(test).toBe(half(salt, "test"));
+    expect(train + test).toBe(entries.length);
+    expect(await count(["train", "val", "test"])).toBe(entries.length);
   });
 
   it("refuses a guide that is not the pinned one", async () => {
