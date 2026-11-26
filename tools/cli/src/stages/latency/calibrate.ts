@@ -6,8 +6,9 @@
  * a tolerance), and the page measurement then runs with that rate. The search is a pure function of a `measure(rate)` callback
  * (the best time of the reference loop at that rate), so it is tested without a browser.
  *
- * The slowdown grows with the rate but less than proportionally, so the update `rate <- rate * target / ratio` converges from
- * either side; the step with the ratio closest to the target is kept.
+ * The slowdown grows with the rate but less than proportionally: the update `rate <- rate * target / ratio` approaches the answer
+ * from either side, and once two rates bracket the target the next one is interpolated between them. The step with the ratio
+ * closest to the target is kept.
  */
 
 export interface CalibrationStep {
@@ -46,16 +47,29 @@ export async function calibrateRate(measure: (rate: number) => Promise<number>, 
   const maxSteps = o.maxSteps ?? 8;
   const maxRate = o.maxRate ?? 64;
   if (!(target > 1)) throw new Error(`calibration target must be > 1, got ${target}`);
-  const unthrottled = await measure(1);
+  // The unthrottled time is the denominator of every ratio and a busy machine only ever makes it look longer: two measurements, the smaller one.
+  const unthrottled = Math.min(await measure(1), await measure(1));
   if (!(unthrottled > 0)) throw new Error(`the reference loop took ${unthrottled} ms unthrottled`);
   const steps: CalibrationStep[] = [];
   let rate = target;
   let converged = false;
+  // The slowdown grows with the rate, so once a rate undershoots and another overshoots the answer is between them: the next
+  // rate is interpolated inside that bracket (robust to measurement noise); before that, the proportional update.
+  let low: CalibrationStep | null = null; // highest rate seen with ratio < target
+  let high: CalibrationStep | null = null; // lowest rate seen with ratio > target
   for (let i = 0; i < maxSteps; i++) {
     const ratio = (await measure(rate)) / unthrottled;
-    steps.push({ rate: round2(rate), ratio: round2(ratio) });
+    const step = { rate: round2(rate), ratio: round2(ratio) };
+    steps.push(step);
     if (Math.abs(ratio - target) <= tolerance) { converged = true; break; }
-    const next = Math.min(maxRate, Math.max(1, round2(rate * (target / ratio))));
+    if (ratio < target) { if (low === null || step.rate > low.rate) low = step; } else if (high === null || step.rate < high.rate) high = step;
+    let next: number;
+    if (low !== null && high !== null && high.rate > low.rate) {
+      const span = high.ratio - low.ratio;
+      next = span > 0 ? low.rate + ((high.rate - low.rate) * (target - low.ratio)) / span : (low.rate + high.rate) / 2;
+      next = Math.min(Math.max(next, low.rate + 0.02 * (high.rate - low.rate)), high.rate - 0.02 * (high.rate - low.rate)); // stay strictly inside
+    } else next = rate * (target / ratio);
+    next = Math.min(maxRate, Math.max(1, round2(next)));
     if (next === round2(rate)) break; // clamped at a bound, or the update no longer moves
     rate = next;
   }

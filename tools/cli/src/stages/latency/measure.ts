@@ -82,7 +82,7 @@ async function oneLoad(
 
 type ThrottleCheck = { cdp_rate: number; unthrottled_ms: number; throttled_ms: number; ratio: number };
 
-/** A blank page with a CDP session; `bestAt(rate)` is the best (smallest) of three runs of the reference busy loop with the CDP rate set to `rate`. */
+/** A blank page with a CDP session; `bestAt(rate)` is the best (smallest) of five runs of the reference busy loop with the CDP rate set to `rate`. */
 async function withLoopPage<T>(browser: Browser, f: (bestAt: (rate: number) => Promise<number>) => Promise<T>): Promise<T> {
   const context = await browser.newContext();
   try {
@@ -91,7 +91,7 @@ async function withLoopPage<T>(browser: Browser, f: (bestAt: (rate: number) => P
     const bestAt = async (rate: number): Promise<number> => {
       await cdp.send("Emulation.setCPUThrottlingRate", { rate });
       let min = Infinity;
-      for (let i = 0; i < 3; i++) min = Math.min(min, ((await page.evaluate(`(${BUSY_LOOP})()`)) as { ms: number }).ms);
+      for (let i = 0; i < 5; i++) min = Math.min(min, ((await page.evaluate(`(${BUSY_LOOP})()`)) as { ms: number }).ms);
       return min;
     };
     return await f(bestAt);

@@ -147,6 +147,50 @@ describe("settle", () => {
   });
 });
 
+// G5 performance: the probe no longer asks the DOM for the rect of an element in a display:none subtree or with display:contents,
+// and asks getBoundingClientRect before getClientRects. `rect === null` must stay exactly "getClientRects() is empty".
+describe("rect is null exactly when the element has no box", () => {
+  const BOXES = `<!doctype html><html><head><title>t</title><style>#none *{display:block} .empty{display:inline} .atorigin{position:absolute;left:0;top:0;width:0;height:0}</style></head><body style="margin:0">
+<div id="none" style="display:none"><p>in a hidden subtree <b>deep</b></p><section><div></div></section></div>
+<div id="contents" style="display:contents"><span>child of display:contents</span></div>
+<span class="empty"></span><i class="atorigin"></i><div style="height:0"></div><div style="display:none"></div>
+<details><summary>s</summary><p>closed details child</p></details>
+<div hidden><span>hidden attr</span></div><div id="host"></div>
+<script>const r = document.getElementById('host').attachShadow({mode:'open'}); r.innerHTML = '<div style="display:none"><i>x</i></div><u>u</u>';</script>
+<table><tr><td>cell</td></tr></table><select><option>o</option></select><textarea></textarea><svg width="0" height="0"><g><circle r="1"/></g></svg></body></html>`;
+
+  it("agrees, for every element, with getClientRects().length === 0", async () => {
+    const page = await launched.context.newPage();
+    try {
+      await page.route("https://fixture.test/**", (r) => r.fulfill({ status: 200, contentType: "text/html", body: BOXES }));
+      await page.goto("https://fixture.test/", { waitUntil: "load" });
+      const raw = (await probeLoadedPage(page)).raw;
+      const live = await page.evaluate(() => {
+        const out: Record<string, boolean> = {};
+        const walk = (root: ParentNode): void => {
+          for (const el of Array.from(root.querySelectorAll("*"))) {
+            const id = el.getAttribute("data-gp-id");
+            if (id) out[id] = el.getClientRects().length === 0;
+            if (el.shadowRoot) walk(el.shadowRoot);
+          }
+        };
+        walk(document);
+        return out;
+      });
+      expect(Object.keys(live).length).toBe(raw.nodes.length);
+      let nulls = 0;
+      for (const n of raw.nodes) {
+        expect(n.rect === null, `n${n.idx} <${n.tag}>`).toBe(live[`n${n.idx}`]);
+        if (n.rect === null) nulls++;
+      }
+      expect(nulls).toBeGreaterThan(8); // the page has boxless elements of every kind
+      expect(raw.nodes.some((n) => n.rect !== null && n.rect.w === 0 && n.rect.h === 0)).toBe(true); // and zero-size ones that do have a box
+    } finally {
+      await page.close();
+    }
+  });
+});
+
 describe("injection paths", () => {
   it("works when the bundle is injected late with evaluate (extension-like) and is idempotent", async () => {
     const browser = await chromium.launch({ executablePath: findChromium(), headless: true, args: ["--no-sandbox"] });
