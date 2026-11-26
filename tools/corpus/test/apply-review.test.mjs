@@ -153,14 +153,25 @@ describe("validateReview", () => {
   const records = [rec(1), rec(2), rec(3)];
   const page = (r, extra = {}) => ({ snapshot_id: r.set_entry.snapshot_id, url: r.url, category: r.category, answer: "sim", reason: "", ...extra });
   const exp = (pages, extra = {}) => ({ format: REVIEW_FORMAT, lock_sha256: "sha256:L", pages, ...extra });
-  const v = (e) => validateReview(e, { lockSha: "sha256:L", records });
+  const v = (e, extra = {}) => validateReview(e, { lockSha: "sha256:L", records, ...extra });
 
-  it("accepts a valid export: nao and duvida exclude (in corpus order), sim keeps, absent pages are reported", () => {
-    const r = v(exp([page(records[2], { answer: "duvida", reason: "login" }), page(records[0], { answer: "nao", reason: "erro-soft404", note: "404" })]));
+  it("accepts a valid export: nao and duvida exclude (in corpus order), sim keeps", () => {
+    const r = v(exp([page(records[2], { answer: "duvida", reason: "login" }), page(records[1]), page(records[0], { answer: "nao", reason: "erro-soft404", note: "404" })]));
     expect(r.errors).toEqual([]);
     expect(r.exclusions.map((e) => [e.rec.seq, e.answer, e.reason])).toEqual([[1, "nao", "erro-soft404"], [3, "duvida", "login"]]);
-    expect(r.unreviewed.map((x) => x.seq)).toEqual([2]);
-    expect(r.kept).toBe(0);
+    expect(r.unreviewed).toEqual([]);
+    expect(r.kept).toBe(1);
+  });
+  it("refuses an export with an accepted page without an answer (empty or missing), listing them; --allow-partial keeps them and says so", () => {
+    const e = exp([page(records[0], { answer: "nao", reason: "login" }), page(records[1], { answer: "" })]); // records[2] is missing altogether
+    const r = v(e);
+    expect(r.errors.join("\n")).toMatch(/2 accepted page\(s\) without an answer/);
+    expect(r.errors.join("\n")).toContain(records[1].url);
+    expect(r.errors.join("\n")).toContain(records[2].url);
+    const p = v(e, { allowPartial: true });
+    expect(p.errors).toEqual([]);
+    expect(p.unreviewed.map((x) => x.seq)).toEqual([2, 3]);
+    expect(p.exclusions).toHaveLength(1);
   });
   it("an exclusion without a reason is recorded as sem-motivo", () => {
     expect(v(exp([page(records[0], { answer: "nao" })])).exclusions[0].reason).toBe("sem-motivo");
@@ -296,6 +307,33 @@ describe("apply-review", () => {
     early.order_hash = "0".repeat(64);
     await walkLoop(c, [...frame, early], ["article", "spa"], { pauseMs: 0 });
     expect(c.visited).toEqual(["article|https://early.example/e"]);
+  });
+
+  it("an export with unanswered pages is refused (nothing written); --allow-partial applies it and records it in the lock and in review-applied.md", async () => {
+    const f = await fixture();
+    const before = f.files();
+    const { path } = makeExport(f.dir, { [f.acc[3].url]: { answer: "" }, [f.acc[4].url]: { answer: "nao", reason: "login" }, [f.acc[9].url]: { answer: "" } });
+    await expect(run(f.dir, path)).rejects.toThrow(new RegExp(`2 accepted page\\(s\\) without an answer[\\s\\S]*${f.acc[3].url.replace(/[.]/g, "\\.")}`));
+    expect(f.files()).toEqual(before);
+    expect(listLocks(f.dir)).toHaveLength(1);
+    expect(existsSync(join(f.dir, "archive"))).toBe(false);
+
+    const { res } = await run(f.dir, path, {}, { allowPartial: true });
+    expect(res.status).toBe("applied");
+    expect(res.plan).toMatchObject({ unanswered: 2, allow_partial: true });
+    const lock = JSON.parse(readFileSync(join(f.dir, "corpus-v0.1.lock.json"), "utf8"));
+    expect(lock).toMatchObject({ review_allow_partial: true, review_unanswered: 2 });
+    const md = readFileSync(join(f.dir, "review-applied.md"), "utf8");
+    expect(md).toMatch(/ATENÇÃO: aplicada com `--allow-partial`/);
+    expect(md).toContain(f.acc[3].url);
+    expect(md).toContain(f.acc[9].url);
+  });
+
+  it("a complete review records allow_partial = false in the lock", async () => {
+    const f = await fixture();
+    const { path } = makeExport(f.dir, { [f.acc[3].url]: { answer: "nao", reason: "login" } });
+    await run(f.dir, path);
+    expect(JSON.parse(readFileSync(join(f.dir, "corpus-v0.1.lock.json"), "utf8"))).toMatchObject({ review_allow_partial: false, review_unanswered: 0 });
   });
 
   it("a wrong lock is refused and nothing is written", async () => {

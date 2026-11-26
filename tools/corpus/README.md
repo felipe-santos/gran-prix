@@ -147,7 +147,7 @@ the second collection started, and no rule changed once it started.
   looks like an error (`404`, `not-found`, `error`), the home page (path `/` when the request was not), a login/OAuth (`login`, `signin`,
   `oauth`, `authorize`, `/password`), a challenge (`challenge`, `captcha`, `anubis`, `cf_chl`) or another site (eTLD+1 changed). A token
   already present in the requested URL is not a hint (the hint is about where the navigation went). Each page has an answer
-  (`sim` by default, `nao`, `duvida`), a reason (categoria errada / erro ou soft-404 / login / desafio / home ou listagem / outro + text)
+  (empty at first: `sim`, `nao` or `duvida`; the summary shows how many are missing), a reason (categoria errada / erro ou soft-404 / login / desafio / home ou listagem / outro + text)
   and a note; the summary counts seals and hints and a checkbox shows only the sealed pages. **Doubt counts as exclusion** (§2.1).
   The export (`gran-prix.corpus-review/1`) has, per page, `snapshot_id`, `url`, `category`, `answer`, `reason`, `reason_text`, `note`, plus
   the sha256 of the lock in force; answers on exclusions (sections B and C) go in `exclusion_checks` and are never applied.
@@ -156,11 +156,14 @@ the second collection started, and no rule changed once it started.
 
 ```bash
 gp-corpus apply-review corpus-v0-review-answers.json --check   # validates and prints the plan; writes nothing
+gp-corpus apply-review corpus-v0-review-answers.json --allow-partial   # lets pages without an answer through (recorded)
 gp-corpus apply-review corpus-v0-review-answers.json           # applies it
 ```
 
 By rule, never by choice: (1) the export is validated (its lock is the one in force and the corpus still matches it, every page is an
-accepted page of the corpus with its snapshot id, no duplicates, known answers/reasons); (2) each `nao`/`duvida` page gets a record that
+accepted page of the corpus with its snapshot id, no duplicates, known answers/reasons, and **every accepted page has an answer**: an export with
+unanswered or missing pages is refused with the list, unless `--allow-partial`, which keeps those pages and is recorded in the lock
+(`review_allow_partial`, `review_unanswered`) and in `review-applied.md`); (2) each `nao`/`duvida` page gets a record that
 supersedes the accepted one (`outcome: excluded`, `reason: owner-review:<motivo>`, `supersedes: <seq>`, the review attached), so
 `walked.jsonl` stays append-only and the trail is kept; (3) the walk of §2.3.2 is **replayed** (`src/replay.mjs`): per category (table order) and phase, in `order_hash`
 order, the owner's exclusion as one more criterion, so the result is what would have come out if the review had existed during the walk, whatever

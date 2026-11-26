@@ -20,7 +20,7 @@ export const isRuleDecided = (r) => r.outcome === "excluded" && /^(language:|out
 
 const ANSWERS = (kind) =>
   kind === "accepted"
-    ? [["sim", "sim (padrão): a categoria está certa"], ["nao", "não: excluir"], ["duvida", "dúvida: conta como exclusão"]]
+    ? [["", "(responda: a categoria está certa?)"], ["sim", "sim: a categoria está certa"], ["nao", "não: excluir"], ["duvida", "dúvida: conta como exclusão"]]
     : [["", "(exclusão correta?)"], ["sim", "sim, correta"], ["nao", "não, indevida"], ["duvida", "dúvida"]];
 
 function card(section, r, shotRel, lines, kind, extra = {}) {
@@ -108,7 +108,7 @@ a.url.changed{color:#cf222e}.hidden{display:none}.whybox{display:none}.card.bad 
 <h1>Conferência do corpus dom-v0</h1>
 <p>Gerado em ${esc(generatedAt)}. Arquivo local (nunca publicado). Suas respostas ficam no navegador (localStorage) e saem em JSON pelo botão. Nada é decidido por esta página: ela só coleta o seu veredito, e o <code>gp-corpus apply-review</code> o aplica pela regra do protocolo (exclui, repõe pela próxima da lista ordenada pela semente, gera um lock novo).</p>
 <div class="sum"><b>Seção A:</b> ${sealedN} de ${accepted.length} páginas aceitas têm o selo <span class="seal">URL final ≠ pedida</span> (o host ou o path mudaram; host sem <code>www.</code>, path sem <code>/</code> final); ${hintedN} têm alguma dica (${kinds}).
- Dicas apontam, não decidem. <b>Dúvida conta como exclusão</b> (§2.1: páginas ambíguas são excluídas e registradas). Sem resposta, a página fica como <b>sim</b>. Lock em vigor: <code>${esc(lockCtx.sha256 ?? "nenhum (rode gp-corpus lock)")}</code>.
+ Dicas apontam, não decidem. <b>Dúvida conta como exclusão</b> (§2.1: páginas ambíguas são excluídas e registradas). <b>Toda página aceita precisa de resposta</b>: o <code>apply-review</code> recusa um export com página sem resposta (só passa com <code>--allow-partial</code>, que fica registrado). Faltam <b id="missing">${accepted.length}</b> de ${accepted.length}. Lock em vigor: <code>${esc(lockCtx.sha256 ?? "nenhum (rode gp-corpus lock)")}</code>.
  <label><input type="checkbox" id="onlySeal"> só as com selo</label></div>
 <nav><button id="export">exportar JSON</button> <button id="clear">limpar respostas</button> <span id="count"></span>
  · <a href="#secA">A. Aceitas (${accepted.length})</a> · <a href="#secB">B. Primeiras 20 exclusões</a> · <a href="#secC">C. Decididas pela regra (${ruleDecided.length})</a></nav>
@@ -131,13 +131,14 @@ ${ruleDecided.length ? ruleDecided.map((r) => excl("C", r)).join("\n") : "<p>nen
   var store={}; try{store=JSON.parse(localStorage.getItem(KEY)||"{}");}catch(e){}
   function save(){try{localStorage.setItem(KEY,JSON.stringify(store));}catch(e){}}
   function isA(c){return c.dataset.section==="A";}
-  function ansOf(c){var v=(store[c.dataset.key]||{}).answer||"";return v||(isA(c)?"sim":"");}
+  function ansOf(c){return (store[c.dataset.key]||{}).answer||"";}
   function paint(c){var v=ansOf(c),explicit=!!(store[c.dataset.key]||{}).answer;c.classList.toggle("done",explicit&&v==="sim");c.classList.toggle("bad",v==="nao");c.classList.toggle("maybe",v==="duvida");}
-  function count(){var n=0,x=0,d=0,tot=0;cards.forEach(function(c){var v=(store[c.dataset.key]||{}).answer;if(v)n++;if(isA(c)){tot++;if(v==="nao")x++;if(v==="duvida")d++;}});
-    document.getElementById("count").textContent=n+" de "+cards.length+" respondidas · seção A: "+x+" não + "+d+" dúvida = "+(x+d)+" a excluir de "+tot;}
+  function count(){var n=0,x=0,d=0,tot=0,a=0;cards.forEach(function(c){var v=(store[c.dataset.key]||{}).answer;if(v)n++;if(isA(c)){tot++;if(v)a++;if(v==="nao")x++;if(v==="duvida")d++;}});
+    document.getElementById("count").textContent=n+" de "+cards.length+" respondidas · seção A: "+a+" de "+tot+" respondidas, faltam "+(tot-a)+" · "+x+" não + "+d+" dúvida = "+(x+d)+" a excluir";
+    var m=document.getElementById("missing");if(m)m.textContent=String(tot-a);}
   cards.forEach(function(c){
     var s=c.querySelector(".ans"), t=c.querySelector(".note"), w=c.querySelector(".why"), wt=c.querySelector(".why-text"), cur=store[c.dataset.key]||{};
-    s.value=cur.answer||(isA(c)?"sim":""); t.value=cur.note||""; if(w){w.value=cur.reason||"";wt.value=cur.reason_text||"";} paint(c);
+    s.value=cur.answer||""; t.value=cur.note||""; if(w){w.value=cur.reason||"";wt.value=cur.reason_text||"";} paint(c);
     function upd(){store[c.dataset.key]={answer:s.value,note:t.value,reason:w?w.value:"",reason_text:wt?wt.value:""};save();paint(c);count();}
     s.addEventListener("change",upd); t.addEventListener("input",upd); if(w){w.addEventListener("change",upd);wt.addEventListener("input",upd);}
   });
@@ -148,14 +149,14 @@ ${ruleDecided.length ? ruleDecided.map((r) => excl("C", r)).join("\n") : "<p>nen
   document.getElementById("export").addEventListener("click",function(){
     var pages=[],checks=[];
     cards.forEach(function(c){var a=store[c.dataset.key]||{};
-      if(isA(c)){var v=a.answer||"sim",no=v==="sim";pages.push({snapshot_id:c.dataset.snapshot,url:c.dataset.url,category:c.dataset.category,answer:v,reason:no?"":(a.reason||""),reason_text:no?"":(a.reason_text||""),note:a.note||""});}
+      if(isA(c)){var v=a.answer||"",no=(v!=="nao"&&v!=="duvida");pages.push({snapshot_id:c.dataset.snapshot,url:c.dataset.url,category:c.dataset.category,answer:v,reason:no?"":(a.reason||""),reason_text:no?"":(a.reason_text||""),note:a.note||""});}
       else if(a.answer){checks.push({section:c.dataset.section,category:c.dataset.category,url:c.dataset.url,answer:a.answer,note:a.note||""});}
     });
     var out={format:FORMAT,exported_at:new Date().toISOString(),lock_name:LOCK_NAME,lock_sha256:LOCK_SHA,pages:pages,exclusion_checks:checks};
     var blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
     var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="corpus-v0-review-answers.json";document.body.appendChild(a);a.click();a.remove();
   });
-  document.getElementById("clear").addEventListener("click",function(){if(confirm("Apagar todas as respostas?")){store={};save();cards.forEach(function(c){c.querySelector(".ans").value=isA(c)?"sim":"";c.querySelector(".note").value="";var w=c.querySelector(".why");if(w){w.value="";c.querySelector(".why-text").value="";}paint(c);});count();}});
+  document.getElementById("clear").addEventListener("click",function(){if(confirm("Apagar todas as respostas?")){store={};save();cards.forEach(function(c){c.querySelector(".ans").value="";c.querySelector(".note").value="";var w=c.querySelector(".why");if(w){w.value="";c.querySelector(".why-text").value="";}paint(c);});count();}});
 })();
 </script></body></html>
 `;

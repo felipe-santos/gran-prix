@@ -14,9 +14,10 @@ const USAGE = `usage: gp-corpus <command> [--data-dir DIR]
   verify-lock [--lock NAME]
                       recompute the hashes of the latest lock (or of NAME, e.g. corpus-v0.lock.json, from archive/ once superseded); exit 1 if anything changed
   review-page         write review.html, the local page where the owner checks the corpus by eye
-  apply-review <export.json> [--check]
+  apply-review <export.json> [--check] [--allow-partial]
                       apply the owner's review by rule: exclude, replace by the next in hash order, write review-applied.md and the next lock
-                      (corpus-v0.1.lock.json). --check validates and prints the plan, writes nothing
+                      (corpus-v0.1.lock.json). --check validates and prints the plan, writes nothing. Every accepted page needs an answer;
+                      --allow-partial keeps the unanswered ones (recorded in the lock and in review-applied.md)
   diff                attempt-diff.md: pages whose destination changed vs <data-dir>/attempt-1
   import-captures <dir> --out <set-dir>
                       SnapshotSet of the stratum logged_in from the files of tools/capture-extension (nothing is written unless all are valid)
@@ -33,6 +34,7 @@ const { values, positionals } = parseArgs({
     match: { type: "string" },
     lock: { type: "string" },
     check: { type: "boolean", default: false },
+    "allow-partial": { type: "boolean", default: false },
     help: { type: "boolean", short: "h", default: false },
   },
 });
@@ -104,13 +106,13 @@ switch (cmd) {
   case "apply-review": {
     const file = positionals[1];
     if (!file) {
-      console.error("uso: gp-corpus apply-review <export.json> [--check] [--data-dir DIR]");
+      console.error("uso: gp-corpus apply-review <export.json> [--check] [--allow-partial] [--data-dir DIR]");
       process.exit(2);
     }
     const { applyReview } = await import("./apply-review.mjs");
     const { PROBE_VERSION } = await import("@gran-prix/features");
     try {
-      const res = await applyReview(dataDir, file, { probeVersion: PROBE_VERSION, check: values.check });
+      const res = await applyReview(dataDir, file, { probeVersion: PROBE_VERSION, check: values.check, allowPartial: values["allow-partial"] });
       console.log(JSON.stringify(res, null, 2));
     } catch (e) {
       console.error(String(e?.message ?? e));

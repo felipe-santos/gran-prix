@@ -34,9 +34,10 @@ const cell = (s) => String(s ?? "").replace(/\|/g, "%7C").replace(/\s+/g, " ").t
 /**
  * Pure validation of an export against the effective records frozen by the lock in force.
  * Returns {errors, exclusions, kept, unreviewed, ignored_checks}; `exclusions` = [{rec, answer, reason, reason_text, note}] in
- * corpus order. Nothing is partially valid: any error means nothing is applied.
+ * corpus order. Nothing is partially valid: any error means nothing is applied. EVERY accepted page needs an answer (sim/nao/duvida):
+ * a page with an empty answer, or missing from the export, is an error that lists it, unless `allowPartial` (then it is kept and reported).
  */
-export function validateReview(exp, { lockSha, records }) {
+export function validateReview(exp, { lockSha, records, allowPartial = false }) {
   const errors = [];
   if (exp === null || typeof exp !== "object" || Array.isArray(exp)) return { errors: ["the export is not a JSON object"], exclusions: [], kept: 0, unreviewed: [], ignored_checks: [] };
   if (exp.format !== REVIEW_FORMAT) errors.push(`format is ${JSON.stringify(exp.format)}, expected ${REVIEW_FORMAT}`);
@@ -44,6 +45,7 @@ export function validateReview(exp, { lockSha, records }) {
   if (!Array.isArray(exp.pages)) errors.push("pages is not an array");
   const accepted = new Map(records.filter((r) => r.outcome === "accepted").map((r) => [keyOf(r.category, r.url), r]));
   const seen = new Set();
+  const answered = new Set();
   const exclusions = [];
   let kept = 0;
   for (const [i, p] of (Array.isArray(exp.pages) ? exp.pages : []).entries()) {
@@ -64,10 +66,12 @@ export function validateReview(exp, { lockSha, records }) {
     }
     seen.add(k);
     if (p.snapshot_id !== rec.set_entry?.snapshot_id) errors.push(`${where}: snapshot_id ${p.snapshot_id} does not match the corpus (${rec.set_entry?.snapshot_id}) for ${p.url}`);
+    if (p.answer === "" || p.answer === undefined) continue; // unanswered: listed below
     if (!ANSWERS.includes(p.answer)) {
       errors.push(`${where}: answer ${JSON.stringify(p.answer)} is not one of ${ANSWERS.join("/")} (${p.url})`);
       continue;
     }
+    answered.add(k);
     if (!EXCLUDING.has(p.answer)) {
       kept++;
       continue;
@@ -78,7 +82,10 @@ export function validateReview(exp, { lockSha, records }) {
     exclusions.push({ rec, answer: p.answer, reason: reason === "" ? NO_REASON : reason, reason_text: p.reason_text ?? "", note: p.note ?? "" });
   }
   exclusions.sort((a, b) => a.rec.seq - b.rec.seq);
-  const unreviewed = [...accepted.entries()].filter(([k]) => !seen.has(k)).map(([, r]) => r);
+  const unreviewed = [...accepted.entries()].filter(([k]) => !answered.has(k)).map(([, r]) => r);
+  if (unreviewed.length > 0 && !allowPartial) {
+    errors.push(`${unreviewed.length} accepted page(s) without an answer (every page needs sim, nao or duvida; --allow-partial applies the review anyway and records it):`, ...unreviewed.slice(0, 40).map((r) => `  ${r.category} ${r.url}`), ...(unreviewed.length > 40 ? [`  ... and ${unreviewed.length - 40} more`] : []));
+  }
   const ignored_checks = Array.isArray(exp.exclusion_checks) ? exp.exclusion_checks.filter((c) => c?.answer === "nao" || c?.answer === "duvida") : [];
   return { errors, exclusions, kept, unreviewed, ignored_checks };
 }
@@ -143,11 +150,12 @@ export function describeChanges(records0, records1, allRecords) {
 }
 
 /** review-applied.md. A pure function of what happened. */
-export function buildReport({ now, exportSha, exportedAt, oldLock, oldLockSha, newLockName, before, after, exclusions, entered, displaced, visitedExcluded, unreviewed, kept, ignored, saltBefore, saltAfter, shortfalls }) {
+export function buildReport({ now, exportSha, exportedAt, oldLock, oldLockSha, newLockName, before, after, exclusions, entered, displaced, visitedExcluded, unreviewed, kept, ignored, allowPartial, saltBefore, saltAfter, shortfalls }) {
   const L = [];
   const catRow = (c) => `| ${c.name} | ${before.filter((r) => r.category === c.name).length} | ${after.filter((r) => r.category === c.name).length} | ${c.n} |`;
   L.push("# Revisão do dono aplicada ao corpus dom-v0", "");
   L.push(`Aplicada em ${now.toISOString()}. Arquivo local, fora do git (data dir).`, "");
+  if (allowPartial) L.push(`> **ATENÇÃO: aplicada com \`--allow-partial\`.** ${unreviewed.length} página(s) aceita(s) ficaram sem resposta e foram mantidas sem revisão (lista abaixo, em "Não aplicado"). O lock novo registra isso (\`review_allow_partial\`).`, "");
   L.push(`- export: \`${exportSha}\` (exportado em ${exportedAt ?? "n/d"})`);
   L.push(`- lock substituído: \`${oldLock}\` (\`${oldLockSha}\`), mantido; os arquivos que ele congelou estão em \`archive/${oldLock.replace(/\.lock\.json$/, "")}/\``);
   L.push(`- lock novo: \`${newLockName}\` (o sha256 vem na saída do comando e no próprio arquivo de lock)`, "");
@@ -181,7 +189,8 @@ export function buildReport({ now, exportSha, exportedAt, oldLock, oldLockSha, n
   L.push("", "## SPA e URLs excluídas pelo dono", "", "As URLs excluídas pelo dono não voltam como candidatas em nenhuma categoria nem fase (nem como `spa-fallback`). O pool do fallback é recalculado na repetição com o que as outras categorias aceitaram; se o quadro se esgota, a SPA só perde páginas e isso fica registrado.", "");
   L.push("## Não aplicado", "");
   L.push(`- páginas aceitas mantidas (resposta \`sim\`): ${kept}`);
-  L.push(`- páginas aceitas sem resposta no export (mantidas): ${unreviewed.length}`);
+  L.push(`- páginas aceitas sem resposta (${allowPartial ? "mantidas sem revisão, por --allow-partial" : "nenhuma: sem --allow-partial o export precisa responder todas"}): ${unreviewed.length}`);
+  for (const r of unreviewed) L.push(`  - ${r.category} ${cell(r.url)}`);
   L.push(`- respostas \`nao\`/\`duvida\` sobre exclusões (seções B e C da página): ${ignored.length}. Reincluir uma página excluída não é reposição pela regra; fica para decisão registrada do dono.`, "");
   for (const c of ignored) L.push(`  - [${c.section ?? "?"}] ${c.category} ${cell(c.url)}: ${c.answer} ${cell(c.note)}`);
   L.push("", "## Sal do split (§3)", "", `- antes (${saltBefore.pages} páginas): regra pré-registrada ${saltBefore.pre}; regra ajustada do SPA (>= ${AMENDED_MINIMA.spa.test} test e >= ${AMENDED_MINIMA.spa.dev} dev) ${saltBefore.amended}`);
@@ -210,7 +219,7 @@ async function archive(dataDir, lockName) {
  *   `check`: validate and print the plan, write nothing.
  */
 export async function applyReview(dataDir, exportPath, opts = {}) {
-  const { probeVersion, commit, now = new Date(), check = false, collectorFactory = (d) => new Collector(d) } = opts;
+  const { probeVersion, commit, now = new Date(), check = false, allowPartial = false, collectorFactory = (d) => new Collector(d) } = opts;
   const raw = readFileSync(exportPath);
   const exportSha = sha256Bytes(raw);
   let exp;
@@ -241,9 +250,9 @@ export async function applyReview(dataDir, exportPath, opts = {}) {
     throw new Error("walked.jsonl no longer starts with the archived one: it was changed outside apply-review; nothing was applied");
   }
   const records0 = effectiveRecords(readJsonlSync(baseWalked));
-  const v = validateReview(exp, { lockSha: curSha, records: records0 });
+  const v = validateReview(exp, { lockSha: curSha, records: records0, allowPartial });
   if (v.errors.length > 0) throw new Error(`invalid review export (${v.errors.length} problem(s)); nothing was applied:\n- ${v.errors.slice(0, 25).join("\n- ")}${v.errors.length > 25 ? `\n- ... and ${v.errors.length - 25} more` : ""}`);
-  const plan = { lock: cur.name, lock_sha256: curSha, export_sha256: exportSha, exclude: v.exclusions.map((e) => ({ category: e.rec.category, url: e.rec.url, answer: e.answer, reason: e.reason })), kept: v.kept, unreviewed: v.unreviewed.length, ignored_checks: v.ignored_checks.length, resume };
+  const plan = { lock: cur.name, lock_sha256: curSha, export_sha256: exportSha, exclude: v.exclusions.map((e) => ({ category: e.rec.category, url: e.rec.url, answer: e.answer, reason: e.reason })), kept: v.kept, unanswered: v.unreviewed.length, allow_partial: allowPartial, ignored_checks: v.ignored_checks.length, resume };
   if (check) return { status: "check", plan };
 
   if (!resume) await archive(dataDir, cur.name);
@@ -296,6 +305,7 @@ export async function applyReview(dataDir, exportPath, opts = {}) {
     displaced,
     visitedExcluded: { total: visited.length, by_reason },
     unreviewed: v.unreviewed,
+    allowPartial,
     kept: v.kept,
     ignored: v.ignored_checks,
     saltBefore: saltSummary(records0),
@@ -309,7 +319,7 @@ export async function applyReview(dataDir, exportPath, opts = {}) {
     now,
     name: newLockName,
     extraFiles: [exportCopy, "review-applied.md"],
-    extra: { supersedes: curSha, supersedes_name: cur.name, review_export_sha256: exportSha, review_export_file: exportCopy },
+    extra: { supersedes: curSha, supersedes_name: cur.name, review_export_sha256: exportSha, review_export_file: exportCopy, review_allow_partial: allowPartial, review_unanswered: v.unreviewed.length },
   });
   return { status: "applied", lock: newLockName, lock_sha256, supersedes: curSha, export_sha256: exportSha, excluded: v.exclusions.length, added: entered.length, reopened: entered.filter((e) => e.reopened).length, displaced: displaced.length, counts: lock.counts, plan };
 }

@@ -76,15 +76,20 @@ describe("review page: selo, dicas, motivo, filtro, export", () => {
     expect(html).toContain('id="onlySeal"');
     expect(html).toContain("só as com selo");
   });
-  it("the answer box has the reason field with its options, and sim is the default", () => {
+  it("the answer box has the reason field with its options and NO default answer; the top says how many are missing", () => {
     for (const t of ["categoria errada", "erro ou soft-404", ">login<", "desafio", "home ou listagem", "outro (texto)"]) expect(html).toContain(t);
-    expect(html).toMatch(/<select class="ans"><option value="sim">sim \(padrão\)/);
+    expect(html).toMatch(/<select class="ans"><option value="">\(responda/);
+    expect(html).not.toMatch(/option value="sim" selected/);
+    expect(html).toMatch(/Faltam <b id="missing">4<\/b> de 4/);
+    expect(html).toContain("--allow-partial");
     expect(html).toContain('class="why-text"');
   });
   it("the export carries snapshot id, url, category, answer, reason, note and the lock in force", () => {
     expect(html).toContain('FORMAT="gran-prix.corpus-review/1"');
     expect(html).toContain('LOCK_SHA="sha256:abc123"');
     for (const f of ["snapshot_id", "url:", "category:", "answer:", "reason:", "reason_text:", "note:", "lock_sha256:LOCK_SHA"]) expect(html).toContain(f);
+    expect(html).toContain('var v=a.answer||""'); // every page is exported, with its answer (empty = unanswered)
+    expect(html).not.toContain('a.answer||"sim"');
     expect(html).toContain('data-snapshot="sha256:s2"');
   });
   it("without a lock the page says so and exports a null lock", () => {
