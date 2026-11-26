@@ -9,7 +9,7 @@ import { ALL_STAGES } from "../src/stages/index.js";
 import { packageStage } from "../src/stages/package.js";
 import { JOBS_ENV, TRAIN_CV_IMPL, createTrainCvStage } from "../src/stages/train-cv/stage.js";
 import { macroPageF1, tauStar, weightedRecall } from "../src/stages/train-cv/tau.js";
-import { defaultWeight } from "./evaluate-fixtures.js";
+import { buildDataset, defaultWeight } from "./evaluate-fixtures.js";
 import { cleanupTmp, tmpDir } from "./helpers.js";
 import { CV_GROUPS, CV_ROWS, datasetFiles, gpTrainCopy } from "./train-cv-fixtures.js";
 
@@ -122,6 +122,34 @@ describe("ts:train.cv", () => {
     }
     const pk = run.stages[1]?.outputs as Record<string, Sha256>;
     expect(JSON.parse(text(w.dataDir, pk["bundle"] as string, "bundle.json"))).toMatchObject({ self_test: expect.anything() });
+  }, 300_000);
+
+  it('fits with sample_weight "row" when the dataset has row weights (same weight as the GBDT), and not otherwise', async () => {
+    const w = world();
+    const run = await runPipeline(spec(w.dataset), { dataDir: w.dataDir, plugins: plugins() });
+    const out = run.stages[0]?.outputs as Record<string, Sha256>;
+    const config = json<{ format_version: string; sample_weight?: string }>(w.dataDir, out["config"] as string);
+    assertValid("train-config", config);
+    expect(config).toMatchObject({ format_version: "1.1.0", sample_weight: "row" });
+    const report = json<Record<string, any>>(w.dataDir, out["report"] as string);
+    expect(report["fixed"].sample_weight).toBe("row");
+    // the trainer really got the weights: the final model's own training report says so
+    const trained = JSON.parse(text(w.dataDir, out["model"] as string, "train_report.json")) as { sample_weight?: string };
+    expect(trained.sample_weight).toBe("row");
+
+    // the same rows without `w` / row_weight: unweighted, as before (a 1.0.0 config), and a different model
+    const dataDir = tmpDir();
+    const store = new ArtifactStore(dataPaths(dataDir).artifacts);
+    const unweighted = store.putFiles("Dataset", buildDataset(CV_GROUPS, CV_ROWS, {}));
+    const plainRun = await runPipeline(spec(unweighted), { dataDir, plugins: plugins() });
+    expect(plainRun.ok).toBe(true);
+    const plainOut = plainRun.stages[0]?.outputs as Record<string, Sha256>;
+    const plainConfig = json<{ format_version: string; sample_weight?: string }>(dataDir, plainOut["config"] as string);
+    expect(plainConfig).toMatchObject({ format_version: "1.0.0" });
+    expect(plainConfig.sample_weight).toBeUndefined();
+    expect(JSON.parse(text(dataDir, plainOut["model"] as string, "train_report.json"))).not.toHaveProperty("sample_weight");
+    expect(json<Record<string, any>>(dataDir, plainOut["report"] as string)["fixed"].sample_weight).toBe("none");
+    expect(plainOut["model"]).not.toBe(out["model"]);
   }, 300_000);
 
   it("is reproducible: a fresh data dir gives the same artifact ids, whatever GP_CV_JOBS is", async () => {

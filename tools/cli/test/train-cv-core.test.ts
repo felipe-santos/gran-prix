@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertValid } from "@gran-prix/contracts";
 import { describe, expect, it } from "vitest";
 import { Limiter, runCv, type DevRows, type FitTag, type Fitter } from "../src/stages/train-cv/cv.js";
 import { groupedFolds, splitFold } from "../src/stages/train-cv/folds.js";
@@ -112,6 +113,25 @@ describe("the grid (protocol 7: <= 12 configurations, fixed a priori)", () => {
     expect(c.train_config_id).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(trainConfigOf(DOM_V0_GRID[0] as GridPoint, 3, { min_confidence: 0.5, allowed_sources: ["human"] }, 0.31).train_config_id).toBe(c.train_config_id);
     expect(trainConfigOf(DOM_V0_GRID[1] as GridPoint, 3, { min_confidence: 0.5, allowed_sources: ["human"] }, 0.31).train_config_id).not.toBe(c.train_config_id);
+    // no row weights in the dataset: the config is the 1.0.0 document it always was, without the field
+    expect(c.format_version).toBe("1.0.0");
+    expect(c).not.toHaveProperty("sample_weight");
+    assertValid("train-config", c);
+  });
+
+  it('a weighted dataset trains every grid point with sample_weight "row" (TrainConfig 1.1.0), a new config id', () => {
+    const policy = { min_confidence: 0.5, allowed_sources: ["human" as const] };
+    for (const point of DOM_V0_GRID) {
+      const plain = trainConfigOf(point, 3, policy, 0.31);
+      const c = trainConfigOf(point, 3, policy, 0.31, 40, true);
+      expect(c).toMatchObject({ format_version: "1.1.0", sample_weight: "row", runtime: { engine: "gp-train" } });
+      assertValid("train-config", c);
+      expect(c.train_config_id).not.toBe(plain.train_config_id);
+      // nothing else moves: the grid point is the same recipe, only the loss weights differ
+      const { format_version: _v, sample_weight: _w, train_config_id: _i, ...rest } = c;
+      const { format_version: _v2, train_config_id: _i2, ...restPlain } = plain;
+      expect(rest).toEqual(restPlain);
+    }
   });
 });
 

@@ -11,6 +11,17 @@
 //! ```
 //!
 //! The gradient fed to `Graph::backward` for sample `i` of a batch of `B` is `dl/dz / B`.
+//!
+//! With `sample_weight: "row"` every sample also carries a row weight `r_i >= 0` (the `w`
+//! column of the dataset) and the batch loss is the weighted mean, the denominator being the
+//! sum of the row weights instead of `B`:
+//!
+//! ```text
+//! L = sum_i r_i * l(z_i, y_i) / sum_i r_i          dL/dz_i = r_i * dl/dz / sum_i r_i
+//! ```
+//!
+//! `r_i = 1` for every row gives exactly the formulas above. A batch with `sum r = 0` contributes
+//! no loss and no gradient and takes no optimizer step (it is as if it were not in the epoch).
 
 /// Numerically stable sigmoid.
 pub fn sigmoid(z: f32) -> f32 {
@@ -70,6 +81,21 @@ impl WeightedBce {
         let sum: f64 = logits.iter().zip(ys).map(|(z, y)| f64::from(self.loss(*z, *y))).sum();
         (sum / logits.len() as f64) as f32
     }
+
+    /// Weighted mean loss `sum(w_i * l_i) / sum(w_i)` (`sample_weight: "row"`). With `sum(w) = 0`
+    /// the loss is 0 (nothing is being asked of the model), like an empty input.
+    pub fn mean_loss_weighted(&self, logits: &[f32], ys: &[u8], w: &[f32]) -> f32 {
+        let (mut num, mut den) = (0f64, 0f64);
+        for ((z, y), wi) in logits.iter().zip(ys).zip(w) {
+            num += f64::from(*wi) * f64::from(self.loss(*z, *y));
+            den += f64::from(*wi);
+        }
+        if den > 0.0 {
+            (num / den) as f32
+        } else {
+            0.0
+        }
+    }
 }
 
 #[cfg(test)]
@@ -125,6 +151,24 @@ mod tests {
             assert_eq!(weighted.loss(z, 0), plain.loss(z, 0));
             assert_eq!(weighted.grad(z, 0), plain.grad(z, 0));
         }
+    }
+
+    #[test]
+    fn weighted_mean_loss_is_the_weighted_average() {
+        let l = WeightedBce::new(2.0);
+        let ys = [0u8, 1, 1, 0, 1, 0, 1];
+        let ones = [1.0f32; 7];
+        assert_eq!(l.mean_loss_weighted(&LOGITS, &ys, &ones), l.mean_loss(&LOGITS, &ys));
+        let w = [0.0f32, 3.0, 1.0, 0.0, 0.0, 2.0, 4.0];
+        let (mut num, mut den) = (0f64, 0f64);
+        for i in 0..7 {
+            num += f64::from(w[i]) * f64::from(l.loss(LOGITS[i], ys[i]));
+            den += f64::from(w[i]);
+        }
+        assert!((f64::from(l.mean_loss_weighted(&LOGITS, &ys, &w)) - num / den).abs() < 1e-6);
+        // sum(w) = 0 and empty input: 0, not NaN.
+        assert_eq!(l.mean_loss_weighted(&LOGITS, &ys, &[0.0; 7]), 0.0);
+        assert_eq!(l.mean_loss_weighted(&[], &[], &[]), 0.0);
     }
 
     #[test]

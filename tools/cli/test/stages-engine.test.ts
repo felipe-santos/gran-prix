@@ -207,6 +207,59 @@ describe("train -> package mini pipeline", () => {
   });
 });
 
+describe("sample_weight reaches gp-train", () => {
+  const rowConfig = (): Record<string, unknown> => {
+    const { train_config_id: _id, ...base } = JSON.parse(readFileSync(join(FIXTURES, "train-config.json"), "utf8")) as Record<string, unknown>;
+    return { ...base, format_version: "1.1.0", sample_weight: "row" };
+  };
+  /** The same pipeline with the TrainConfig given inline (`params.config`) instead of the external one. */
+  const inline = (config: Record<string, unknown>, dataset = "ts:test.emit-dataset@1.0.0"): PipelineSpec => {
+    const s = spec();
+    const stages = s.stages.map((st) => {
+      if (st.id === "dataset") return { ...st, impl: dataset };
+      if (st.id === "train") return { ...st, params: { seed: 42, config }, inputs: { dataset: { stage: "dataset", output: "dataset" } } };
+      return st;
+    });
+    const { externals: _e, ...rest } = s;
+    return { ...rest, stages } as PipelineSpec;
+  };
+  const emitUnweighted = defineStage(
+    { kind: "dataset", impl: "ts:test.emit-dataset-unweighted@1.0.0", inputs: [], outputs: [{ name: "dataset", type: "Dataset" }], params_schema: { type: "object", additionalProperties: false }, runtime: "node", determinism: "pure" },
+    () => {
+      const files: Record<string, Uint8Array> = {};
+      for (const f of ["train.jsonl", "val.jsonl", "test.jsonl"]) files[f] = new Uint8Array(readFileSync(join(FIXTURES, "dataset", f)));
+      const manifest = JSON.parse(readFileSync(join(FIXTURES, "dataset", "manifest.json"), "utf8")) as Record<string, unknown>;
+      delete manifest["row_weight"];
+      files["manifest.json"] = new TextEncoder().encode(JSON.stringify(manifest));
+      files["feature-schema.json"] = new Uint8Array(readFileSync(join(FIXTURES, "feature-schema.json")));
+      return { dataset: { files } };
+    },
+  );
+
+  it('"row" trains with the dataset weights (the train report says so, the fit differs from "none")', async () => {
+    const dataDir = tmpDir();
+    const row = await runPipeline(inline(rowConfig()), { dataDir, plugins: plugins(binA).plugins, runId: "row" });
+    expect(row.ok, JSON.stringify(row.stages.map((s) => s.error))).toBe(true);
+    const none = await runPipeline(inline({ ...rowConfig(), sample_weight: "none" }), { dataDir, plugins: plugins(binA).plugins, runId: "none" });
+    expect(none.ok).toBe(true);
+    const store = new ArtifactStore(dataPaths(dataDir).artifacts);
+    const report = (r: RunSummary): { sample_weight?: string } => JSON.parse(new TextDecoder().decode(store.handle(r.stages[1]?.outputs["model"] as Sha256, "ModelPackage").file("train_report.json"))) as { sample_weight?: string };
+    expect(report(row).sample_weight).toBe("row");
+    expect(report(none).sample_weight).toBeUndefined();
+    expect(row.stages[1]?.outputs["model"]).not.toBe(none.stages[1]?.outputs["model"]);
+  }, 120_000);
+
+  it('"row" on a dataset without row_weight fails loudly instead of training unweighted', async () => {
+    const r = await runPipeline(inline(rowConfig(), "ts:test.emit-dataset-unweighted@1.0.0"), {
+      dataDir: tmpDir(),
+      plugins: [emitUnweighted, ...plugins(binA).plugins.filter((p) => p.spec.impl !== "ts:test.emit-dataset@1.0.0")],
+      runId: "loud",
+    });
+    expect(r.ok).toBe(false);
+    expect(r.stages.find((s) => s.stageId === "train")?.error).toMatch(/row_weight/);
+  }, 120_000);
+});
+
 describe("the gp-train binary is part of the cache key", () => {
   it("a rebuilt binary invalidates train and its downstream only", async () => {
     const dataDir = tmpDir();

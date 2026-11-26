@@ -127,6 +127,7 @@ describe("a v1.0 reader can read v1.1 documents (forward compatibility, MINOR ru
     ["dataset-row", "dataset-row.json"],
     ["model-package", "model-package/model.json"],
     ["eval-report", "eval-report.downstream.json"],
+    ["train-config", "train-config.row-weight.json"],
   ])("%s: the v1.1 fixture %s validates against the FROZEN v1.0 schema (unknown fields are ignored)", (name, file) => {
     const check = oldValidator(name);
     expect(check(current(file)), JSON.stringify(check.errors?.slice(0, 3))).toBe(true);

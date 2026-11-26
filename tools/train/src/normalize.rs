@@ -133,6 +133,7 @@ mod tests {
             source: vec!["human".into(); n],
             group: vec!["g".into(); n],
             unit: (0..n as u64).collect(),
+            w: Vec::new(),
         }
     }
 

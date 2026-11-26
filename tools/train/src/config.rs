@@ -18,6 +18,9 @@ pub struct TrainConfig {
     pub optimizer: OptimizerCfg,
     #[serde(default)]
     pub lr_schedule: Option<LrSchedule>,
+    /// v1.1: `"none"` (default) or `"row"` (weighted loss, `w` column of the dataset rows).
+    #[serde(default)]
+    pub sample_weight: Option<String>,
     pub epochs: usize,
     pub batch_size: usize,
     pub data: DataCfg,
@@ -118,6 +121,11 @@ impl TrainConfig {
         canonical::artifact_id(&doc)
     }
 
+    /// Whether the loss is weighted by the `w` column of the dataset rows (`sample_weight: "row"`).
+    pub fn uses_row_weight(&self) -> bool {
+        self.sample_weight.as_deref() == Some("row")
+    }
+
     /// Everything gp-train v0 cannot honor is an error here, with the reason.
     fn check_supported(&self) -> Result<()> {
         if self.format != "gran-prix.train-config" {
@@ -139,6 +147,9 @@ impl TrainConfig {
         // `Adam::new` asserts lr > 0 in f32: refuse here what would panic there.
         if !(self.optimizer.lr.is_finite() && (self.optimizer.lr as f32) > 0.0) {
             return Err(invalid!("optimizer.lr must be a positive float32"));
+        }
+        if !matches!(self.sample_weight.as_deref(), None | Some("none" | "row")) {
+            return Err(invalid!("unknown sample_weight \"{}\" (none or row)", self.sample_weight.as_deref().unwrap_or("")));
         }
         if self.epochs == 0 || self.batch_size == 0 {
             return Err(invalid!("epochs and batch_size must be >= 1"));
@@ -298,6 +309,18 @@ mod tests {
         );
         let (cfg, _) = TrainConfig::parse(&wide).expect("schema-valid");
         assert!(cfg.network_def(3).expect_err("two outputs refused").to_string().contains("single output"));
+    }
+
+    #[test]
+    fn sample_weight_is_none_by_default_and_row_is_opt_in() {
+        let (cfg, _) = TrainConfig::parse(BASE).expect("valid");
+        assert!(!cfg.uses_row_weight());
+        for (text, row) in [("none", false), ("row", true)] {
+            let with = BASE.replace(r#""seed":7,"#, &format!(r#""seed":7,"sample_weight":"{text}","#));
+            assert_eq!(TrainConfig::parse(&with).expect("valid").0.uses_row_weight(), row, "{text}");
+        }
+        let bad = BASE.replace(r#""seed":7,"#, r#""seed":7,"sample_weight":"chars","#);
+        assert!(TrainConfig::parse(&bad).expect_err("unknown value").to_string().contains("sample_weight"));
     }
 
     #[test]

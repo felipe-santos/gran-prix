@@ -18,6 +18,20 @@ export function buildInvalidCasesV11(u: Universe): InvalidCase[] {
   };
   const reid = (contract: Parameters<typeof contractId>[0], idField: string, d: Doc): Doc => ({ ...d, [idField]: contractId(contract, d) });
 
+  // --- train-config v1.1
+  {
+    const tc = (mutate: (d: Doc) => void): Doc => {
+      const d: Doc = clone(u.trainConfigRowWeight);
+      delete d["train_config_id"];
+      mutate(d);
+      return reid("train-config", "train_config_id", d);
+    };
+    add("train-config", "sample-weight-unknown-value", tc((d) => (d["sample_weight"] = "chars")), "schema", "sample_weight");
+    add("train-config", "sample-weight-row-on-wasm", tc((d) => {
+      d["runtime"] = { engine: "wasm-node" };
+      d["data"]["class_balance"] = { strategy: "none" };
+    }), "invariant", "sample_weight", "gp-train");
+  }
   // --- page-snapshot v1.1
   {
     const snap = (mutate: (d: Doc) => void): Doc => {

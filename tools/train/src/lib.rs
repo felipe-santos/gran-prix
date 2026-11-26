@@ -56,6 +56,9 @@ pub fn run_train(args: &TrainArgs) -> Result<(PackageSummary, train::TrainOutcom
     }
 
     let manifest = Manifest::load(&args.dataset)?;
+    if cfg.uses_row_weight() && manifest.row_weight.is_none() {
+        return Err(crate::invalid!("sample_weight \"row\" needs row weights, but the dataset manifest declares no row_weight"));
+    }
     let keep = |rows: dataset::Rows| rows.filtered(cfg.data.min_confidence, Some(&cfg.data.allowed_sources));
     let train_rows = keep(load_split(&args.dataset, &manifest, Split::Train)?);
     let val_rows = keep(load_split(&args.dataset, &manifest, Split::Val)?);

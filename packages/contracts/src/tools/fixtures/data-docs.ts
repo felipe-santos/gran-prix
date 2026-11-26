@@ -185,3 +185,13 @@ export function buildTrainConfig(): TrainConfig {
   };
   return { ...doc, train_config_id: contractId("train-config", doc) };
 }
+
+/**
+ * v1.1: the same recipe with the per-row sample weight (`sample_weight: "row"`, the `w` column of the Dataset rows).
+ * The main fixture (`buildTrainConfig`) stays a 1.0.0 document: a v1.0 config is still a valid config.
+ */
+export function buildTrainConfigRowWeight(): TrainConfig {
+  const { train_config_id: _id, ...base } = buildTrainConfig();
+  const doc: TrainConfig = { ...base, format_version: "1.1.0", sample_weight: "row" };
+  return { ...doc, train_config_id: contractId("train-config", doc) };
+}

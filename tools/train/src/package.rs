@@ -171,7 +171,7 @@ fn train_report(outcome: &TrainOutcome, manifest: &Manifest, config_id: &str, mo
         Normalizer::ZScore(z) => z.constant_features.clone(),
         Normalizer::None => Vec::new(),
     };
-    json!({
+    let mut report = json!({
         "format": "gp-train.train-report",
         "format_version": "0.1.0",
         "model_id": model_id,
@@ -192,7 +192,14 @@ fn train_report(outcome: &TrainOutcome, manifest: &Manifest, config_id: &str, mo
         },
         "val_metrics": outcome.val_metrics.as_ref().map(|m| m.to_json()),
         "history": history,
-    })
+    });
+    // Only when it was used: a report without a weight is byte-identical to the one of the unweighted trainer.
+    if outcome.row_weight {
+        if let Some(map) = report.as_object_mut() {
+            map.insert("sample_weight".to_string(), json!("row"));
+        }
+    }
+    report
 }
 
 /// Everything `write_package` needs besides the output directory and the free-form options.
