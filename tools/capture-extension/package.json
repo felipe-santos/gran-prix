@@ -21,6 +21,6 @@
     "esbuild": "0.27.3",
     "playwright-core": "1.65.1",
     "tldts": "7.5.5",
-    "vitest": "5.1.1"
+    "vitest": "4.1.11"
   }
 }
