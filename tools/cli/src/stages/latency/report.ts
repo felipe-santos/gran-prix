@@ -1,3 +1,4 @@
+import type { Calibration } from "./calibrate.js";
 import { median, ms2, nearestRank, summarize, type Summary } from "./stats.js";
 import type { ModelSizes } from "./model-js.js";
 import type { RunnerResult } from "./page-script.js";
@@ -27,6 +28,13 @@ export interface PageInfo {
   snapshot_nodes: number;
 }
 
+export interface ThrottleCheckLike {
+  cdp_rate?: number;
+  unthrottled_ms: number;
+  throttled_ms: number;
+  ratio: number;
+}
+
 export interface ReportInput {
   label: string;
   samples: Sample[];
@@ -34,8 +42,10 @@ export interface ReportInput {
   selection: { order_prefix: string; element_range: [number, number]; requested: number; eligible: number; total: number; shortfall: boolean };
   repetitions: number;
   cpu_throttle: number;
+  /** How the slowdown was obtained: the CDP rate that was set and, in "calibrated" mode, how it was found. */
+  throttle?: { mode: "cdp-rate" | "calibrated"; target: number; cdp_rate: number; calibration: Calibration | null; check_after: ThrottleCheckLike | null };
   environment: { browser: string; user_agent?: string; executable?: string; viewport: [number, number]; platform: string; cpus: number; node: string };
-  throttle_check: { unthrottled_ms: number; throttled_ms: number; ratio: number } | null;
+  throttle_check: ThrottleCheckLike | null;
   load: { before: number[]; after: number[] };
   model: { model_id: string; name: string; shape: number[]; activation: string; sizes: ModelSizes };
   parity: { checked: boolean; rows: number; max_abs_diff: number | null; tolerance: number } | null;
@@ -52,7 +62,7 @@ const round = (s: Summary): Summary => ({ n: s.n, p50: ms2(s.p50), p95: ms2(s.p9
 export const PROTOCOL_TEXT = {
   sample: "One timed load of one page: a fresh browser context and page, CPU throttled, the page loaded to the load event with every other request aborted, then ONE run of probe + vectorize + model init + inference inside the page.",
   total_ms: "performance.now() inside the page from the start of the probe to the end of the scoring of every row. It includes probe (no settle wait), vectorize, evaluation of the generated model module, z-score, forward pass, calibration and activation. It excludes navigation, network, Playwright/CDP round trips, the 600 ms DOM-quiet wait of settle (wall clock, not CPU) and the evaluation of the features bundle (done at document start, part of the page load). The clock starts after the page has rendered params.wait_frames frames (default 2), so style and layout are clean as they are after the real settle wait; with wait_frames 0 the page's first layout falls inside the probe (a pessimistic bound).",
-  throttle: "CDP Emulation.setCPUThrottlingRate on the page. throttle_check runs a ~100 ms busy loop unthrottled and throttled: in Chromium 158 the slowdown of a task of that size is well under the requested rate, so the throttled numbers are OPTIMISTIC relative to a true Nx slower CPU. A run with cpu_throttle 1 on the same pages shows the effective slowdown.",
+  throttle: "CDP Emulation.setCPUThrottlingRate on the page. throttle_check runs a ~100 ms busy loop unthrottled and throttled: in Chromium 158 the slowdown of a task of that size is well under the requested rate, so with throttle.mode \"cdp-rate\" (the rate IS the requested factor) the numbers are OPTIMISTIC relative to a true Nx slower CPU. With throttle.mode \"calibrated\" the CDP rate was searched so that the reference loop is slower by the requested factor (throttle.calibration has the steps; throttle_check and throttle.check_after repeat the measurement at the chosen rate, before and after the pages). A run with cpu_throttle 1 on the same pages shows the effective slowdown.",
   p95: "Nearest-rank p95 of total_ms over ALL samples (pages x repetitions). per_page_median_p95 (the p95 over the pages' median total) is reported beside it.",
   repetitions: "All repetitions count. Every repetition is a cold page (new context, new renderer state), so the first one is not warmer or colder than the others; the only thing discarded is one untimed throwaway page load that starts the browser. by_repetition shows whether repetition 1 differs.",
   pages: "Flattened html of the frozen SnapshotSet served from memory: no scripts, no external css, images or fonts. The DOM is therefore static and its layout cheaper or different from the live page. This is an approximation; the real G5 is measured by E4 in the extension.",
@@ -93,7 +103,8 @@ export function buildReport(r: ReportInput): Record<string, unknown> {
   const p95 = ms2(total.p95);
   const sz = r.model.sizes;
   const sizeOk = sz.package_bytes <= G5_MODEL_BYTES_MAX && sz.extension_bytes <= G5_MODEL_BYTES_MAX;
-  const environment = `chromium-headless ${r.environment.browser}, ${r.cpu_throttle}x CPU throttle (CDP Emulation.setCPUThrottlingRate), ${r.environment.cpus} cores, ${r.environment.platform}`;
+  const how = r.throttle?.mode === "calibrated" ? `calibrated CDP rate ${r.throttle.cdp_rate}` : "CDP Emulation.setCPUThrottlingRate";
+  const environment = `chromium-headless ${r.environment.browser}, ${r.cpu_throttle}x CPU throttle (${how}), ${r.environment.cpus} cores, ${r.environment.platform}`;
 
   return {
     format: LATENCY_FORMAT,
@@ -107,6 +118,7 @@ export function buildReport(r: ReportInput): Record<string, unknown> {
         n_pages: nPages,
         p50_ms: ms2(total.p50),
         cpu_throttle: r.cpu_throttle,
+        ...(r.throttle ? { throttle_mode: r.throttle.mode, cdp_rate: r.throttle.cdp_rate } : {}),
         repetitions: r.repetitions,
         environment,
         page_elements: [Math.min(...elements), Math.max(...elements)],
@@ -132,6 +144,7 @@ export function buildReport(r: ReportInput): Record<string, unknown> {
     model: r.model,
     selection: r.selection,
     environment: r.environment,
+    throttle: r.throttle ?? null,
     throttle_check: r.throttle_check,
     load_average: { ...r.load, note: "1, 5 and 15 minute load average before and after the run; the machine was shared with other jobs." },
     parity: r.parity,

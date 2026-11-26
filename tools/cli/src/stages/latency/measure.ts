@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { SnapshotSetReader, type FileSource } from "@gran-prix/labels";
 import { loadModelPackage } from "@gran-prix/model";
 import { buildPageModel } from "./model-js.js";
+import { calibrateRate, type Calibration } from "./calibrate.js";
 import { BUSY_LOOP, PAGE_RUNNER, type RunnerResult } from "./page-script.js";
 import { buildReport, type PageInfo, type Sample } from "./report.js";
 import { G5_ORDER_PREFIX, G5_MAX_ELEMENTS, G5_MIN_ELEMENTS, G5_MIN_PAGES, selectPages, type Candidate } from "./select.js";
@@ -19,7 +20,13 @@ export interface MeasureOptions {
   modelDir: string;
   pages?: number;
   repetitions?: number;
+  /** The slowdown to measure under (4 for G5). With `throttle: "cdp-rate"` it is also the CDP rate; with "calibrated" the rate is searched. */
   cpuThrottle?: number;
+  /**
+   * "cdp-rate" (default): `Emulation.setCPUThrottlingRate(cpuThrottle)`, whose effect on a ~100 ms task is well under the rate.
+   * "calibrated": the CDP rate whose effect on the reference busy loop is `cpuThrottle`x (see calibrate.ts), recorded in the report.
+   */
+  throttle?: "cdp-rate" | "calibrated";
   minElements?: number;
   maxElements?: number;
   orderPrefix?: string;
@@ -73,25 +80,33 @@ async function oneLoad(
   }
 }
 
-/** Runs a fixed busy loop unthrottled and throttled in a blank page; the ratio shows that the throttle works. */
-async function throttleCheck(browser: Browser, rate: number): Promise<{ unthrottled_ms: number; throttled_ms: number; ratio: number }> {
+type ThrottleCheck = { cdp_rate: number; unthrottled_ms: number; throttled_ms: number; ratio: number };
+
+/** A blank page with a CDP session; `bestAt(rate)` is the best (smallest) of three runs of the reference busy loop with the CDP rate set to `rate`. */
+async function withLoopPage<T>(browser: Browser, f: (bestAt: (rate: number) => Promise<number>) => Promise<T>): Promise<T> {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
     const cdp = await context.newCDPSession(page);
-    const best = async (): Promise<number> => {
+    const bestAt = async (rate: number): Promise<number> => {
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate });
       let min = Infinity;
       for (let i = 0; i < 3; i++) min = Math.min(min, ((await page.evaluate(`(${BUSY_LOOP})()`)) as { ms: number }).ms);
       return min;
     };
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-    const unthrottled = await best();
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate });
-    const throttled = await best();
-    return { unthrottled_ms: Math.round(unthrottled * 100) / 100, throttled_ms: Math.round(throttled * 100) / 100, ratio: Math.round((throttled / unthrottled) * 100) / 100 };
+    return await f(bestAt);
   } finally {
     await context.close();
   }
+}
+
+/** Runs the reference busy loop unthrottled and with CDP rate `rate` in a blank page; the ratio shows what the throttle really does. */
+async function throttleCheck(browser: Browser, rate: number): Promise<ThrottleCheck> {
+  return withLoopPage(browser, async (bestAt) => {
+    const unthrottled = await bestAt(1);
+    const throttled = await bestAt(rate);
+    return { cdp_rate: rate, unthrottled_ms: Math.round(unthrottled * 100) / 100, throttled_ms: Math.round(throttled * 100) / 100, ratio: Math.round((throttled / unthrottled) * 100) / 100 };
+  });
 }
 
 /** Largest |difference| between the in-page scores and `@gran-prix/model` run in Node on the same feature rows. */
@@ -113,6 +128,8 @@ export async function measureLatency(o: MeasureOptions): Promise<Record<string, 
   const log = o.log ?? (() => undefined);
   const repetitions = o.repetitions ?? 3;
   const cpuThrottle = o.cpuThrottle ?? 4;
+  const throttleMode = o.throttle ?? "cdp-rate";
+  if (throttleMode !== "cdp-rate" && throttleMode !== "calibrated") throw new Error(`throttle must be "cdp-rate" or "calibrated", got ${String(throttleMode)}`);
   const viewport = o.viewport ?? { width: 1280, height: 900 };
   const wantPages = o.pages ?? G5_MIN_PAGES;
   const range: [number, number] = [o.minElements ?? G5_MIN_ELEMENTS, o.maxElements ?? G5_MAX_ELEMENTS];
@@ -153,16 +170,24 @@ export async function measureLatency(o: MeasureOptions): Promise<Record<string, 
   try {
     const version = browser.version();
     if (o.expectBrowser !== undefined && !version.startsWith(o.expectBrowser)) throw new Error(`browser ${version} does not match the pin "${o.expectBrowser}"`);
-    log(`chromium ${version}, throttle ${cpuThrottle}x, ${repetitions} repetitions`);
+    log(`chromium ${version}, throttle ${cpuThrottle}x (${throttleMode}), ${repetitions} repetitions`);
 
-    const check = cpuThrottle > 1 ? await throttleCheck(browser, cpuThrottle) : null;
+    let calibration: Calibration | null = null;
+    let cdpRate = cpuThrottle;
+    if (throttleMode === "calibrated" && cpuThrottle > 1) {
+      calibration = await withLoopPage(browser, (bestAt) => calibrateRate(bestAt, { target: cpuThrottle }));
+      cdpRate = calibration.rate;
+      log(`calibration: CDP rate ${cdpRate} makes the reference loop x${calibration.ratio} slower (target ${cpuThrottle}, ${calibration.steps.length} steps${calibration.converged ? "" : ", NOT converged"})`);
+      if (!calibration.converged) warnings.push(`the throttle calibration did not reach x${cpuThrottle} +- ${calibration.tolerance} in ${calibration.steps.length} steps: the closest was CDP rate ${cdpRate} (x${calibration.ratio})`);
+    }
+    const check = cpuThrottle > 1 ? await throttleCheck(browser, cdpRate) : null;
     if (check !== null) {
-      log(`throttle check: busy loop ${check.unthrottled_ms} ms -> ${check.throttled_ms} ms (x${check.ratio})`);
+      log(`throttle check: CDP rate ${check.cdp_rate}, busy loop ${check.unthrottled_ms} ms -> ${check.throttled_ms} ms (x${check.ratio})`);
       if (check.ratio < cpuThrottle * 0.6) warnings.push(`the busy-loop check slowed down by x${check.ratio}, well under the requested ${cpuThrottle}x: the throttle may not be fully effective`);
     }
 
     const args = { moduleBody: pm.moduleBody, schema, spec: pm.spec, stamp, waitFrames, verify: false };
-    const run = { cpuThrottle, viewport, navTimeoutMs: o.navTimeoutMs ?? 60_000 };
+    const run = { cpuThrottle: cdpRate, viewport, navTimeoutMs: o.navTimeoutMs ?? 60_000 };
     // One throwaway load starts the browser's own machinery (renderer process, caches); it is never timed.
     await oneLoad(browser, bundle, (pages[0] as PageData).html, { ...run, args });
 
@@ -196,6 +221,12 @@ export async function measureLatency(o: MeasureOptions): Promise<Record<string, 
         await ctx.close();
       }
     })());
+    // Calibrated runs check the throttle again at the end: a machine that got busier in between shows up as a drift.
+    const checkAfter = calibration !== null ? await throttleCheck(browser, cdpRate) : null;
+    if (checkAfter !== null) {
+      log(`throttle check after the run: x${checkAfter.ratio}`);
+      if (Math.abs(checkAfter.ratio - cpuThrottle) > 0.5) warnings.push(`the calibrated throttle drifted during the run: x${check?.ratio} before, x${checkAfter.ratio} after (target ${cpuThrottle})`);
+    }
     const loadAfter = loadavg().map((v) => Math.round(v * 100) / 100);
     return buildReport({
       label: o.label ?? "descriptive",
@@ -204,12 +235,13 @@ export async function measureLatency(o: MeasureOptions): Promise<Record<string, 
       selection: { order_prefix: orderPrefix, element_range: range, requested: wantPages, eligible: sel.eligible, total: sel.total, shortfall: sel.shortfall },
       repetitions,
       cpu_throttle: cpuThrottle,
+      throttle: { mode: throttleMode, target: cpuThrottle, cdp_rate: cdpRate, calibration, check_after: checkAfter },
       environment: { browser: version, user_agent: ua, executable: features.findChromium(), viewport: [viewport.width, viewport.height], platform: `${platform()} ${process.arch}`, cpus: cpus().length, node: process.version },
       throttle_check: check,
       load: { before: loadBefore, after: loadAfter },
       model: { model_id: modelId, name: pm.manifest.name, shape: pm.shape, activation: pm.manifest.output_spec.activation, sizes: pm.sizes },
       parity,
-      params: { pages: wantPages, repetitions, cpu_throttle: cpuThrottle, stamp, wait_frames: waitFrames, verify, viewport: [viewport.width, viewport.height] },
+      params: { pages: wantPages, repetitions, cpu_throttle: cpuThrottle, throttle: throttleMode, stamp, wait_frames: waitFrames, verify, viewport: [viewport.width, viewport.height] },
       warnings,
     });
   } finally {
