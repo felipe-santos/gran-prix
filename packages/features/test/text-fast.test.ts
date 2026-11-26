@@ -77,3 +77,14 @@ describe("idClassTokens / hintBits fast paths = the definitions", () => {
     }
   });
 });
+
+describe("wellFormed (probe) = the regex definition", () => {
+  it("random strings with lone and paired surrogates", async () => {
+    const { wellFormed, wellFormedReference } = await import("../src/probe/signals.js");
+    const pieces = ["a", "é", " ", "\ud83d", "\ude00", "😀", "\ud800", "\udfff", "\udc00\ud800", "日", "\n"];
+    for (let i = 0; i < 20000; i++) {
+      const s = Array.from({ length: Math.floor(rnd() * 8) }, () => pick(pieces)).join("");
+      expect(wellFormed(s)).toBe(wellFormedReference(s));
+    }
+  });
+});

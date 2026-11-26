@@ -5,9 +5,18 @@ import { getAttr, queryDoc, queryDocAll, textContentOf } from "./dom.js";
 const MAX_JSONLD_BYTES = 1_000_000;
 const MAX_TYPES = 16;
 
-/** Lone surrogates make a string invalid for canonical JSON (the content-id hash throws). */
-export function wellFormed(s: string): string {
+/** Lone surrogates make a string invalid for canonical JSON (the content-id hash throws). Each one becomes U+FFFD. */
+export function wellFormedReference(s: string): string {
   return s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
+}
+
+type WellFormedString = { isWellFormed?: () => boolean; toWellFormed?: () => string };
+const NATIVE = typeof (String.prototype as WellFormedString).isWellFormed === "function" && typeof (String.prototype as WellFormedString).toWellFormed === "function";
+
+/** `wellFormedReference`, through the engine's own `isWellFormed` / `toWellFormed` (Chromium 111+) when they exist: the same result, one native call for the usual string without a lone surrogate. */
+export function wellFormed(s: string): string {
+  if (NATIVE) return (s as WellFormedString).isWellFormed!() ? s : (s as WellFormedString).toWellFormed!();
+  return wellFormedReference(s);
 }
 
 export function ogType(): string | undefined {

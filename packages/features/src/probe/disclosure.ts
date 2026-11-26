@@ -30,7 +30,6 @@
 // options, content-visibility:auto, closed shadow roots and iframes (not entered by the walk anyway), controls inside
 // closed shadow trees whose `aria-controls` points across the shadow boundary (ids resolve inside one tree only).
 import { byIdInTreeOf, checkVisible, clientRectOf, childrenOf, closestOf, getAttr, hasAttr, parentElementOf, tagNameOf } from "./dom.js";
-import { walkComposed } from "./walk.js";
 
 const VIS = { visibilityProperty: true, opacityProperty: true } as const;
 /** Roles of a controlled element that mean "popup / overlay / menu", never "page content that is collapsed". */
@@ -38,8 +37,13 @@ const POPUP_ROLES = new Set(["dialog", "alertdialog", "menu", "menubar", "listbo
 const POPUP_ANCESTORS = 'nav, dialog, [popover], [role="navigation"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="menubar"], [aria-modal="true"]';
 
 export interface DisclosureDetector {
-  /** Flag of `el`, given the flag of its composed parent (false for the root element). */
-  test(el: Element, parentFlag: boolean): boolean;
+  /**
+   * Flag of `el`, given the flag of its composed parent (false for the root element) and what the probe has already read
+   * of the element: its computed `display`, the lower-case tag of its composed parent ("" for the root), whether it has a
+   * `hidden` attribute, and its captured `role` attribute. Those decide, without touching the DOM, whether the element can be
+   * a disclosure root at all (patterns a, b, c, d); only then the full check below runs, on the live element.
+   */
+  test(el: Element, parentFlag: boolean, display: string, parentTag: string, hasHidden: boolean, role: string | undefined): boolean;
 }
 
 const roleOf = (el: Element): string => (getAttr(el, "role") ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
@@ -91,20 +95,21 @@ function isPopupLike(control: Element, target: Element, cs: CSSStyleDeclaration)
   return closestOf(target, POPUP_ANCESTORS) !== null;
 }
 
-export function createDisclosureDetector(root: Element): DisclosureDetector {
-  // Pre-pass over the same composed tree: controls with aria-expanded="false" and the tabs, indexed by what they control.
+/**
+ * `controlEls` are the elements of the composed tree that have an `aria-controls` attribute (the probe collects them while it
+ * walks): the controls with aria-expanded="false" and the tabs, indexed by what they control.
+ */
+export function createDisclosureDetector(controlEls: readonly Element[]): DisclosureDetector {
   const controlledBy = new Map<Element, Element[]>();
   const tabsOfPanel = new Map<Element, Element[]>();
   const push = (m: Map<Element, Element[]>, k: Element, v: Element): void => {
     const l = m.get(k);
     if (l) l.push(v); else m.set(k, [v]);
   };
-  walkComposed(root, ({ el }) => {
-    const controls = hasAttr(el, "aria-controls");
-    if (!controls) return;
+  for (const el of controlEls) {
     if (getAttr(el, "aria-expanded") === "false") for (const t of idRefs(el, "aria-controls")) push(controlledBy, t, el);
     if (roleOf(el) === "tab") for (const t of idRefs(el, "aria-controls")) push(tabsOfPanel, t, el);
-  });
+  }
 
   const firstSummary = new WeakMap<Element, Element | null>();
   const summaryOf = (details: Element): Element | null => {
@@ -150,10 +155,13 @@ export function createDisclosureDetector(root: Element): DisclosureDetector {
   };
 
   return {
-    test(el, parentFlag) {
-      const cs = getComputedStyle(el);
-      if (parentFlag) return cs.display !== "none";
-      return isRoot(el, cs);
+    test(el, parentFlag, display, parentTag, hasHidden, role) {
+      if (parentFlag) return display !== "none";
+      // A superset of the elements the four patterns can accept; `isRoot` is exact on them.
+      const a = parentTag === "details";
+      const c = role !== undefined && (role.length >= 64 || role.toLowerCase().includes("tabpanel")); // 64 = the probe's cap on `role`
+      if (!(a || hasHidden || c || controlledBy.has(el))) return false;
+      return isRoot(el, getComputedStyle(el));
     },
   };
 }
