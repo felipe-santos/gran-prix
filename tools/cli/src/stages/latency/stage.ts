@@ -25,6 +25,7 @@ interface Params {
   pages?: number;
   repetitions?: number;
   cpu_throttle?: number;
+  throttle?: "cdp-rate" | "calibrated";
   min_elements?: number;
   max_elements?: number;
   order_prefix?: string;
@@ -42,7 +43,8 @@ const PARAMS_SCHEMA = {
   properties: {
     pages: { type: "integer", minimum: 1, description: `Pages to measure (default ${G5_MIN_PAGES}; the gate asks for at least ${G5_MIN_PAGES}).` },
     repetitions: { type: "integer", minimum: 1, description: "Timed loads per page (default 3; every one counts)." },
-    cpu_throttle: { type: "number", minimum: 1, description: "CPU slowdown through CDP Emulation.setCPUThrottlingRate (default 4)." },
+    cpu_throttle: { type: "number", minimum: 1, description: "The CPU slowdown to measure under (default 4). With throttle \"cdp-rate\" it is the CDP Emulation.setCPUThrottlingRate rate." },
+    throttle: { type: "string", enum: ["cdp-rate", "calibrated"], description: "\"cdp-rate\" (default): set the CDP rate to cpu_throttle (its effect on a ~100 ms task is well under the rate). \"calibrated\": search the CDP rate that makes a ~100 ms reference loop cpu_throttle times slower (within 0.2) and measure with it; the rate and the search are in the report." },
     min_elements: { type: "integer", minimum: 0, description: `Smallest page, in elements of the snapshot (default ${G5_MIN_ELEMENTS}).` },
     max_elements: { type: "integer", minimum: 0, description: `Largest page, in elements of the snapshot (default ${G5_MAX_ELEMENTS}).` },
     order_prefix: { type: "string", minLength: 1, description: `Prefix of the page order, sha256(prefix + url) (default "${G5_ORDER_PREFIX}").` },
@@ -78,6 +80,7 @@ export const measureLatencyStage: StagePlugin = defineStage(
       ...(p.pages !== undefined ? { pages: p.pages } : {}),
       ...(p.repetitions !== undefined ? { repetitions: p.repetitions } : {}),
       ...(p.cpu_throttle !== undefined ? { cpuThrottle: p.cpu_throttle } : {}),
+      ...(p.throttle !== undefined ? { throttle: p.throttle } : {}),
       ...(p.min_elements !== undefined ? { minElements: p.min_elements } : {}),
       ...(p.max_elements !== undefined ? { maxElements: p.max_elements } : {}),
       ...(p.order_prefix !== undefined ? { orderPrefix: p.order_prefix } : {}),

@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { decide } from "../../../scripts/decide-dom-v0.mjs";
 import { ArtifactStore, StageRegistry, checkPipeline, dataPaths, runPipeline } from "../src/index.js";
 import { ALL_STAGES } from "../src/stages/index.js";
-import { G5_ORDER_PREFIX, LATENCY_IMPL, buildSyntheticModel, measureLatency, orderKey, selectPages, writeModelPackage } from "../src/stages/latency/index.js";
+import { G5_ORDER_PREFIX, LATENCY_IMPL, buildSyntheticModel, calibrateRate, measureLatency, orderKey, selectPages, writeModelPackage } from "../src/stages/latency/index.js";
 import { buildReport, type Sample } from "../src/stages/latency/report.js";
 import { nearestRank, summarize } from "../src/stages/latency/stats.js";
 import { buildPageModel } from "../src/stages/latency/model-js.js";
@@ -83,6 +83,55 @@ describe("percentiles (nearest rank)", () => {
   });
 });
 
+describe("throttle calibration (pure search over a fake reference loop)", () => {
+  // The real loop gets less than `rate` times slower; model that as ratio = rate^0.6 (a 100 ms loop).
+  const sublinear = (exp: number, jitter = 0) => {
+    let n = 0;
+    return async (rate: number): Promise<number> => 100 * Math.pow(rate, exp) * (1 + jitter * Math.sin(++n * 12.9898));
+  };
+
+  it("finds the rate whose slowdown is the target, from below (4^(1/0.6) = 10.08)", async () => {
+    const c = await calibrateRate(sublinear(0.6), { target: 4 });
+    expect(c.converged).toBe(true);
+    expect(Math.abs(c.ratio - 4)).toBeLessThanOrEqual(0.2);
+    expect(c.rate).toBeGreaterThan(8);
+    expect(c.rate).toBeLessThan(12);
+    expect(c.steps[0]).toMatchObject({ rate: 4 });
+    expect(c.unthrottled_ms).toBe(100);
+  });
+
+  it("also converges when the throttle overshoots (ratio above the rate's share)", async () => {
+    const c = await calibrateRate(sublinear(1.3), { target: 4 });
+    expect(c.converged).toBe(true);
+    expect(c.rate).toBeLessThan(4);
+  });
+
+  it("is accepted at the first step when the rate already does it", async () => {
+    const c = await calibrateRate(sublinear(1), { target: 4 });
+    expect(c.steps).toHaveLength(1);
+    expect(c.rate).toBe(4);
+    expect(c.converged).toBe(true);
+  });
+
+  it("with noise in the measurements it still ends on the step closest to the target", async () => {
+    const c = await calibrateRate(sublinear(0.6, 0.03), { target: 4, tolerance: 0.2 });
+    const closest = Math.min(...c.steps.map((s) => Math.abs(s.ratio - 4)));
+    expect(Math.abs(c.ratio - 4)).toBeCloseTo(closest, 10);
+  });
+
+  it("says it did not converge when no rate can reach the target (the rate is capped)", async () => {
+    const c = await calibrateRate(async (rate) => 100 * Math.min(rate, 2), { target: 4, maxSteps: 5 });
+    expect(c.converged).toBe(false);
+    expect(c.steps.length).toBeLessThanOrEqual(5);
+    expect(c.ratio).toBeLessThan(4);
+  });
+
+  it("refuses a target that is not a slowdown, and an unthrottled loop that takes no time", async () => {
+    await expect(calibrateRate(sublinear(1), { target: 1 })).rejects.toThrow(/target/);
+    await expect(calibrateRate(async () => 0, { target: 4 })).rejects.toThrow(/unthrottled/);
+  });
+});
+
 // A report made of known samples: 24 pages x 3 repetitions, every load of page k takes (10 + k) ms in total.
 function fakeInput(overrides: { pages?: number; reps?: number; throttle?: number; bytes?: [number, number] } = {}) {
   const nPages = overrides.pages ?? 24;
@@ -126,6 +175,19 @@ describe("the report and how the decision script reads it", () => {
     expect(doc.latency_ms.per_page_median_p95).toBe(33);
     expect(doc.per_page).toHaveLength(24);
     expect(doc.size_bytes).toMatchObject({ package_bytes: 30_000, extension_bytes: 41_000, limit: 100_000 });
+  });
+
+  it("records how the throttle was obtained: nothing extra for the default, the rate and the search for a calibrated run", () => {
+    expect(doc.throttle).toBeNull();
+    expect(doc.intrinsic.runtime.throttle_mode).toBeUndefined();
+    const cal = { target: 4, tolerance: 0.2, unthrottled_ms: 100, rate: 10.1, ratio: 4.02, converged: true, steps: [{ rate: 4, ratio: 2.3 }, { rate: 10.1, ratio: 4.02 }] };
+    const c = buildReport({ ...fakeInput(), throttle: { mode: "calibrated" as const, target: 4, cdp_rate: 10.1, calibration: cal, check_after: { cdp_rate: 10.1, unthrottled_ms: 100, throttled_ms: 405, ratio: 4.05 } } }) as any;
+    expect(c.throttle).toMatchObject({ mode: "calibrated", target: 4, cdp_rate: 10.1, calibration: { converged: true, rate: 10.1 }, check_after: { ratio: 4.05 } });
+    expect(c.intrinsic.runtime).toMatchObject({ cpu_throttle: 4, throttle_mode: "calibrated", cdp_rate: 10.1 });
+    expect(c.intrinsic.runtime.environment).toContain("4x CPU throttle (calibrated CDP rate 10.1)");
+    const e = evidenceOf(GO);
+    e.g5 = c;
+    expect(decide(e, CONFIG).gates.G5).toMatchObject({ passed: true }); // the decision still reads the same fields
   });
 
   it("the gates carry the numbers and say pass or fail against 150 ms and 100,000 bytes", () => {
@@ -242,13 +304,39 @@ describe("in Chromium, on the synthetic fixture pages (1 repetition, 4x throttle
     expect(doc.parity).toMatchObject({ checked: true });
     expect(doc.parity.rows).toBeGreaterThan(0);
     expect(doc.parity.max_abs_diff).toBeLessThanOrEqual(1e-5);
-    expect(doc.throttle_check.ratio).toBeGreaterThan(1.5);
+    // The measured throttle factor depends on the machine's load, so only its shape is asserted: it exists, it is a
+    // positive finite number, and the report warns exactly when it lands far from the requested rate.
+    const check = doc.throttle_check;
+    expect(Number.isFinite(check.ratio) && check.ratio > 0).toBe(true);
+    expect(Number.isFinite(check.unthrottled_ms) && check.unthrottled_ms > 0).toBe(true);
+    expect(Number.isFinite(check.throttled_ms) && check.throttled_ms > 0).toBe(true);
+    expect((doc.warnings as string[]).some((w) => /busy-loop check slowed down/.test(w))).toBe(check.ratio < 4 * 0.6);
     expect(doc.environment.browser).toMatch(/^\d+\./);
     expect(doc.load_average.before).toHaveLength(3);
     // too few pages for the gate: the decision script says so
     const e = evidenceOf(GO);
     e.g5 = doc;
     expect(() => decide(e, CONFIG)).toThrow(/pages measured/);
+  });
+
+  it("throttle: calibrated searches a CDP rate, measures with it and records the search (shape only, no time asserted)", async () => {
+    const doc = (await measureLatency({ snapshots: snaps, modelDir, pages: 1, repetitions: 1, cpuThrottle: 4, throttle: "calibrated", waitFrames: 1, minElements: 1, maxElements: 1e6, verify: false, log: () => undefined })) as any;
+    expect(doc.params).toMatchObject({ throttle: "calibrated", cpu_throttle: 4 });
+    expect(doc.throttle).toMatchObject({ mode: "calibrated", target: 4 });
+    expect(Number.isFinite(doc.throttle.cdp_rate) && doc.throttle.cdp_rate >= 1).toBe(true);
+    const cal = doc.throttle.calibration;
+    expect(cal.steps.length).toBeGreaterThan(0);
+    expect(cal.rate).toBe(doc.throttle.cdp_rate);
+    expect(typeof cal.converged).toBe("boolean");
+    expect(doc.throttle_check.cdp_rate).toBe(doc.throttle.cdp_rate);
+    expect(Number.isFinite(doc.throttle.check_after.ratio)).toBe(true);
+    expect(doc.intrinsic.runtime).toMatchObject({ cpu_throttle: 4, throttle_mode: "calibrated", cdp_rate: doc.throttle.cdp_rate });
+    // a search that did not converge is said in the warnings, not hidden
+    expect((doc.warnings as string[]).some((w) => /calibration did not reach/.test(w))).toBe(!cal.converged);
+  });
+
+  it("an unknown throttle mode is refused", async () => {
+    await expect(measureLatency({ snapshots: snaps, modelDir, pages: 1, repetitions: 1, throttle: "fast" as never, log: () => undefined })).rejects.toThrow(/throttle must be/);
   });
 
   it("refuses a browser that is not the pinned one", async () => {

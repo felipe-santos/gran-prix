@@ -25,11 +25,66 @@ export interface TextStats {
   endsWithPunct: number;
 }
 
+const MAX_STOPWORD_LEN = Math.max(...[...STOPWORDS].map((w) => w.length));
+/** ASCII code -> 1 when `\p{P}` matches it (built with the regex itself, so it cannot disagree with it). */
+const ASCII_PUNCT = new Uint8Array(128);
+for (let c = 0; c < 128; c++) ASCII_PUNCT[c] = PUNCT_RE.test(String.fromCharCode(c)) ? 1 : 0;
+
+/** ASCII `\s`: tab, LF, VT, FF, CR and space. */
+const isWsAscii = (c: number): boolean => c === 32 || (c >= 9 && c <= 13);
+const isAlnumAscii = (c: number): boolean => (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || (c >= 65 && c <= 90);
+/** ASCII code -> 1 whitespace, 2 letter or digit, 3 `\p{P}`, 0 anything else: one lookup per character in `analyzeText`. */
+const ASCII_CLASS = new Uint8Array(128);
+for (let c = 0; c < 128; c++) ASCII_CLASS[c] = isWsAscii(c) ? 1 : isAlnumAscii(c) ? 2 : ASCII_PUNCT[c] === 1 ? 3 : 0;
+
 /**
  * `sample` is the node's `own_text` (whitespace already collapsed by the probe, possibly truncated);
  * `fullLen` is `own_text_len` (before truncation).
+ *
+ * One pass over the code units for ASCII text (words, stopwords, punctuation, the sentence end); the first non-ASCII
+ * character sends the whole string to `analyzeTextReference`. The results are the same numbers, computed the same way.
  */
 export function analyzeText(sample: string, fullLen: number): TextStats {
+  const n = sample.length;
+  if (n === 0) return { words: 0, stopwordRatio: 0, punctRatio: 0, endsWithPunct: 0 };
+  let words = 0;
+  let stop = 0;
+  let punct = 0;
+  let i = 0;
+  while (i < n) {
+    let c = sample.charCodeAt(i);
+    if (c >= 128) return analyzeTextReference(sample, fullLen);
+    if (ASCII_CLASS[c] === 1) { i++; continue; }
+    let first = -1; // first and last alphanumeric of the token: the token without its edge punctuation
+    let last = -1;
+    while (i < n) {
+      c = sample.charCodeAt(i);
+      if (c >= 128) return analyzeTextReference(sample, fullLen);
+      const k = ASCII_CLASS[c] as number;
+      if (k === 1) break;
+      if (k === 2) { if (first < 0) first = i; last = i; }
+      else if (k === 3) punct++;
+      i++;
+    }
+    words++;
+    if (first >= 0 && last - first < MAX_STOPWORD_LEN && STOPWORDS.has(sample.slice(first, last + 1).toLowerCase())) stop++;
+  }
+  let endsWithPunct = 0.5; // the probe truncated the text: the end is unknown
+  if (fullLen <= n) {
+    let e = n;
+    while (e > 0 && isWsAscii(sample.charCodeAt(e - 1))) e--;
+    for (let c = e > 0 ? sample.charCodeAt(e - 1) : 0; c === 34 || c === 39 || c === 41 || c === 93; c = e > 0 ? sample.charCodeAt(e - 1) : 0) e--; // closers: " ' ) ]
+    const t = e > 0 ? sample.charCodeAt(e - 1) : 0;
+    endsWithPunct = t === 46 || t === 33 || t === 63 ? 1 : 0; // . ! ?
+  }
+  return { words, stopwordRatio: words > 0 ? stop / words : 0, punctRatio: punct / n, endsWithPunct };
+}
+
+/**
+ * The definition of the text statistics (regex based, any Unicode). `analyzeText` is its single-pass equivalent for the
+ * ASCII text that almost every own_text is; test/text-fast.test.ts holds the two together on random strings.
+ */
+export function analyzeTextReference(sample: string, fullLen: number): TextStats {
   if (sample.length === 0) return { words: 0, stopwordRatio: 0, punctRatio: 0, endsWithPunct: 0 };
   const toks = sample.split(/\s+/);
   let words = 0;
@@ -87,11 +142,52 @@ export function fnv1a32(s: string): number {
   return h >>> 0;
 }
 
+const isAscii = (v: string): boolean => {
+  for (let i = 0; i < v.length; i++) if (v.charCodeAt(i) >= 128) return false;
+  return true;
+};
+
+/** `idClassTokensReference` of one ASCII value: runs of letters and digits, split before an upper case letter that follows a lower case letter or a digit. */
+function pushAsciiTokens(v: string, out: string[]): void {
+  const n = v.length;
+  let start = -1;
+  let allDigits = true;
+  let prevLowOrDigit = false;
+  for (let i = 0; i <= n; i++) {
+    const c = i < n ? v.charCodeAt(i) : 0;
+    const digit = c >= 48 && c <= 57;
+    const lower = c >= 97 && c <= 122;
+    const upper = c >= 65 && c <= 90;
+    if (start >= 0 && (!(digit || lower || upper) || (upper && prevLowOrDigit))) {
+      const len = i - start;
+      if (len >= 2 && len <= 24 && !allDigits) out.push(v.slice(start, i).toLowerCase());
+      start = -1;
+    }
+    if (digit || lower || upper) {
+      if (start < 0) { start = i; allDigits = true; }
+      if (!digit) allDigits = false;
+      prevLowOrDigit = lower || digit;
+    }
+  }
+}
+
 /**
  * Tokens of an id / class string: camelCase and non-alphanumeric boundaries split, lowercased;
  * tokens of fewer than 2 characters, more than 24, or made only of digits are dropped.
+ * ASCII values are split by `pushAsciiTokens`; any other value goes through `idClassTokensReference`.
  */
 export function idClassTokens(...values: (string | undefined)[]): string[] {
+  const out: string[] = [];
+  for (const v of values) {
+    if (!v) continue;
+    if (isAscii(v)) pushAsciiTokens(v, out);
+    else for (const t of idClassTokensReference(v)) out.push(t);
+  }
+  return out;
+}
+
+/** The definition of the tokenizer (regex based, any Unicode); `idClassTokens` must return the same list. */
+export function idClassTokensReference(...values: (string | undefined)[]): string[] {
   const out: string[] = [];
   for (const v of values) {
     if (!v) continue;
@@ -130,8 +226,8 @@ const HINT_RULES: Record<HintName, HintRule> = {
   share: { exact: new Set(["share", "sharing", "social", "tweet", "follow"]), prefix: ["share", "sharing", "social"] },
 };
 
-/** Bit i set when some token matches the i-th hint of `HINT_NAMES`. */
-export function hintBits(tokens: string[]): number {
+/** The definition of `hintBits`: for each hint, does some token match it. */
+export function hintBitsReference(tokens: string[]): number {
   let bits = 0;
   for (let h = 0; h < HINT_NAMES.length; h++) {
     const rule = HINT_RULES[HINT_NAMES[h] as HintName];
@@ -140,6 +236,30 @@ export function hintBits(tokens: string[]): number {
       if (!hit) for (const p of rule.prefix) if (t.startsWith(p)) { hit = true; break; }
       if (hit) { bits |= 1 << h; break; }
     }
+  }
+  return bits;
+}
+
+/** exact token -> bits of the hints it matches exactly; prefix -> bit of its hint; first characters that start some prefix. */
+const HINT_EXACT = new Map<string, number>();
+const HINT_PREFIXES: { prefix: string; bit: number }[] = [];
+const HINT_PREFIX_FIRST = new Uint8Array(128);
+HINT_NAMES.forEach((name, h) => {
+  const rule = HINT_RULES[name];
+  for (const t of rule.exact) HINT_EXACT.set(t, (HINT_EXACT.get(t) ?? 0) | (1 << h));
+  for (const prefix of rule.prefix) {
+    HINT_PREFIXES.push({ prefix, bit: 1 << h });
+    HINT_PREFIX_FIRST[prefix.charCodeAt(0)] = 1;
+  }
+});
+
+/** Bit i set when some token matches the i-th hint of `HINT_NAMES`. Each token is looked up once, for all hints. */
+export function hintBits(tokens: string[]): number {
+  let bits = 0;
+  for (const t of tokens) {
+    bits |= HINT_EXACT.get(t) ?? 0;
+    const c = t.charCodeAt(0);
+    if (c < 128 && HINT_PREFIX_FIRST[c] === 1) for (const p of HINT_PREFIXES) if ((bits & p.bit) === 0 && t.startsWith(p.prefix)) bits |= p.bit;
   }
   return bits;
 }

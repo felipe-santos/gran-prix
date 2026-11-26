@@ -102,6 +102,17 @@ function medianFontSize(nodes: SnapNodeLike[], dropped: Uint8Array, visible: Uin
   return (lo + hi) / 2;
 }
 
+/** Hint bits (low 16) and bucket bits (above) of the tokens of one id or class string, memoized per string. */
+function tokenBitsOf(value: string, memo: Map<string, number>): number {
+  let bits = memo.get(value);
+  if (bits === undefined) {
+    const tokens = idClassTokens(value);
+    bits = hintBits(tokens) | (bucketBits(tokens) << 16);
+    memo.set(value, bits);
+  }
+  return bits;
+}
+
 export function derive(snapshot: SnapshotLike, schema: FeatureSchemaLike): Ctx {
   const nodes = snapshot.nodes;
   const n = nodes.length;
@@ -110,6 +121,7 @@ export function derive(snapshot: SnapshotLike, schema: FeatureSchemaLike): Ctx {
   const droppedBy = new Int16Array(n).fill(-1);
   const hiddenAnc = new Uint8Array(n); // display:none on the node or an ancestor
   const rules = schema.prefilter.rules;
+  const tagSets = rules.map((rule) => (rule.kind === "tag" ? new Set(rule.tags) : null)); // `tags.includes` once per rule, not per node
 
   for (let i = 0; i < n; i++) {
     const nd = nodes[i] as SnapNodeLike;
@@ -118,7 +130,7 @@ export function derive(snapshot: SnapshotLike, schema: FeatureSchemaLike): Ctx {
     for (let r = 0; r < rules.length; r++) {
       const rule = rules[r]!;
       let hit = false;
-      if (rule.kind === "tag") hit = rule.tags.includes(nd.tag);
+      if (rule.kind === "tag") hit = (tagSets[r] as Set<string>).has(nd.tag);
       else if (rule.kind === "style") hit = hiddenAnc[i] === 1; // display:none removes the whole subtree from rendering
       else if (rule.kind === "visibility_hidden") hit = nd.style.visibility === "hidden";
       else if (rule.kind === "zero_rect") hit = nd.rect === null || nd.rect.w <= 0 || nd.rect.h <= 0;
@@ -197,6 +209,7 @@ export function derive(snapshot: SnapshotLike, schema: FeatureSchemaLike): Ctx {
   const stopwordRatio = new Float64Array(n);
   const punctRatio = new Float64Array(n);
   const endsWithPunct = new Float64Array(n);
+  const tokenBits = new Map<string, number>();
   for (let i = 0; i < n; i++) {
     const nd = nodes[i] as SnapNodeLike;
     const p = nd.parent;
@@ -207,9 +220,15 @@ export function derive(snapshot: SnapshotLike, schema: FeatureSchemaLike): Ctx {
       hints[i] = p >= 0 ? (hints[p] as number) : 0;
       continue;
     }
-    const tokens = idClassTokens(nd.attrs.id, nd.attrs.class);
-    hints[i] = hintBits(tokens) | (p >= 0 ? (hints[p] as number) : 0);
-    buckets[i] = bucketBits(tokens);
+    // Hint and bucket bits are a function of the id string and of the class string, each on its own (a bit is set when SOME
+    // token matches, so the bits of the two values simply add up), and repeated cards / list items repeat the strings.
+    const id = nd.attrs.id;
+    const cls = nd.attrs.class;
+    let bits = 0; // hints in the low 16 bits, buckets above them
+    if (id) bits = tokenBitsOf(id, tokenBits);
+    if (cls) bits |= tokenBitsOf(cls, tokenBits);
+    hints[i] = (bits & 0xffff) | (p >= 0 ? (hints[p] as number) : 0);
+    buckets[i] = bits >>> 16;
     if (nd.own_text_len > 0) {
       const s = analyzeText(nd.own_text, nd.own_text_len);
       // Words of the full text, extrapolated from the sample when the probe truncated it.
