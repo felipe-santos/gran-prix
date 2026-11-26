@@ -1,0 +1,64 @@
+{
+  "format": "gran-prix.corpus-freeze-record",
+  "format_version": "1.0.0",
+  "experiment": "dom-v0",
+  "corpus": "frame-v0 (attempt 2)",
+  "lock_file": "data/corpus/frame-v0/corpus-v0.lock.json (local only; page data is never committed)",
+  "lock_sha256": "sha256:975e13a0a75e7da87715ff4a273ac18859346724bdbab70eb9fd899bacaf28b8",
+  "frozen_at": "2026-11-25T21:06:17.447Z",
+  "code_commit": "4fd6112a0512698d394aa67b7eb682bc7e60dc4d",
+  "probe_version": "0.2.0",
+  "seed": 20261125,
+  "counts": {
+    "article": {
+      "target": 30,
+      "accepted": 30
+    },
+    "product": {
+      "target": 30,
+      "accepted": 30
+    },
+    "docs": {
+      "target": 30,
+      "accepted": 30
+    },
+    "forum": {
+      "target": 30,
+      "accepted": 30
+    },
+    "landing": {
+      "target": 25,
+      "accepted": 25
+    },
+    "spa": {
+      "target": 25,
+      "accepted": 12
+    }
+  },
+  "split": {
+    "contract": "hash-bucket-v1",
+    "ranges": {
+      "train": [
+        0,
+        55
+      ],
+      "val": [
+        55,
+        70
+      ],
+      "test": [
+        70,
+        100
+      ]
+    },
+    "salt": "gp-dom-v0-s10",
+    "rule": "pre-registered minima (>= 6 test, >= 17 dev) for article, product, docs, forum, landing; spa >= 3 test, >= 6 dev (registered deviation approved by the owner on 2026-11-25: the spa frame is exhausted at 12 of 25)",
+    "counts": {
+      "train": 98,
+      "val": 23,
+      "test": 36,
+      "dev": 121
+    }
+  },
+  "verify": "node tools/corpus/src/cli.mjs verify-lock"
+}

@@ -82,6 +82,21 @@ describe("split check (§3)", () => {
     expect(satisfies(r.counts, only)).toBe(true);
     expect(satisfies(r.counts)).toBe(false);
   });
+  it("the amended rule (registered deviation) relaxes only spa: >= 3 test and >= 6 dev, the rest as pre-registered", () => {
+    const twelve = pages.filter((p) => p.category !== "spa").concat(pages.filter((p) => p.category === "spa").slice(0, 12));
+    const r = firstSalt(twelve, 1000, undefined, true);
+    expect(r.i).not.toBeNull();
+    expect(satisfies(r.counts, undefined, true)).toBe(true);
+    expect(r.counts.spa.test).toBeGreaterThanOrEqual(3);
+    expect(r.counts.spa.dev).toBeGreaterThanOrEqual(6);
+    for (const c of ["article", "product", "docs", "forum", "landing"]) {
+      expect(r.counts[c].test).toBeGreaterThanOrEqual(6);
+      expect(r.counts[c].dev).toBeGreaterThanOrEqual(17);
+    }
+    for (const t of r.tried.slice(0, -1)) expect(satisfies(t.counts, undefined, true)).toBe(false);
+    // without the amendment the same corpus has no admissible salt
+    expect(firstSalt(twelve).i).toBeNull();
+  });
   it("firstSalt returns the first i that satisfies the rule", () => {
     const r = firstSalt(pages);
     expect(r.i).not.toBeNull();

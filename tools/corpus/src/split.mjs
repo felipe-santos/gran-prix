@@ -11,6 +11,13 @@ import { effectiveRecords } from "./state.mjs";
 export const PREREG_RANGES = { train: [0, 55], val: [55, 70], test: [70, 100] };
 export const MIN_TEST = 6;
 export const MIN_DEV = 17;
+/**
+ * Registered deviation (approved by the owner on 2026-11-25, before any label): the SPA frame is exhausted at 12 of
+ * 25 pages, which can never reach 6 test + 17 dev. The five complete categories keep the pre-registered minima; the
+ * SPA category needs >= 3 test and >= 6 dev (proportional to its n). Decided on counts only.
+ */
+export const AMENDED_MINIMA = { spa: { test: 3, dev: 6 } };
+const minimaOf = (category, amended) => (amended && AMENDED_MINIMA[category]) || { test: MIN_TEST, dev: MIN_DEV };
 export const saltOf = (i) => `gp-dom-v0-s${i}`;
 
 /** `pages` = [{category, group_key}]. Counts pages per category and split. */
@@ -27,14 +34,15 @@ export function splitCounts(pages, salt) {
   return out;
 }
 
-export const satisfies = (counts, only) => Object.entries(counts).every(([k, c]) => (only && !only.includes(k)) || (c.test >= MIN_TEST && c.dev >= MIN_DEV));
+export const satisfies = (counts, only, amended = false) =>
+  Object.entries(counts).every(([k, c]) => (only && !only.includes(k)) || (c.test >= minimaOf(k, amended).test && c.dev >= minimaOf(k, amended).dev));
 
 /** `only` restricts the rule to some categories (used for the indicative i of the complete categories; never pre-registered). */
-export function firstSalt(pages, maxI = 1000, only) {
+export function firstSalt(pages, maxI = 1000, only, amended = false) {
   const tried = [];
   for (let i = 0; i < maxI; i++) {
     const counts = splitCounts(pages, saltOf(i));
-    const ok = satisfies(counts, only);
+    const ok = satisfies(counts, only, amended);
     tried.push({ i, ok, counts });
     if (ok) return { i, salt: saltOf(i), counts, tried };
   }
@@ -65,6 +73,16 @@ export async function splitCheck(dataDir) {
     const ind = firstSalt(pages, 1000, complete);
     lines.push(`INDICATIVE, NOT PRE-REGISTERED: first i for the complete categories only (${complete.join(", ")}): ${ind.i === null ? "none" : `${ind.i} (salt ${ind.salt})`}`);
     if (ind.i !== null) for (const c of CATEGORIES) lines.push(`  ${c.name.padEnd(8)} train ${String(ind.counts[c.name].train).padStart(2)}  val ${String(ind.counts[c.name].val).padStart(2)}  test ${String(ind.counts[c.name].test).padStart(2)}  dev ${String(ind.counts[c.name].dev).padStart(2)}${complete.includes(c.name) ? "" : "   (incomplete, not part of the rule)"}`);
+  }
+  if (res.i === null) {
+    const am = firstSalt(pages, 1000, undefined, true);
+    lines.push(`AMENDED RULE (registered deviation, approved by the owner 2026-11-25): spa needs >= ${AMENDED_MINIMA.spa.test} test and >= ${AMENDED_MINIMA.spa.dev} dev, the other categories as pre-registered: ${am.i === null ? "none" : `first i = ${am.i} -> salt ${am.salt}`}`);
+    if (am.i !== null) {
+      for (const c of CATEGORIES) lines.push(`  ${c.name.padEnd(8)} train ${String(am.counts[c.name].train).padStart(2)}  val ${String(am.counts[c.name].val).padStart(2)}  test ${String(am.counts[c.name].test).padStart(2)}  dev ${String(am.counts[c.name].dev).padStart(2)}`);
+      const sum = (f) => CATEGORIES.reduce((a, c) => a + am.counts[c.name][f], 0);
+      lines.push(`  total    train ${sum("train")}  val ${sum("val")}  test ${sum("test")}  dev ${sum("dev")}`);
+    }
+    res.amended = am;
   }
   const provisional = CATEGORIES.some((c) => pages.filter((p) => p.category === c.name).length < c.n);
   if (provisional) lines.push(`PROVISIONAL: the corpus is incomplete (${CATEGORIES.map((c) => `${c.name} ${pages.filter((p) => p.category === c.name).length}/${c.n}`).join(", ")})`);

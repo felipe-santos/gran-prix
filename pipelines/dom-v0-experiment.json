@@ -3,7 +3,7 @@
   "format_version": "1.0.0",
   "name": "dom-v0-experiment",
   "description": "The DOM experiment of protocol plano/experimento-dom-v0.md (E3), as a pipeline: captured snapshots (external) -> features -> label layers (human and LLM as externals; the heuristics and baselines as stages) -> merge -> dataset (hash split by domain, 55/15/30) -> train.cv x 5 seeds (grouped CV with nested tuning over the fixed 12-configuration grid, OOF bundle, tau*, final model) -> package -> evaluate on dev (OOF bundles of the 5 MLP seeds and of the GBDT, the heuristics, the router: G0 and the best baselines) and on the test (one frozen model per seed, opened once each: test-openings.jsonl). Run it only after the protocol, the guide, the salt and the code are frozen. The externals point into data/ and DO NOT EXIST yet: the pipeline validates (gp validate) but does not run. The GBDT is Python and offline, outside the pipeline: run tools/baselines/gbdt/gbdt.py on the Dataset artifact (--emit test) and put bundle-dev-oof/ and bundle-test/ at the paths below. G3-G6 (QA, tokens, runtime, logged-in) come from other pipelines; the verdict is node scripts/decide-dom-v0.mjs over these reports. Run from the repo root: gp run pipelines/dom-v0-experiment.json. The test split of each seed is opened by its eval_test stage and registered in <data dir>/test-openings.jsonl.",
-  "vars": { "split_salt": "gp-dom-v0-s0", "bootstrap_seed": 20261125, "resamples": 10000 },
+  "vars": { "split_salt": "gp-dom-v0-s10", "bootstrap_seed": 20261125, "resamples": 10000 },
   "externals": {
     "snapshots": { "type": "SnapshotSet", "path": "data/snapshots" },
     "schema": { "type": "FeatureSchema", "path": "packages/features/src/schema/feature-schema.v0.json" },
