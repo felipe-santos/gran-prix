@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertValid, type EvalReport, type PipelineSpec, type QaTaskSet, type Sha256 } from "@gran-prix/contracts";
+import { assertValid, contractId, groupBucket, type EvalReport, type PipelineSpec, type QaTaskSet, type Sha256 } from "@gran-prix/contracts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without declarations
 import { decide } from "../../../scripts/decide-dom-v0.mjs";
@@ -28,6 +28,7 @@ const NAMES = ["article-1", "article-2", "docs-1", "docs-2", "docs-3", "forum-1"
 const readJson = <T>(p: string): T => JSON.parse(readFileSync(p, "utf8")) as T;
 const PRICES = { input_usd_per_mtok: 3, output_usd_per_mtok: 15 }; // example prices for the test, not a claim about any model
 const TAU = 0.4;
+const HASHES = { f: `sha256:${"a".repeat(64)}` as Sha256, l: `sha256:${"b".repeat(64)}` as Sha256 };
 const MODEL_ID: Sha256 = `sha256:${"7".repeat(64)}`;
 
 // ------------------------------------------------------------------------------------------------------------ the fake models
@@ -277,6 +278,56 @@ describe("the QA tool end to end (fake transport, 13 fixture pages)", () => {
       expect(d.judge.model).toBe(r === "score_r1" ? "test-sonnet-model" : "test-opus-model");
       expect(d.llm.model).toBe(r === "score_r1" ? "test-haiku-model" : "test-sonnet-model");
     }
+  });
+
+  it("with a dataset the splits decide: test pages first, dev pages complete the quota and are predicted out-of-fold; a dry run plans without a call", async () => {
+    const fixture = readJson<Record<string, unknown> & { groups: Array<Record<string, unknown>>; sources: Array<Record<string, unknown>> }>(join(ROOT, "packages/contracts/fixtures/valid/dataset/manifest.json"));
+    // per category: its first page is test, the second val, every other one train (the manifest records them as overrides of the hash split)
+    const nth = new Map<string, number>();
+    const splits = new Map<string, "train" | "val" | "test">();
+    for (const p of candidates.pages) {
+      const k = nth.get(p.stratum) ?? 0;
+      nth.set(p.stratum, k + 1);
+      splits.set(p.group_key, k === 0 ? "test" : k === 1 ? "val" : "train");
+    }
+    const groups = [...candidates.pages]
+      .sort((a, b) => (a.group_id < b.group_id ? -1 : 1))
+      .map((p) => ({ group_id: p.group_id, group_key: p.group_key, stratum: p.stratum, split: splits.get(p.group_key) as string, bucket: groupBucket("fixture-v1", p.group_key), n_rows: 1, n_pos: 1 }));
+    const rowsOf = (n: string): number => groups.filter((g) => g.split === n).length;
+    const fFiles = fixture["files"] as Record<string, Record<string, unknown>>;
+    const manifest = {
+      ...fixture,
+      split: { ...(fixture["split"] as object), overrides: Object.fromEntries(splits) },
+      groups,
+      sources: groups.map((g) => ({ group_id: g.group_id, features_id: HASHES.f, labels_id: HASHES.l })),
+      files: Object.fromEntries(["train", "val", "test"].map((n) => [n, { ...fFiles[n], rows: rowsOf(n) }])),
+      stats: { by_split: Object.fromEntries(["train", "val", "test"].map((n) => [n, { rows: rowsOf(n), pos_rate: 1 }])), by_stratum: {} },
+    };
+    delete (manifest as Record<string, unknown>)["dataset_id"];
+    const withId = { ...manifest, dataset_id: contractId("dataset-manifest", manifest as Record<string, unknown>) };
+    assertValid("dataset-manifest", withId);
+    const files = new Map<string, Uint8Array>([["manifest.json", new TextEncoder().encode(JSON.stringify(withId))]]);
+    const dataset = { id: HASHES.f, type: "Dataset", dir: "", json: () => ({}), files: () => [...files.keys()], file: (f: string) => files.get(f) as Uint8Array };
+    const gen = createQaStages({ provider: "fake", make: () => models.transport }).find((s) => s.spec.impl === "ts:qa.generate@1.0.0")!;
+    const before = models.transport.calls.length;
+    const ctx = {
+      params: { generator: { model: "test-opus-model", prices: PRICES }, quota: { docs: 2, article: 1 }, dry_run: true },
+      inputs: { snapshots: store.handle(out(run1, "collect", "snapshots"), "SnapshotSet"), markdown: store.handle(out(run1, "tokens", "markdown"), "Bundle"), gold: store.handle(out(run1, "gold", "labels"), "NodeLabelsSet"), dataset },
+      ledger: { reserve: () => { throw new Error("a dry run reserves nothing"); }, capUSD: 100, remainingUSD: () => 100 },
+      log: () => undefined,
+      dataDir: join(dir, "data-dry"),
+    } as unknown as Parameters<typeof gen.run>[0];
+    const res = (await gen.run(ctx)) as { candidates: { files: Record<string, string> }; report: { json: { pages: Record<string, number> } } };
+    const doc = JSON.parse(res.candidates.files["candidates.json"] as string) as CandidatesDoc;
+    expect(models.transport.calls.length).toBe(before);
+    const sel = doc.pages.filter((p) => p.status === "dry_run");
+    expect(sel.filter((p) => p.stratum === "article").map((p) => [p.split, p.prediction])).toEqual([["test", "frozen_model"]]);
+    const docs = sel.filter((p) => p.stratum === "docs");
+    expect(docs).toHaveLength(2);
+    expect(docs.filter((p) => p.split === "test").map((p) => p.prediction)).toEqual(["frozen_model"]);
+    expect(docs.filter((p) => p.split !== "test").map((p) => p.prediction)).toEqual(["oof"]);
+    expect(doc.selection.by_stratum["docs"]).toEqual({ wanted: 2, got: 2, test: 1, dev: 1, available: 3 });
+    expect(doc.dataset_id).toBe(withId.dataset_id);
   });
 
   it("a judge equal to the respondent is refused before any call", async () => {

@@ -232,7 +232,9 @@ export function createScoreStage(deps: QaStageDeps = REAL_DEPS): StagePlugin {
       });
 
       const target = p.agreement_target ?? 0.9;
+      const datasetId = p.dataset_id ?? taskSet.dataset_id;
       const notes: NonNullable<EvalReport["notes"]> = [
+        ...(datasetId === undefined ? [{ kind: "note" as const, text: "dataset_id is a PLACEHOLDER (zeros): neither params.dataset_id nor a dataset for qa.generate was given, so the task set carries none." }] : []),
         { kind: "note", text: `Respondent ${answers.respondent} (${answers.model}); prompt ${answers.prompt_id}, max_tokens ${answers.max_tokens}, no tools; request params ${JSON.stringify(answers.request)}. Judge ${judgeModel.model}, request params ${JSON.stringify({ send_temperature: judgeModel.params.send_temperature, thinking: judgeModel.params.thinking, effort: judgeModel.params.effort })}.` },
         { kind: "note", text: `Scoring: answers of at most ${p.fact_max_words ?? 5} normalized words are facts, decided by normalized exact/containment match; the rest by the LLM judge with the answer key (${result.scored.filter((s) => s.method === "judge").length} judged). Delta = mean over questions of (correct_a - correct_b), a FRACTION; CI = percentile of ${boot.resamples} domain-cluster bootstrap replicates (seed ${boot.seed}); p = McNemar exact, two-sided, informative.` },
         ...(answers.cut.length > 0 || result.cut ? [{ kind: "threat" as const, text: `The cut order of protocol 5.6 was applied: ${[...answers.cut.map((c) => `${c.step} (${c.arms.join(", ")})`), ...(result.cut ? [result.cut.step] : [])].join("; ")}. Arms that were cut are absent from this report; a decision that needs them will refuse to run.` }] : []),
@@ -252,7 +254,7 @@ export function createScoreStage(deps: QaStageDeps = REAL_DEPS): StagePlugin {
         format_version: "1.1.0" as const,
         mode: "downstream" as const,
         model_id: p.model_id,
-        dataset_id: p.dataset_id ?? taskSet.dataset_id ?? ZERO_SHA,
+        dataset_id: datasetId ?? ZERO_SHA,
         split: allTest ? ("test" as const) : ("all" as const),
         threshold: p.threshold,
         downstream,
