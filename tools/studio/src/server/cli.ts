@@ -5,18 +5,21 @@ import { userInfo } from "node:os";
 import { isMode, type Mode } from "../core/types.js";
 import { startStudio, type RunningStudio } from "./app.js";
 import { ANNOTATOR_RE } from "./human-store.js";
+import { loadQueues, queuesDir } from "./queues.js";
 import { listPages } from "./snapshot-set.js";
 
 export const USAGE = `gp-studio: local label review UI (nothing leaves this machine)
 
 usage:
-  gp-studio --data-dir <dir> [--annotator <name>] [--port <n>] [--default-mode blind|review] [--guide <file>]
+  gp-studio --data-dir <dir> [--annotator <name>] [--port <n>] [--default-mode blind|review] [--guide <file>] [--fixtures-dir <dir>] [--queues-dir <dir>]
 
   --data-dir        gp data dir whose artifact store holds the SnapshotSet(s) to label (default: data)
   --annotator       who is labeling; labels go to <data-dir>/human-labels/<annotator>/ (default: your login name)
   --port            port on 127.0.0.1 (default: a free one)
   --default-mode    mode of pages not opened yet: blind (default, no draft ever shown) or review
   --guide           annotation guide to serve as text for the quick-reference link (optional)
+  --fixtures-dir    fixtures/pages of the repository, for the calibration exercise (default: the one of this checkout)
+  --queues-dir      directory of the label queues <task>.json (default: <data-dir>/labeling/queues)
 
 exit status: 0 ok, 2 usage error`;
 
@@ -36,6 +39,8 @@ export interface ParsedArgs {
   port: number;
   defaultMode: Mode;
   guidePath?: string;
+  fixturesDir?: string;
+  queuesDir?: string;
   help: boolean;
 }
 
@@ -50,6 +55,8 @@ export function parseCli(argv: string[], cwd: string): ParsedArgs {
         port: { type: "string" },
         "default-mode": { type: "string" },
         guide: { type: "string" },
+        "fixtures-dir": { type: "string" },
+        "queues-dir": { type: "string" },
         help: { type: "boolean", short: "h" },
       },
       allowPositionals: false,
@@ -69,6 +76,8 @@ export function parseCli(argv: string[], cwd: string): ParsedArgs {
     port,
     defaultMode: mode,
     ...(v.guide !== undefined ? { guidePath: resolve(cwd, v.guide) } : {}),
+    ...(v["fixtures-dir"] !== undefined ? { fixturesDir: resolve(cwd, v["fixtures-dir"]) } : {}),
+    ...(v["queues-dir"] !== undefined ? { queuesDir: resolve(cwd, v["queues-dir"]) } : {}),
     help: v.help === true,
   };
 }
@@ -103,7 +112,11 @@ export async function main(argv: string[], io: { out(l: string): void; err(l: st
     port: args.port,
     defaultMode: args.defaultMode,
     ...(args.guidePath !== undefined ? { guidePath: args.guidePath } : {}),
+    ...(args.fixturesDir !== undefined ? { fixturesDir: args.fixturesDir } : {}),
+    ...(args.queuesDir !== undefined ? { queuesDir: args.queuesDir } : {}),
   });
+  const q = loadQueues(args.queuesDir ?? queuesDir(args.dataDir));
+  io.out(`gp-studio: ${q.queues.length} label queue(s)${q.invalid.length > 0 ? `, ${q.invalid.length} refused (${q.invalid.map((i) => i.file).join(", ")})` : ""} in ${args.queuesDir ?? queuesDir(args.dataDir)}`);
   io.out(`gp-studio: ${n} page(s) in ${args.dataDir}${n === 0 ? " (no SnapshotSet found: collect pages first)" : ""}`);
   io.out(`gp-studio: annotator "${args.annotator}", default mode ${args.defaultMode}; labels go to ${args.dataDir}/human-labels/${args.annotator}/`);
   io.out(`gp-studio: listening on 127.0.0.1 only. Open this URL (the token is the key, keep it private):`);

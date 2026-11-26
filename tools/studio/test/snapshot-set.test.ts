@@ -67,3 +67,23 @@ describe("disclosure flag (contracts v1.1)", () => {
     expect(after.model.units.length).toBe(before.model.units.length + 2); // the modal's h2 and p
   });
 });
+
+describe("the shared SnapshotSetReader (debt b)", () => {
+  it("is the class the cli exports, and the pages of the Studio are read through it", async () => {
+    const cli = await import("@gran-prix/cli");
+    const labels = await import("@gran-prix/labels");
+    expect(cli.SnapshotSetReader).toBe(labels.SnapshotSetReader);
+    const dir = tmpDir();
+    cpSync(inject("corpusDataDir"), dir, { recursive: true });
+    const refs = listPages(dir);
+    expect(refs).toHaveLength(2);
+    for (const ref of refs) {
+      expect(ref.reader).toBeInstanceOf(cli.SnapshotSetReader);
+      expect(ref.reader.entries()).toContainEqual(ref.entry);
+      expect(ref.reader.snapshot(ref.entry).snapshot_id).toBe(ref.entry.snapshot_id);
+      expect(ref.reader.html(ref.entry)).toContain("data-gp-id=");
+    }
+    // a path outside the artifact is refused by the file source, not read
+    expect(() => refs[0]!.reader.snapshot({ snapshot: "../../meta.json" })).toThrow(/unsafe/);
+  });
+});

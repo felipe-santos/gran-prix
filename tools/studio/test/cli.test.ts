@@ -14,6 +14,12 @@ describe("gp-studio command line", () => {
     expect(b).toMatchObject({ port: 4817, defaultMode: "review", guidePath: resolve("/work", "g.md"), dataDir: resolve("/work", "data") });
   });
 
+  it("parses the directories of the tasks: the label queues and the calibration fixtures", () => {
+    const a = parseCli(["--queues-dir", "q", "--fixtures-dir", "/abs/fx"], "/work");
+    expect(a).toMatchObject({ queuesDir: resolve("/work", "q"), fixturesDir: "/abs/fx" });
+    expect(parseCli([], "/work")).not.toHaveProperty("queuesDir");
+  });
+
   it("rejects bad input as usage errors", () => {
     for (const argv of [["--annotator", "../x"], ["--annotator", "a b"], ["--port", "99999"], ["--port", "x"], ["--default-mode", "both"], ["--nope"], ["stray"]]) {
       expect(() => parseCli(argv, "/work"), argv.join(" ")).toThrow();
@@ -35,6 +41,7 @@ describe("gp-studio command line", () => {
     if (typeof run === "number") return;
     try {
       expect(out.join("\n")).toContain("2 page(s)");
+      expect(out.join("\n")).toContain("0 label queue(s)");
       expect(out.join("\n")).toContain("127.0.0.1 only");
       expect(out.join("\n")).toContain(run.url);
       expect(existsSync(join(data, "human-labels"))).toBe(false); // nothing is written until you label

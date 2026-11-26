@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Mode } from "../core/types.js";
-import { api } from "./api.js";
+import type { PageApi } from "./api.js";
 
 /** No input for this long and the clock stops: time spent away from the keyboard is not labeling time. */
 export const IDLE_AFTER_MS = 60_000;
@@ -19,7 +19,7 @@ export interface ActiveTimer {
  * `IDLE_AFTER_MS`. `flush()` (page switch, tab hidden, window closing) appends {page, mode, start, end, seconds}
  * to timelog.jsonl through the server. `mode` is read at flush time.
  */
-export function useActiveTimer(hex: string | null, getMode: () => Mode): ActiveTimer {
+export function useActiveTimer(hex: string | null, getMode: () => Mode, pages: PageApi): ActiveTimer {
   const [seconds, setSeconds] = useState(0);
   const acc = useRef({ seconds: 0, start: new Date(), lastActive: Date.now() });
   const modeRef = useRef(getMode);
@@ -29,10 +29,10 @@ export function useActiveTimer(hex: string | null, getMode: () => Mode): ActiveT
     const a = acc.current;
     if (hex === null) return;
     const secs = Math.round(a.seconds);
-    if (secs >= 1) void api.time(hex, { mode: modeRef.current(), start: a.start.toISOString(), end: new Date().toISOString(), seconds: secs }).catch(() => undefined);
+    if (secs >= 1) void pages.time(hex, { mode: modeRef.current(), start: a.start.toISOString(), end: new Date().toISOString(), seconds: secs }).catch(() => undefined);
     acc.current = { seconds: 0, start: new Date(), lastActive: Date.now() };
     setSeconds(0);
-  }, [hex]);
+  }, [hex, pages]);
 
   useEffect(() => {
     acc.current = { seconds: 0, start: new Date(), lastActive: Date.now() };

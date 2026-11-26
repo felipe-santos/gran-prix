@@ -12,12 +12,17 @@ import type { PageData } from "./pages.js";
  *   timelog.jsonl                    append-only time log: one line per work session on a page
  *   export/labels/<hex12>.json       contract-valid NodeLabels (source=human), written by Export; the `labels/<hex12>.json`
  *                                    layout is the one of a NodeLabelsSet, so `export/` can be loaded as an external input
+ *
+ * A TASK (queue of the labeling plan, or the calibration exercise) has its own store with the same layout, rooted at
+ * `<data-dir>/human-labels/<annotator>/tasks/<task>/`: labels of one task are never visible to another (the retest
+ * must not see the first labels of the audit), and each task has its own time log and exports.
  */
 
 export const STUDIO_VERSION = "1.0.0" as const;
 export const STATE_FORMAT = "gran-prix.studio-labels";
 
 export const ANNOTATOR_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,47}$/;
+export const TASK_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
 export class StoreError extends Error {
   constructor(
@@ -26,6 +31,13 @@ export class StoreError extends Error {
   ) {
     super(message);
   }
+}
+
+/** Provenance of an export made inside a task: goes into the open `studio` block of the NodeLabels. */
+export interface ExportMeta {
+  task: string;
+  /** Hash of the labeling plan the queue came from (`null` for the built-in calibration). */
+  plan_sha256: string | null;
 }
 
 export interface PageState extends LabelState {
@@ -54,13 +66,16 @@ function writeJsonAtomic(path: string, value: unknown): void {
 export class HumanStore {
   readonly dir: string;
 
+  /** `task`: the id of a task (`[a-z0-9-]+`) whose private store this is; absent = the annotator's free-mode store. */
   constructor(
     dataDir: string,
     readonly annotator: string,
     private readonly defaultMode: Mode,
+    task?: string,
   ) {
     if (!ANNOTATOR_RE.test(annotator)) throw new Error(`invalid annotator name ${JSON.stringify(annotator)} (letters, digits, . _ - ; at most 48 characters)`);
-    this.dir = join(dataDir, "human-labels", annotator);
+    if (task !== undefined && !TASK_ID_RE.test(task)) throw new Error(`invalid task id ${JSON.stringify(task)}`);
+    this.dir = task === undefined ? join(dataDir, "human-labels", annotator) : join(dataDir, "human-labels", annotator, "tasks", task);
   }
 
   statePath(hex: string): string {
@@ -163,7 +178,7 @@ export class HumanStore {
    * Exports the page as a contract-valid NodeLabels (`source=human`, `labeler.id = human@<annotator>`). Refuses, writing
    * nothing, while a unit of U is unlabeled; the refusal lists the missing units.
    */
-  exportPage(page: PageData): { ok: true; path: string; doc: NodeLabels } | { ok: false; unlabeled: number[] } {
+  exportPage(page: PageData, meta?: ExportMeta): { ok: true; path: string; doc: NodeLabels } | { ok: false; unlabeled: number[] } {
     const state = this.load(page.ref.hex, page.nodes.length);
     const plan = planExport(page.model, state);
     if (!plan.ok) return plan;
@@ -188,6 +203,8 @@ export class HumanStore {
         n_doubt: items.filter((i) => i.reason?.includes("doubt")).length,
         n_mixed: items.filter((i) => i.reason?.includes("mixed")).length,
         draft: state.draft,
+        // Provenance of the task the page was labeled in. It is part of labels_id: the retest label of a page never has the id of its audit label.
+        ...(meta ? { task: meta.task, plan_sha256: meta.plan_sha256 } : {}),
       },
     };
     const doc = { labels_id: contractId("node-labels", body as unknown as Record<string, unknown>) as Sha256, ...body } as NodeLabels;

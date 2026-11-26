@@ -3,13 +3,16 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { effectiveLabels, progressOf } from "../core/labels.js";
 import type { Mode } from "../core/types.js";
-import { DraftStore, type DraftSet } from "./drafts.js";
-import { HttpError, hostAllowed, newToken, originAllowed, readJson, send, sendJson, serveStatic, tokensEqual } from "./http.js";
-import { HumanStore, StoreError, ANNOTATOR_RE, STUDIO_VERSION, type PageState } from "./human-store.js";
-import { FRAME_CSP, PageCache, readFrame, type PageData } from "./pages.js";
+import { Calibration, CALIBRATION_TASK } from "./calibration.js";
+import { DraftStore } from "./drafts.js";
+import { HttpError, hostAllowed, newToken, originAllowed, send, sendJson, serveStatic, tokensEqual } from "./http.js";
+import { HumanStore, StoreError, ANNOTATOR_RE, STUDIO_VERSION } from "./human-store.js";
+import { handlePage, pageRow, type PageDeps, type PageScope } from "./page-routes.js";
+import { PageCache } from "./pages.js";
+import { queuesDir } from "./queues.js";
 import { isHex, listPages, type PageRef } from "./snapshot-set.js";
+import { Tasks } from "./task-routes.js";
 
 export interface StudioOptions {
   dataDir: string;
@@ -24,6 +27,12 @@ export interface StudioOptions {
   uiDir?: string;
   /** Optional path of the annotation guide, served as text at /api/guide so the quick-reference can link to it. */
   guidePath?: string;
+  /** `fixtures/pages` of the repository (`<name>.truth.json` of the calibration exercise). Default: the one next to this package. */
+  fixturesDir?: string;
+  /** Directory of the label queues (`<task>.json`). Default: `<data-dir>/labeling/queues`. */
+  queuesDir?: string;
+  /** Clock of the `not_before` rule (tests). Default: the system clock. */
+  now?: () => Date;
 }
 
 export interface RunningStudio {
@@ -50,7 +59,8 @@ const APP_CSP = [
 
 const defaultUiDir = (): string => join(dirname(fileURLToPath(import.meta.url)), "..", "ui");
 
-const UNLABELED_LIST_CAP = 500;
+/** `fixtures/pages` of this repository, seen from `src/server` or `dist/server`. */
+const defaultFixturesDir = (): string => join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "fixtures", "pages");
 
 export async function startStudio(opts: StudioOptions): Promise<RunningStudio> {
   if (!ANNOTATOR_RE.test(opts.annotator)) throw new Error(`invalid annotator name ${JSON.stringify(opts.annotator)}`);
@@ -67,42 +77,28 @@ export async function startStudio(opts: StudioOptions): Promise<RunningStudio> {
     if (!ref) throw new HttpError(404, "no such page");
     return ref;
   };
-  const pageOf = (hex: string): PageData => pages.load(refOf(hex));
 
-  /** Drafts are only ever exposed for a page in review mode: the server, not the UI, keeps blind mode blind. */
-  async function draftsFor(page: PageData, state: PageState, wanted: string | null): Promise<{ list: DraftSet[]; chosen: DraftSet | null }> {
-    if (state.mode !== "review") return { list: [], chosen: null };
-    const list = await drafts.forPage(page);
-    const id = wanted ?? state.draft?.labels_id ?? null;
-    return { list, chosen: list.find((d) => d.labels_id === id) ?? list[0] ?? null };
-  }
+  const deps: PageDeps = { pages, drafts, refOf: (hex) => refOf(hex) };
+  const now = opts.now ?? ((): Date => new Date());
+  const calibration = new Calibration(new HumanStore(opts.dataDir, opts.annotator, "blind", CALIBRATION_TASK), pages, opts.fixturesDir ?? defaultFixturesDir(), () => listPages(opts.dataDir));
+  const tasks = new Tasks({ dataDir: opts.dataDir, queuesDir: opts.queuesDir ?? queuesDir(opts.dataDir), annotator: opts.annotator, now, deps, calibration });
 
-  function row(ref: PageRef, seconds: Map<string, number>): Record<string, unknown> {
-    const base = { hex: ref.hex, snapshot_id: ref.entry.snapshot_id, url: ref.entry.url, category: ref.entry.stratum, node_count: ref.entry.node_count };
-    try {
-      const page = pages.load(ref);
-      const state = human.load(ref.hex, page.nodes.length);
-      const p = progressOf(page.model, state, effectiveLabels(page.model, state));
-      return {
-        ...base,
-        title: page.snapshot.page.title ?? "",
-        units: p.total,
-        labeled: p.labeled,
-        doubt: p.doubt,
-        mixed: p.mixed,
-        mode: state.mode,
-        complete: p.total > 0 && p.labeled === p.total,
-        exported: existsSync(join(human.dir, "export", "labels", `${ref.hex.slice(0, 12)}.json`)),
-        seconds: seconds.get(ref.hex) ?? 0,
-      };
-    } catch (e) {
-      return { ...base, error: e instanceof Error ? e.message : String(e) };
-    }
-  }
-
-  function unlabeledReport(page: PageData, ids: number[]): Array<{ unit_id: number; tag: string; text: string }> {
-    return ids.slice(0, UNLABELED_LIST_CAP).map((i) => ({ unit_id: i, tag: page.nodes[i]?.t ?? "", text: page.nodes[i]?.x ?? "" }));
-  }
+  /** The free mode: the annotator's own store, mode chosen per page. Pages of a BLIND queue task are served only inside it. */
+  const freeScope: PageScope = {
+    store: human,
+    forcedMode: null,
+    exportMeta: null,
+    exportable: true,
+    guard: (hex) => {
+      const owner = tasks.blindQueuePages().get(hex);
+      if (owner !== undefined) throw new HttpError(403, `this page belongs to the blind task "${owner}": open it from the task`);
+    },
+  };
+  /** Pages of the free mode: every page of the data dir except the ones that belong to a blind queue task. */
+  const freePages = (): PageRef[] => {
+    const blind = tasks.blindQueuePages();
+    return listPages(opts.dataDir).filter((r) => !blind.has(r.hex));
+  };
 
   async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!hostAllowed(req.headers.host, port)) throw new HttpError(403, "bad Host header");
@@ -142,12 +138,12 @@ export async function startStudio(opts: StudioOptions): Promise<RunningStudio> {
     if (method === "GET" && path === "/api/pages") {
       drafts.refresh();
       const seconds = human.secondsByPage();
-      return sendJson(res, 200, { annotator: opts.annotator, pages: listPages(opts.dataDir).map((r) => row(r, seconds)) });
+      return sendJson(res, 200, { annotator: opts.annotator, pages: freePages().map((r) => pageRow(deps, freeScope, r, seconds)) });
     }
     if (method === "POST" && path === "/api/export") {
       const exported: string[] = [];
       const refused: Array<{ hex: string; unlabeled: number }> = [];
-      for (const ref of listPages(opts.dataDir)) {
+      for (const ref of freePages()) {
         const page = pages.load(ref);
         const r = human.exportPage(page);
         if (r.ok) exported.push(ref.hex);
@@ -156,48 +152,10 @@ export async function startStudio(opts: StudioOptions): Promise<RunningStudio> {
       return sendJson(res, 200, { exported, refused });
     }
 
+    if (path === "/api/tasks" || path.startsWith("/api/tasks/")) return tasks.handle(req, res, path, url);
+
     const m = /^\/api\/pages\/([^/]+)(?:\/([a-z]+))?$/.exec(path);
-    if (m) {
-      const hex = m[1] as string;
-      const sub = m[2];
-      if (method === "GET" && sub === "frame") {
-        const ref = refOf(hex);
-        return send(res, 200, readFrame(ref), { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": FRAME_CSP });
-      }
-      const page = pageOf(hex);
-      if (method === "GET" && sub === undefined) {
-        const state = human.load(hex, page.nodes.length);
-        const { list, chosen } = await draftsFor(page, state, url.searchParams.get("draft"));
-        return sendJson(res, 200, {
-          hex,
-          snapshot_id: page.snapshot.snapshot_id,
-          url: page.snapshot.page.final_url,
-          title: page.snapshot.page.title ?? "",
-          category: page.snapshot.page.category,
-          nodes: page.nodes,
-          state: { explicit: state.explicit, flags: state.flags, mode: state.mode, draft: state.draft },
-          seconds: human.secondsByPage().get(hex) ?? 0,
-          ...(state.mode === "review"
-            ? { drafts: list.map(({ draft: _d, ...info }) => info), draft: chosen ? { labels_id: chosen.labels_id, labeler_id: chosen.labeler_id, labels: chosen.draft } : null }
-            : {}),
-        });
-      }
-      if (method === "PUT" && sub === "state") {
-        const body = await readJson(req);
-        const saved = human.save(page, { labels: body["labels"], mode: body["mode"], draft: body["draft"], reset: body["reset"] });
-        const state = { explicit: saved.explicit, flags: saved.flags, mode: saved.mode, draft: saved.draft };
-        return sendJson(res, 200, { state });
-      }
-      if (method === "POST" && sub === "time") {
-        const body = await readJson(req);
-        return sendJson(res, 200, human.logTime(hex, body));
-      }
-      if (method === "POST" && sub === "export") {
-        const r = human.exportPage(page);
-        if (r.ok) return sendJson(res, 200, { ok: true, path: r.path, labels_id: r.doc.labels_id, n_labeled: r.doc.coverage.n_labeled });
-        return sendJson(res, 409, { ok: false, error: "unlabeled", message: `${r.unlabeled.length} unit(s) of U have no label`, unlabeled: unlabeledReport(page, r.unlabeled), n_unlabeled: r.unlabeled.length });
-      }
-    }
+    if (m) return handlePage(deps, freeScope, req, res, m[1] as string, m[2], url);
     throw new HttpError(404, "not found");
   }
 

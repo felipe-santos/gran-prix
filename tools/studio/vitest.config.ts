@@ -11,6 +11,7 @@ export default defineConfig({
       { find: /^@gran-prix\/contracts$/, replacement: src("packages/contracts") },
       { find: /^@gran-prix\/features$/, replacement: src("packages/features") },
       { find: /^@gran-prix\/labels$/, replacement: src("packages/labels") },
+      { find: /^@gran-prix\/markdown$/, replacement: src("packages/markdown") },
       { find: /^@gran-prix\/infer-ts$/, replacement: src("packages/infer-ts") },
       { find: /^@gran-prix\/model$/, replacement: src("packages/model") },
       { find: /^@gran-prix\/report$/, replacement: src("packages/report") },
