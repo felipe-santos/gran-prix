@@ -296,8 +296,8 @@ describe("ts:measure.tokens@1.0.0 in a mini pipeline", () => {
   });
 
   it("'rendered' is the rule of U: for every unit of every fixture, the converter keeps its text iff the Studio's computeUniverse says U", async () => {
-    // The Studio's universe.ts is loaded by path (tools/studio depends on this package, not the reverse). Until the Studio
-    // imports isRenderedNode from @gran-prix/markdown, this test is what keeps the two copies of the rule identical.
+    // The Studio's universe.ts is loaded by path (tools/studio depends on this package, not the reverse). It imports the
+    // rule from @gran-prix/markdown; this test keeps U and the converter's output equal on every fixture unit.
     const universePath = join(ROOT, "tools/studio/src/core/universe.ts");
     const { computeUniverse } = (await import(/* @vite-ignore */ universePath)) as { computeUniverse(nodes: unknown): Uint8Array };
     const { planPage } = await import("@gran-prix/markdown");

@@ -379,6 +379,9 @@ importers:
       '@gran-prix/labels':
         specifier: workspace:*
         version: link:../../packages/labels
+      '@gran-prix/markdown':
+        specifier: workspace:*
+        version: link:../../packages/markdown
     devDependencies:
       '@gran-prix/cli':
         specifier: workspace:*

@@ -94,7 +94,7 @@ describe("task list: progress, time, next page", () => {
 
   it("serves only the pages of the task and only valid task ids", async () => {
     const h = await start();
-    h.queue("retest", queueDoc("retest", "blind", [A]));
+    h.queue("retest", queueDoc("retest", "blind", [A], { not_before: "2026-01-01T00:00:00Z" }));
     expect((await h.api("GET", `/api/tasks/retest/pages/${HB}`)).status).toBe(404); // in the data dir, not in the queue
     for (const p of ["/api/tasks/..%2f..%2fx", "/api/tasks/nope", "/api/tasks/RETEST", `/api/tasks/retest/pages/abc`, "/api/tasks/retest/pages/%2e%2e/frame"]) expect((await h.api("GET", p)).status, p).toBe(404);
   });

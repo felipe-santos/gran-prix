@@ -65,6 +65,9 @@ export function parseQueue(raw: unknown, stem?: string): ParsedQueue {
   if (typeof plan !== "string" || !SHA_RE.test(plan)) return fail("plan_sha256 must be sha256:<64 hex>");
   const nb = raw["not_before"];
   if (nb !== null && (typeof nb !== "string" || !Number.isFinite(Date.parse(nb)))) return fail("not_before must be null or an ISO date");
+  // Protocol 5.4: the retest is done >= 7 days after the audit, blind to the first labels. A retest queue without a
+  // date would open at once, so it is refused (the plan writes the date).
+  if (task === "retest" && nb === null) return fail("a retest queue needs not_before (protocol 5.4: >= 7 days after the audit)");
   const pages = raw["pages"];
   if (!Array.isArray(pages) || pages.length === 0) return fail("pages must be a non-empty array");
   const seen = new Set<string>();

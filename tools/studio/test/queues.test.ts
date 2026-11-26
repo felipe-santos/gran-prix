@@ -12,9 +12,10 @@ const ID = (c: string): string => `sha256:${c.repeat(64)}`;
 describe("label queue format (contract with the labeling-plan lane)", () => {
   it("reads a valid queue of every task", () => {
     for (const [task, mode] of [["prompt-dev", "blind"], ["audit", "blind"], ["retest", "blind"], ["train-sample", "review"], ["test-review", "review"]] as const) {
-      const r = parseQueue(queueDoc(task, mode, [ID("a"), ID("b")]), task);
+      const nb = task === "retest" ? "2026-12-05" : null;
+      const r = parseQueue(queueDoc(task, mode, [ID("a"), ID("b")], task === "retest" ? { not_before: nb } : {}), task);
       expect(r.ok, task).toBe(true);
-      if (r.ok) expect(r.queue).toMatchObject({ task, mode, plan_sha256: PLAN_A, not_before: null, pages: [{ snapshot_id: ID("a"), split: "train" }, { snapshot_id: ID("b") }] });
+      if (r.ok) expect(r.queue).toMatchObject({ task, mode, plan_sha256: PLAN_A, not_before: nb, pages: [{ snapshot_id: ID("a"), split: "train" }, { snapshot_id: ID("b") }] });
     }
     const dated = parseQueue(queueDoc("retest", "blind", [ID("a")], { not_before: "2026-12-05" }));
     expect(dated.ok && dated.queue.not_before).toBe("2026-12-05");
@@ -37,6 +38,7 @@ describe("label queue format (contract with the labeling-plan lane)", () => {
       ["plan hash", { ...good, plan_sha256: "abc" }, /plan_sha256/],
       ["not_before undefined", Object.fromEntries(Object.entries(good).filter(([k]) => k !== "not_before")), /not_before/],
       ["not_before garbage", { ...good, not_before: "next week" }, /not_before/],
+      ["retest without a date", { ...good, task: "retest", mode: "blind", not_before: null }, /retest queue needs not_before/],
       ["empty pages", { ...good, pages: [] }, /non-empty/],
       ["page id", { ...good, pages: [{ snapshot_id: "sha256:zz", url: "u", category: "c", split: "train" }] }, /snapshot_id/],
       ["page url", { ...good, pages: [{ snapshot_id: ID("a"), url: "", category: "c", split: "train" }] }, /url/],

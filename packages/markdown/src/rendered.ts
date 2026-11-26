@@ -4,10 +4,9 @@ import type { NodeLike } from "./types.js";
  * The ONE definition of "rendered" (annotation guide 2.3, protocol 9/10): the rule that decides membership in the
  * labelable universe U, extracted as a pure function so the markdown converter and U cannot drift apart.
  *
- * `tools/studio/src/core/universe.ts` (`computeUniverse`) carries the same rule today; its test of equivalence is
- * the "'rendered' is the rule of U" test of `tools/cli/test/tokens-stage.test.ts` (every unit of every fixture page: U === the converter's text).
- * The Studio should import `isRenderedNode` / `NON_CONTENT_TAGS` from here instead of keeping a copy (one-line change
- * in a package this lane does not own; see the lane report).
+ * The Studio's `computeUniverse` (`tools/studio/src/core/universe.ts`) imports `isRenderedNode` / `NON_CONTENT_TAGS`
+ * from here, so there is one copy of the rule; the "'rendered' is the rule of U" test of
+ * `tools/cli/test/tokens-stage.test.ts` still checks, on every unit of every fixture page, that U === the converter's text.
  */
 
 /** Tags that are never page content: no unit of U, whatever their style. */
