@@ -13,6 +13,7 @@ import { LABELING_STAGES } from "./labeling.js";
 import { LATENCY_STAGES } from "./latency/index.js";
 import { LLM_LABEL_STAGES } from "./label-llm.js";
 import { packageStage } from "./package.js";
+import { QA_STAGES } from "./qa/index.js";
 import { TOKENS_STAGES } from "./tokens/index.js";
 import { trainStage } from "./train.js";
 import { TRAIN_CV_STAGES } from "./train-cv/index.js";
@@ -37,4 +38,6 @@ export const ALL_STAGES: StagePlugin[] = [
   ...TRAIN_CV_STAGES,
   // L5g (G5): measure.latency (probe + vectorize + inference p95 under a 4x CPU throttle, package size)
   ...LATENCY_STAGES,
+  // L5q (QA, E3.4 / G3): qa.generate, qa.taskset, qa.answer, qa.score (paid calls only through the ledger; offline-testable)
+  ...QA_STAGES,
 ];
