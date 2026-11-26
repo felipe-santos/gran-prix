@@ -10,6 +10,7 @@ import { COLLECT_STAGES } from "./collect-stages.js";
 import { DEMO_STAGES } from "./demo.js";
 import { EVALUATE_STAGES } from "./evaluate/index.js";
 import { LABELING_STAGES } from "./labeling.js";
+import { LATENCY_STAGES } from "./latency/index.js";
 import { LLM_LABEL_STAGES } from "./label-llm.js";
 import { packageStage } from "./package.js";
 import { TOKENS_STAGES } from "./tokens/index.js";
@@ -34,4 +35,6 @@ export const ALL_STAGES: StagePlugin[] = [
   ...TOKENS_STAGES,
   // L5e (decision chain): train.cv (nested grouped CV of the MLP: OOF bundle, tau*, final model)
   ...TRAIN_CV_STAGES,
+  // L5g (G5): measure.latency (probe + vectorize + inference p95 under a 4x CPU throttle, package size)
+  ...LATENCY_STAGES,
 ];
