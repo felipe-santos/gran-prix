@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { drawMultiplicities, makeRng, percentileCi, quantileSorted } from "../src/stages/evaluate/bootstrap.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { ClusterResampler, makeRng, percentileCi, quantileLinear, type Cluster } from "../src/stages/evaluate/bootstrap.js";
 import { evaluateCore, unitKeyOf, type BaselineInput, type CoreOptions, type GroupInfo, type ScoredRow } from "../src/stages/evaluate/core.js";
 import type { GateParam } from "../src/stages/evaluate/gates.js";
 
@@ -29,8 +31,8 @@ function synth(opts: { pages?: number; modelAcc: number; baseAcc: number; seed?:
 
 const OPTS: CoreOptions = { threshold: 0.5, seed: 11, resamples: 400, clusterBy: "group_key", stratified: true, aggregation: "macro_page", gates: [], prGrid: 11 };
 
-describe("seeded RNG and resampling", () => {
-  it("the same seed gives the same stream; another seed does not", () => {
+describe("seeded resampling (the pre-registered numpy generator)", () => {
+  it("makeRng, the generator of the synthetic test data (not of the bootstrap): same seed same stream", () => {
     const a = makeRng(5);
     const b = makeRng(5);
     const c = makeRng(6);
@@ -41,19 +43,40 @@ describe("seeded RNG and resampling", () => {
     for (const v of sa) expect(v).toBeLessThan(1);
   });
 
+  const six = (): Cluster[] => Array.from({ length: 6 }, (_, k) => ({ stratum: k % 2 ? "x" : "y", key: `d${k}`, groups: [2 * k, 2 * k + 1] }));
+
   it("clusters are redrawn whole: pages of one domain always have the same multiplicity", () => {
-    const clusters = Array.from({ length: 6 }, (_, k) => ({ stratum: k % 2 ? "x" : "y", groups: [2 * k, 2 * k + 1] }));
-    const rng = makeRng(3);
-    for (let r = 0; r < 50; r++) {
-      const m = drawMultiplicities(clusters, 12, rng, true);
+    const r = new ClusterResampler(six(), 12, 3, true);
+    for (let i = 0; i < 50; i++) {
+      const m = r.next();
       for (let k = 0; k < 6; k++) expect(m[2 * k]).toBe(m[2 * k + 1]);
       // stratified: each stratum redraws exactly as many clusters as it has
       expect([0, 2, 4].reduce((a, k) => a + (m[2 * k + 1] as number), 0)).toBe(3);
+      expect([1, 3, 5].reduce((a, k) => a + (m[2 * k + 1] as number), 0)).toBe(3);
     }
   });
 
-  it("percentile interval uses linear interpolation and refuses mostly-undefined draws", () => {
-    expect(quantileSorted([0, 10], 0.25)).toBe(2.5);
+  it("the order the clusters are listed in does not change the resamples (the canonical order is by stratum and key)", () => {
+    const fwd = new ClusterResampler(six(), 12, 20261125, true);
+    const rev = new ClusterResampler(six().reverse(), 12, 20261125, true);
+    for (let i = 0; i < 20; i++) expect(Array.from(rev.next())).toEqual(Array.from(fwd.next()));
+  });
+
+  it("the draws are those of numpy.random.default_rng: the fixture of tools/baselines/stats/bootstrap_ref.py", () => {
+    const fx = JSON.parse(readFileSync(fileURLToPath(new URL("../../../packages/stats/test/fixtures/bootstrap-parity.json", import.meta.url)), "utf8")) as { cases: any[] };
+    for (const c of fx.cases) {
+      const clusters: Cluster[] = c.units.map(([stratum, key]: [string, string], i: number) => ({ stratum, key, groups: [i] }));
+      const r = new ClusterResampler(clusters, clusters.length, c.seed, c.stratified);
+      for (const picks of c.first_replicates as number[][][]) {
+        const want = new Array<number>(clusters.length).fill(0);
+        (c.pools as number[][]).forEach((pool, p) => (picks[p] as number[]).forEach((pos) => (want[pool[pos] as number] = (want[pool[pos] as number] as number) + 1)));
+        expect(Array.from(r.next())).toEqual(want);
+      }
+    }
+  });
+
+  it("percentile interval uses numpy's linear interpolation and refuses mostly-undefined draws", () => {
+    expect(quantileLinear([0, 10], 0.25)).toBe(2.5);
     expect(percentileCi([1, 2, 3, 4, 5], 5, 0.5)).toEqual([2, 4]);
     expect(percentileCi([NaN, NaN, NaN, 1], 4)).toBeNull();
   });

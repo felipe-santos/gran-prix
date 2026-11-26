@@ -1,0 +1,35 @@
+{
+  "name": "@gran-prix/stats",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The protocol's random generator in pure TypeScript, bit-identical to NumPy's numpy.random.default_rng (SeedSequence + PCG64 + Generator.integers), and the canonical cluster bootstrap built on it (protocol experimento-dom-v0, section 6.5). No dependencies.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}

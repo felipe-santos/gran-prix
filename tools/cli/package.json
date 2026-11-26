@@ -39,6 +39,7 @@
     "@gran-prix/markdown": "workspace:*",
     "@gran-prix/model": "workspace:*",
     "@gran-prix/report": "workspace:*",
+    "@gran-prix/stats": "workspace:*",
     "defuddle": "0.19.13",
     "tldts": "~7.5.3"
   },

@@ -1,11 +1,23 @@
+import { bootstrapPools, drawCounts, Generator, percentileCi, quantileLinear, type BootstrapUnit, type Ci } from "@gran-prix/stats";
+
+export { percentileCi, quantileLinear, type Ci };
+
 /**
  * Seeded cluster bootstrap. The independent unit is the CLUSTER (a registrable domain, or a page),
  * never a row: every replicate redraws whole clusters with replacement, optionally within each
  * stratum so the stratum sizes stay fixed. A statistic is a function of the per-group
  * multiplicities of the replicate, so paired differences use the same resample for both systems.
+ *
+ * The generator is the pre-registered one (protocol 6.5): numpy.random.default_rng(seed), reproduced bit for bit by
+ * @gran-prix/stats. The order of strata and clusters and the generator calls are the canonical algorithm specified in
+ * that package's README and mirrored in Python by tools/baselines/stats/bootstrap_ref.py.
  */
 
-/** Deterministic 32-bit generator (sfc32), seeded through splitmix32. Returns floats in [0, 1). */
+/**
+ * Deterministic 32-bit generator (sfc32), seeded through splitmix32. Returns floats in [0, 1).
+ * For SYNTHETIC TEST DATA only (the fixtures of the evaluate and train.cv tests draw their pages with it): it is NOT the
+ * bootstrap's generator and no inference may use it.
+ */
 export function makeRng(seed: number): () => number {
   let s = (Math.trunc(seed) >>> 0) || 0x9e3779b9;
   const split = (): number => {
@@ -32,54 +44,42 @@ export function makeRng(seed: number): () => number {
   return next;
 }
 
-/** A resampling unit: the groups (page indices) that must stay together, and the stratum it is drawn within. */
-export interface Cluster {
-  stratum: string;
+/** A resampling unit: the groups (page indices) that must stay together, its key (the domain, or the page) and the stratum it is drawn within. */
+export interface Cluster extends BootstrapUnit {
   groups: readonly number[];
 }
 
-/** One replicate: how many times each group appears in the resample. */
-export function drawMultiplicities(clusters: readonly Cluster[], nGroups: number, rng: () => number, stratified: boolean): Float64Array {
-  const mult = new Float64Array(nGroups);
-  const pools: Array<readonly Cluster[]> = stratified ? [...groupBy(clusters)] : [clusters];
-  for (const pool of pools) {
-    for (let i = 0; i < pool.length; i++) {
-      const c = pool[Math.floor(rng() * pool.length)] as Cluster;
-      for (const g of c.groups) mult[g] = (mult[g] as number) + 1;
-    }
+/**
+ * The replicates of the canonical bootstrap. `next()` is one replicate: how many times each group appears in the
+ * resample (all the groups of a cluster share the count of the cluster).
+ */
+export class ClusterResampler {
+  private readonly pools: number[][];
+  private readonly rng: Generator;
+  private readonly scratch: Float64Array[];
+  private readonly counts: Float64Array;
+
+  constructor(
+    private readonly clusters: readonly Cluster[],
+    private readonly nGroups: number,
+    seed: number | bigint,
+    stratified: boolean,
+  ) {
+    this.pools = bootstrapPools(clusters, stratified);
+    this.rng = Generator.defaultRng(seed);
+    this.scratch = this.pools.map((p) => new Float64Array(p.length));
+    this.counts = new Float64Array(clusters.length);
   }
-  return mult;
-}
 
-function groupBy(clusters: readonly Cluster[]): Array<readonly Cluster[]> {
-  const by = new Map<string, Cluster[]>();
-  for (const c of clusters) {
-    const list = by.get(c.stratum);
-    if (list) list.push(c);
-    else by.set(c.stratum, [c]);
+  next(): Float64Array {
+    drawCounts(this.pools, this.rng, this.counts, this.scratch);
+    const mult = new Float64Array(this.nGroups);
+    this.clusters.forEach((c, i) => {
+      const n = this.counts[i] as number;
+      for (const g of c.groups) mult[g] = n;
+    });
+    return mult;
   }
-  return [...by.keys()].sort().map((k) => by.get(k) as Cluster[]);
-}
-
-/** Percentile of sorted values with linear interpolation (numpy's default method). */
-export function quantileSorted(sorted: readonly number[], q: number): number {
-  if (sorted.length === 0) return NaN;
-  const pos = (sorted.length - 1) * q;
-  const lo = Math.floor(pos);
-  const hi = Math.ceil(pos);
-  const a = sorted[lo] as number;
-  const b = sorted[hi] as number;
-  return a + (b - a) * (pos - lo);
-}
-
-export type Ci = [number, number];
-
-/** Percentile interval at `level` over the finite replicate values; `null` when fewer than half are finite. */
-export function percentileCi(values: readonly number[], total: number, level = 0.95): Ci | null {
-  const finite = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
-  if (finite.length === 0 || finite.length < total / 2) return null;
-  const alpha = (1 - level) / 2;
-  return [quantileSorted(finite, alpha), quantileSorted(finite, 1 - alpha)];
 }
 
 export type Estimator = (mult: Float64Array) => number;
@@ -97,12 +97,12 @@ export function clusterBootstrap(opts: {
   stratified: boolean;
   level?: number;
 }): Map<string, Ci | null> {
-  const rng = makeRng(opts.seed);
+  const resampler = new ClusterResampler(opts.clusters, opts.nGroups, opts.seed, opts.stratified);
   const keys = [...opts.estimators.keys()];
   const fns = keys.map((k) => opts.estimators.get(k) as Estimator);
   const draws = keys.map(() => new Array<number>(opts.resamples));
   for (let b = 0; b < opts.resamples; b++) {
-    const mult = drawMultiplicities(opts.clusters, opts.nGroups, rng, opts.stratified);
+    const mult = resampler.next();
     for (let k = 0; k < fns.length; k++) (draws[k] as number[])[b] = (fns[k] as Estimator)(mult);
   }
   return new Map(keys.map((k, i) => [k, percentileCi(draws[i] as number[], opts.resamples, opts.level)]));
