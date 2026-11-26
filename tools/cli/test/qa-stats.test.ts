@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 import { clusterMeanCi, cohenKappa, groupKeyOf, mcnemarExact, pairedDelta } from "../src/stages/qa/stats.js";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const MAIN_PYLIBS = "/home/ubuntu/files/PRIX/gran-prix/tools/baselines/.pylibs";
 
 describe("McNemar exact", () => {
   it("matches the binomial tail computed by hand (python math.comb)", () => {
@@ -42,7 +41,7 @@ describe("paired cluster bootstrap", () => {
     expect(r.ci95[1]).toBeCloseTo(0.46153846153846156, 12);
   });
 
-  const pylibs = [join(ROOT, "tools/baselines/.pylibs"), MAIN_PYLIBS].find((p) => existsSync(p));
+  const pylibs = [process.env["GP_BASELINES_PYLIBS"], join(ROOT, "tools/baselines/.pylibs")].find((p): p is string => typeof p === "string" && existsSync(p));
   const hasNumpy = pylibs !== undefined && spawnSync("python3", ["-c", "import numpy"], { env: { ...process.env, PYTHONPATH: pylibs } }).status === 0;
   it.skipIf(!hasNumpy)("and so does a fresh run of the Python reference, when numpy is installed", () => {
     const code = `import sys,json; sys.path.insert(0, ${JSON.stringify(join(ROOT, "tools/baselines/stats"))}); import bootstrap_ref as b; v=${JSON.stringify(diffs)}; k=${JSON.stringify(keys)}; print(json.dumps(b.quantile_ci(b.cluster_mean_draws(v,k,None,1000,20261125,False),1000,0.95)))`;
