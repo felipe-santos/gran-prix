@@ -14,6 +14,8 @@ const USAGE = `usage: gp-corpus <command> [--data-dir DIR]
   verify-lock         recompute the hashes of the lock; exit 1 if anything changed
   review-page         write review.html, the local page where the owner checks the corpus by eye
   diff                attempt-diff.md: pages whose destination changed vs <data-dir>/attempt-1
+  import-captures <dir> --out <set-dir>
+                      SnapshotSet of the stratum logged_in from the files of tools/capture-extension (nothing is written unless all are valid)
 default data dir: ${DEFAULT_DATA_DIR}`;
 
 const { values, positionals } = parseArgs({
@@ -22,6 +24,7 @@ const { values, positionals } = parseArgs({
     "data-dir": { type: "string", default: DEFAULT_DATA_DIR },
     category: { type: "string" },
     limit: { type: "string" },
+    out: { type: "string" },
     "no-spa-fallback": { type: "boolean", default: false },
     match: { type: "string" },
     help: { type: "boolean", short: "h", default: false },
@@ -92,6 +95,15 @@ switch (cmd) {
     const { attemptDiff } = await import("./attempt-diff.mjs");
     await attemptDiff(dataDir);
     break;
+  }
+  case "import-captures": {
+    const inDir = positionals[1];
+    if (!inDir || !values.out) {
+      console.error("uso: gp-corpus import-captures <pasta-com-os-arquivos> --out <pasta-do-conjunto>   (ex.: --out data/corpus/logged-in/)");
+      process.exit(2);
+    }
+    const { runImportCaptures } = await import("./import-captures.mjs");
+    process.exit(await runImportCaptures(inDir, values.out));
   }
   default:
     console.error(USAGE);
