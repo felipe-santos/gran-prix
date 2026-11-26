@@ -1,19 +1,11 @@
 // vectorize(snapshot, schema) -> NodeFeatures. PURE: a function of its two arguments only. No Date, no
 // randomness, no DOM, no I/O; all floats pass through Math.fround; runs bit-identically in Node and in
 // Chromium (the same source is bundled into the in-page IIFE).
+import { fillRawColumn } from "./columns.js";
 import { derive } from "./derive.js";
 import { FEATURE_BY_NAME, type FeatureSpec } from "./features.js";
 import { artifactId } from "./hash.js";
-import { VectorizeError, type FeatureDefLike, type FeatureMatrix, type FeatureSchemaLike, type NodeFeaturesDoc, type SnapshotLike, type StaticTransformLike } from "./types.js";
-
-function applyTransform(t: StaticTransformLike, raw: number): number {
-  switch (t.op) {
-    case "none": return raw;
-    case "log1p": return Math.log1p(raw) / Math.log1p(t.scale);
-    case "clip": return Math.min(Math.max(raw, t.lo), t.hi);
-    case "div": return raw / t.by;
-  }
-}
+import { VectorizeError, type FeatureDefLike, type FeatureMatrix, type FeatureSchemaLike, type NodeFeaturesDoc, type SnapshotLike } from "./types.js";
 
 function resolve(schema: FeatureSchemaLike): { def: FeatureDefLike; spec: FeatureSpec }[] {
   if (schema.dim !== schema.features.length) throw new VectorizeError(`schema.dim (${schema.dim}) != features.length (${schema.features.length})`);
@@ -47,22 +39,49 @@ export function vectorizeMatrix(snapshot: SnapshotLike, schema: FeatureSchemaLik
   const x = new Float32Array(unitIds.length * dim);
   let nanReplaced = 0;
   let clipped = 0;
-  const sanitize = (v: number, def: FeatureDefLike): number => {
-    let y = v;
-    if (Number.isNaN(y)) { y = 0; nanReplaced++; }
-    const [lo, hi] = def.range;
-    if (y < lo) { y = lo; clipped++; } else if (y > hi) { y = hi; clipped++; }
-    return y;
-  };
-
-  // Pass 1: every non-context feature.
+  // Pass 1: every non-context feature. The transform, the range and the default of a column are read once, not per cell;
+  // the raw column comes from columns.ts (plain loops) or, for a feature that file does not know, from `spec.raw`.
+  const nRows = unitIds.length;
+  const col = new Float64Array(nRows);
   for (let c = 0; c < dim; c++) {
     const { def, spec } = feats[c] as (typeof feats)[number];
-    if (!spec.raw) continue;
-    for (let r = 0; r < unitIds.length; r++) {
-      const raw = spec.raw(ctx, unitIds[r] as number);
-      const v = raw === null ? def.default : sanitize(applyTransform(def.transform, raw), def);
-      x[r * dim + c] = Math.fround(v) + 0; // + 0 turns -0 into +0
+    const rawOf = spec.raw;
+    if (!rawOf) continue;
+    const t = def.transform;
+    const lo = def.range[0];
+    const hi = def.range[1];
+    if (fillRawColumn(spec.name, ctx, unitIds, col)) {
+      switch (t.op) { // applyTransform, in place
+        case "none": break;
+        case "log1p": { const scale = Math.log1p(t.scale); for (let r = 0; r < nRows; r++) col[r] = Math.log1p(col[r] as number) / scale; break; }
+        case "clip": for (let r = 0; r < nRows; r++) col[r] = Math.min(Math.max(col[r] as number, t.lo), t.hi); break;
+        case "div": for (let r = 0; r < nRows; r++) col[r] = (col[r] as number) / t.by; break;
+      }
+      for (let r = 0; r < nRows; r++) {
+        let v = col[r] as number;
+        if (v !== v) { v = 0; nanReplaced++; } // sanitize
+        if (v < lo) { v = lo; clipped++; } else if (v > hi) { v = hi; clipped++; }
+        x[r * dim + c] = Math.fround(v) + 0; // + 0 turns -0 into +0
+      }
+      continue;
+    }
+    const fallback = def.default;
+    const logScale = t.op === "log1p" ? Math.log1p(t.scale) : 1;
+    for (let r = 0; r < nRows; r++) {
+      const raw = rawOf(ctx, unitIds[r] as number);
+      let v: number;
+      if (raw === null) v = fallback;
+      else {
+        switch (t.op) { // applyTransform
+          case "none": v = raw; break;
+          case "log1p": v = Math.log1p(raw) / logScale; break;
+          case "clip": v = Math.min(Math.max(raw, t.lo), t.hi); break;
+          case "div": v = raw / t.by; break;
+        }
+        if (v !== v) { v = 0; nanReplaced++; } // sanitize
+        if (v < lo) { v = lo; clipped++; } else if (v > hi) { v = hi; clipped++; }
+      }
+      x[r * dim + c] = Math.fround(v) + 0;
     }
   }
   // Pass 2: context features copy the finished value of a source feature at another node's row.
