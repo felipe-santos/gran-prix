@@ -56,7 +56,7 @@ function wrapBrowser(browser, shotRef) {
   };
 }
 
-class Collector {
+export class Collector {
   constructor(dataDir) {
     this.dataDir = dataDir;
     this.http = new PoliteHttp();
@@ -149,6 +149,7 @@ class Collector {
     };
     appendJsonl(this.walkedPath, rec);
     this.state.walked.add(WalkState.key(cand.category, cand.url));
+    this.state.noteCursor(rec);
     if (outcome === "accepted") this.state.accept(rec);
     return rec;
   }
@@ -295,43 +296,57 @@ export async function revisit(dataDir, messageRe) {
   return out;
 }
 
+/**
+ * The walk loop shared by `walk` and `apply-review`: per category (given order), per phase, candidates in hash order, until the
+ * target is met or the frame is exhausted. `resume` continues after the highest hash already walked in the phase (what
+ * `apply-review` needs: the frame is NOT re-opened behind the cursor, e.g. a page that was in the corpus when the SPA fallback
+ * passed it). URLs excluded by the owner (`state.blocked`) are never candidates. Returns the number of pages visited.
+ */
+export async function walkLoop(c, frame, cats, { limit, spaFallback = true, resume = false } = {}) {
+  let visited = 0;
+  for (const cat of cats) {
+    const n = targetOf(cat);
+    for (const ph of phasesFor(cat, frame, c.state)) {
+      if (ph.phase === "spa-fallback" && !spaFallback) continue;
+      if (c.state.count(cat) >= n) break;
+      const cursor = resume ? c.state.cursor(cat, ph.phase) : "";
+      const rows = (typeof ph.rows === "function" ? ph.rows() : ph.rows)
+        .filter((r) => !c.state.blocked.has(r.url) && r.order_hash > cursor)
+        .map((r) => ({ ...r, category: cat, phase: ph.phase, domain: r.domain ?? etld1(r.url) }));
+      console.error(`[${cat}/${ph.phase}] ${c.state.count(cat)}/${n} accepted, ${rows.length} candidates in frame${resume ? " after the cursor" : ""}`);
+      const pending = new Map();
+      const prefetch = (i) => {
+        for (let j = i; j < Math.min(rows.length, i + PREFETCH); j++) {
+          const k = rows[j].url;
+          if (cat !== "spa" || pending.has(k) || c.state.walked.has(WalkState.key(cat, k)) || c.state.quotaReason(cat, rows[j].domain)) continue;
+          pending.set(k, c.prescreen(rows[j], true));
+        }
+      };
+      for (let i = 0; i < rows.length && c.state.count(cat) < n; i++) {
+        const cand = rows[i];
+        if (c.state.walked.has(WalkState.key(cat, cand.url))) continue;
+        if (limit !== undefined && visited >= limit) return visited;
+        prefetch(i);
+        const pre = c.state.quotaReason(cat, cand.domain) ? null : await (pending.get(cand.url) ?? c.prescreen(cand, cat === "spa"));
+        const rec = await c.visit(cand, pre);
+        visited++;
+        console.error(`  #${rec.seq} ${cat} ${rec.outcome === "accepted" ? "ACCEPT" : "skip  "} ${rec.reason}  ${cand.url.slice(0, 110)}  [${c.state.count(cat)}/${n}]`);
+        pending.delete(cand.url);
+        await sleep(200);
+      }
+    }
+  }
+  return visited;
+}
+
 export async function walk(dataDir, { category, limit, spaFallback = true } = {}) {
   const frame = readJsonlSync(join(dataDir, "frame.jsonl"));
   if (frame.length === 0) throw new Error(`no frame.jsonl in ${dataDir}: run \`gp-corpus frame\` first`);
   const c = new Collector(dataDir);
   await c.init();
-  let visited = 0;
   const cats = CATEGORIES.map((x) => x.name).filter((n) => category === undefined || n === category);
   try {
-    for (const cat of cats) {
-      const n = targetOf(cat);
-      for (const ph of phasesFor(cat, frame, c.state)) {
-        if (ph.phase === "spa-fallback" && !spaFallback) continue;
-        if (c.state.count(cat) >= n) break;
-        const rows = (typeof ph.rows === "function" ? ph.rows() : ph.rows).map((r) => ({ ...r, category: cat, phase: ph.phase, domain: r.domain ?? etld1(r.url) }));
-        console.error(`[${cat}/${ph.phase}] ${c.state.count(cat)}/${n} accepted, ${rows.length} candidates in frame`);
-        const pending = new Map();
-        const prefetch = (i) => {
-          for (let j = i; j < Math.min(rows.length, i + PREFETCH); j++) {
-            const k = rows[j].url;
-            if (cat !== "spa" || pending.has(k) || c.state.walked.has(WalkState.key(cat, k)) || c.state.quotaReason(cat, rows[j].domain)) continue;
-            pending.set(k, c.prescreen(rows[j], true));
-          }
-        };
-        for (let i = 0; i < rows.length && c.state.count(cat) < n; i++) {
-          const cand = rows[i];
-          if (c.state.walked.has(WalkState.key(cat, cand.url))) continue;
-          if (limit !== undefined && visited >= limit) return;
-          prefetch(i);
-          const pre = c.state.quotaReason(cat, cand.domain) ? null : await (pending.get(cand.url) ?? c.prescreen(cand, cat === "spa"));
-          const rec = await c.visit(cand, pre);
-          visited++;
-          console.error(`  #${rec.seq} ${cat} ${rec.outcome === "accepted" ? "ACCEPT" : "skip  "} ${rec.reason}  ${cand.url.slice(0, 110)}  [${c.state.count(cat)}/${n}]`);
-          pending.delete(cand.url);
-          await sleep(200);
-        }
-      }
-    }
+    await walkLoop(c, frame, cats, { limit, spaFallback });
   } finally {
     await c.close();
     await writeOutputs(dataDir);

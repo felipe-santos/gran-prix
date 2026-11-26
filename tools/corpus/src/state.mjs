@@ -11,6 +11,9 @@ export function effectiveRecords(records) {
   return records.filter((r, i) => last.get(`${r.category}|${r.url}`) === i);
 }
 
+/** Reason prefix of the records written by `apply-review`: `owner-review:<motivo>`. */
+export const OWNER_REVIEW_PREFIX = "owner-review:";
+
 export const targetOf = (category) => CATEGORIES.find((c) => c.name === category)?.n ?? 0;
 /** Per-category cap of pages in pt/es: floor(30% of the target) = 9 for n=30, 7 for n=25. */
 export const nonEnCap = (category) => Math.floor(MAX_NON_EN_SHARE * targetOf(category));
@@ -23,6 +26,8 @@ export class WalkState {
     this.nonEnByCategory = new Map();
     this.domainCategory = new Map(); // `${domain}|${category}` -> number
     this.domainTotal = new Map();
+    this.blocked = new Set(); // URLs the owner excluded in review: never candidates again, in any category or phase
+    this.cursors = new Map(); // `${walk_category}|${phase}` -> highest order_hash walked there (where a resumed walk continues)
   }
 
   static key(walkCategory, url) {
@@ -34,9 +39,21 @@ export class WalkState {
     const s = new WalkState();
     for (const r of records) {
       s.walked.add(WalkState.key(r.walk_category, r.url));
+      s.noteCursor(r);
+      if (typeof r.reason === "string" && r.reason.startsWith(OWNER_REVIEW_PREFIX)) s.blocked.add(r.url);
       if (r.outcome === "accepted") s.accept(r);
     }
     return s;
+  }
+
+  noteCursor(r) {
+    const k = `${r.walk_category}|${r.phase}`;
+    if (r.order_hash && r.order_hash > (this.cursors.get(k) ?? "")) this.cursors.set(k, r.order_hash);
+  }
+
+  /** The highest `order_hash` walked in this (category, phase) (`""` if none): a resumed walk continues after it. */
+  cursor(category, phase) {
+    return this.cursors.get(`${category}|${phase}`) ?? "";
   }
 
   count(category) {

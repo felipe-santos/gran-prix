@@ -142,4 +142,47 @@ the second collection started, and no rule changed once it started.
 * `gp-corpus review-page` writes `review.html` (static, no external resource, screenshots by relative path) with the accepted pages by
   category, the first 20 exclusions and the exclusions decided by a heuristic rule; answers are kept in `localStorage` and exported as JSON.
   Open it in a browser (VS Code's "Open with Live Server"/Simple Browser also works); it only collects a verdict, it decides nothing.
+  Section A shows the requested and the final URL side by side, a **seal** "URL final != pedida" when the host or the path changed
+  (host without `www.`, path without the trailing `/`; scheme, query and fragment ignored) and **hints** (not decisions) when the final URL
+  looks like an error (`404`, `not-found`, `error`), the home page (path `/` when the request was not), a login/OAuth (`login`, `signin`,
+  `oauth`, `authorize`, `/password`), a challenge (`challenge`, `captcha`, `anubis`, `cf_chl`) or another site (eTLD+1 changed). A token
+  already present in the requested URL is not a hint (the hint is about where the navigation went). Each page has an answer
+  (`sim` by default, `nao`, `duvida`), a reason (categoria errada / erro ou soft-404 / login / desafio / home ou listagem / outro + text)
+  and a note; the summary counts seals and hints and a checkbox shows only the sealed pages. **Doubt counts as exclusion** (§2.1).
+  The export (`gran-prix.corpus-review/1`) has, per page, `snapshot_id`, `url`, `category`, `answer`, `reason`, `reason_text`, `note`, plus
+  the sha256 of the lock in force; answers on exclusions (sections B and C) go in `exclusion_checks` and are never applied.
+
+## Applying the owner's review: `gp-corpus apply-review <export.json>`
+
+```bash
+gp-corpus apply-review corpus-v0-review-answers.json --check   # validates and prints the plan; writes nothing
+gp-corpus apply-review corpus-v0-review-answers.json           # applies it
+```
+
+By rule, never by choice: (1) the export is validated (its lock is the one in force and the corpus still matches it, every page is an
+accepted page of the corpus with its snapshot id, no duplicates, known answers/reasons); (2) each `nao`/`duvida` page gets a record that
+supersedes the accepted one (`outcome: excluded`, `reason: owner-review:<motivo>`, `supersedes: <seq>`, the review attached), so
+`walked.jsonl` stays append-only and the trail is kept; (3) the walk continues where it stopped, in `order_hash` order, with the same rules,
+the same code (`Collector`) and the same user agent, until each category is complete or its frame is exhausted (SPA: the §2.3.5 fallback,
+which may end below the target; it only loses pages and `review-applied.md` says so); (4) `urls.csv`, `exclusions.jsonl`, `summary.json`,
+`first20-exclusions.md`, the snapshot-set manifest and `split-check.txt` are rewritten (the split check keeps the pre-registered rule and the
+amended SPA rule), `review-applied.md` lists what left, what entered, the category and the reason, and `corpus-v0.1.lock.json` is written
+with `supersedes` (sha256 of the lock it replaces) and `review_export_sha256`.
+
+Interpretations (documented in `review-applied.md` too):
+
+* **Domain quota.** §2.2 limits the pages *included*; a page the owner excluded is no longer in the corpus, so its (domain, category) and
+  per-domain slots are free for the candidates that come after it in the walk. Candidates already recorded before as excluded by quota
+  are **not** reopened (the replacement is "the next on the list", not a re-evaluation of the past); `review-applied.md` lists them. The
+  pt/es cap is recomputed the same way.
+* **Doubt** = exclusion (§2.1: ambiguous pages are excluded and recorded).
+* **SPA.** The walk resumes after the highest hash already walked in each phase, so a page that was in the corpus when the fallback passed it
+  does not become a candidate now; URLs excluded by the owner are never candidates again (any category, any phase). With the frame
+  exhausted the SPA category just loses pages.
+* **Old lock.** `corpus-v0.lock.json` is not deleted or edited. The files `apply-review` rewrites are first copied to `archive/corpus-v0/`, so
+  `verify-lock --lock corpus-v0.lock.json` still passes (it reads the archive); plain `verify-lock` checks the latest lock.
+* **Idempotent and resumable.** The same export a second time prints `already-applied` and changes nothing; a run that dies after writing the
+  exclusions is finished by running the same command again.
+* **Salt.** With the new counts the first valid `i` may change; both readings of the rule are in `split-check.txt` and `review-applied.md`.
+  The pipeline's salt is updated by the coordinator.
 
