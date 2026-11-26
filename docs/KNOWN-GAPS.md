@@ -171,6 +171,15 @@ threshold.
 Why deferred: process improvement, not code. The lesson — "do not
 change the release profile without measuring" — is documented.
 
+### Training is bit-reproducible per platform, not across platforms
+
+`gp-train` produces byte-identical weights for the same inputs, config and seed on one machine (the E1 gate checks
+this across data dirs). Across machines the weights can differ in the last bits: `f32::exp`/`ln`/`tanh` come from the
+system libm (glibc picks FMA or non-FMA variants per CPU), and gradient descent amplifies a last-bit difference.
+Inference is unaffected in practice (the runtimes agree with the golden within 1e-5), but a model's `model_id` is only
+reproducible on the platform that trained it. Tests that pin hashes of trained weights run only with
+`GP_TRAIN_PINNED_PLATFORM=1`. A portable libm (for example the `libm` crate) would remove this, at some speed cost.
+
 ### Dependency freeze on the measurement path while the dom-v0 experiment runs
 
 The pre-registered experiment `dom-v0` (tag `prereg-dom-v0`) pins the capture browser and the baselines. Until it
