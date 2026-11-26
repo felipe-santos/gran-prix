@@ -33,7 +33,8 @@
   },
   "dependencies": {
     "@gran-prix/contracts": "workspace:*",
-    "@gran-prix/labels": "workspace:*"
+    "@gran-prix/labels": "workspace:*",
+    "@gran-prix/markdown": "workspace:*"
   },
   "devDependencies": {
     "@gran-prix/cli": "workspace:*",
