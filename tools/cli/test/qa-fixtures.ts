@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { contractId, type QaTaskSet, type Sha256 } from "@gran-prix/contracts";
 import type { LlmLedgerPort } from "@gran-prix/labels";
 import { Ledger } from "../src/ledger.js";
+import { MarkdownBundle } from "../src/stages/qa/arms.js";
 import type { CallModel } from "../src/stages/qa/call.js";
 import { resolveParams } from "../src/stages/qa/model-params.js";
 import { tmpDir } from "./helpers.js";
@@ -52,7 +53,7 @@ export function taskSet(specs: TaskSpec[]): QaTaskSet {
         group_id,
         stratum: s.stratum,
         kind: s.kind ?? "main",
-        question: s.question ?? `Question ${tasks.length + 1}?`,
+        question: s.question === undefined ? `Question ${tasks.length + 1}?` : (s.n ?? 1) > 1 ? s.question.replace(/\?$/, ` #${k + 1}?`) : s.question,
         answer: s.answer ?? `answer${tasks.length + 1}`,
         answer_variants: s.variants ?? [],
         evidence: { unit_ids: [1], quote: s.quote ?? `evidence quote ${tasks.length + 1}`, class: "main" },
@@ -77,4 +78,19 @@ export function taskSet(specs: TaskSpec[]): QaTaskSet {
     duration_ms: 0,
   };
   return { ...base, task_set_id: contractId("qa-task-set", base as unknown as Record<string, unknown>), provenance } as QaTaskSet;
+}
+
+/** An in-memory `markdown` bundle (what `ts:measure.tokens` writes): d2/<hex12>.md and out/<system>/<hex12>.md. */
+export function bundleOf(ts: QaTaskSet, texts: { d2: (snapshotId: string, stratum: string) => string; systems?: Record<string, (snapshotId: string, stratum: string) => string | null> }): MarkdownBundle {
+  const files = new Map<string, Uint8Array>();
+  const enc = new TextEncoder();
+  for (const p of ts.pages) {
+    const hex = p.snapshot_id.slice("sha256:".length, "sha256:".length + 12);
+    files.set(`d2/${hex}.md`, enc.encode(texts.d2(p.snapshot_id, p.stratum)));
+    for (const [sys, f] of Object.entries(texts.systems ?? {})) {
+      const t = f(p.snapshot_id, p.stratum);
+      if (t !== null) files.set(`out/${sys}/${hex}.md`, enc.encode(t));
+    }
+  }
+  return new MarkdownBundle({ files: () => [...files.keys()], file: (p) => files.get(p) as Uint8Array });
 }
