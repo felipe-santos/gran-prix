@@ -2,8 +2,10 @@
 //   1. validates the export (same lock, every page in the corpus, no duplicates, known answers and reasons);
 //   2. for each page answered `nao` or `duvida`, appends a record that supersedes the accepted one (`outcome: excluded`,
 //      `reason: owner-review:<motivo>`); walked.jsonl stays append-only, the trail is kept;
-//   3. replaces by the rule of §2.2: the walk goes on from where it stopped, in `order_hash` order, with the same rules, the same
-//      code and the same user agent, until each category is complete again or the frame is exhausted (SPA: fallback of §2.3.5);
+//   3. replaces by the rule of §2.2/§2.3.2: the whole walk is replayed in `order_hash` order, so the corpus is the one that would
+//      have come out if the review had existed during the walk (replay.mjs): recorded evaluations are reused unless they depend on the
+//      state (domain/pt-es quotas, the SPA fallback pool); a candidate barred only by a quota that is free now is fetched now, with
+//      the same code, rules and user agent; only after the recorded ones does the walk go on to unvisited candidates;
 //   4. rewrites urls.csv / summary.json / split-check.txt / ..., writes review-applied.md and a NEW lock (`corpus-v0.1.lock.json`)
 //      with `supersedes` (sha256 of the lock it replaces) and the sha256 of the export. The old lock is never deleted.
 // Idempotent: the same export a second time changes nothing. Resumable: a crash after the exclusions were written is finished
@@ -19,7 +21,8 @@ import { writeOutputs } from "./report.mjs";
 import { ANSWERS, EXCLUDING, NO_REASON, REASON_VALUES, REVIEW_FORMAT } from "./review-format.mjs";
 import { AMENDED_MINIMA, firstSalt, splitCheck } from "./split.mjs";
 import { OWNER_REVIEW_PREFIX, effectiveRecords, targetOf } from "./state.mjs";
-import { Collector, walkLoop } from "./walk.mjs";
+import { replayWalk } from "./replay.mjs";
+import { Collector } from "./walk.mjs";
 
 /** Files `apply-review` rewrites that the superseded lock froze or that describe it: kept in `archive/<lock name>/`. */
 const ARCHIVED = [...LOCKED_FILES.filter((f) => f !== "frame.jsonl"), "summary.json", "split-check.txt", "review-applied.md"];
@@ -116,8 +119,31 @@ export function saltSummary(records) {
   return { pages: pages.length, pre: fmt(pre), amended: fmt(am), pre_i: pre.i, amended_i: am.i, amended_counts: am.counts };
 }
 
+/**
+ * What changed between the frozen records and the records after the replay, read from the records themselves (so a resumed run
+ * reports the same as a clean one): pages that entered (with why) and pages the replay displaced (accepted before, refused now).
+ */
+export function describeChanges(records0, records1, allRecords) {
+  const bySeq = new Map(allRecords.map((r) => [r.seq, r]));
+  const had = new Set(records0.filter((r) => r.outcome === "accepted").map((r) => keyOf(r.category, r.url)));
+  const entered = records1
+    .filter((r) => r.outcome === "accepted" && !had.has(keyOf(r.category, r.url)))
+    .sort((a, b) => a.seq - b.seq)
+    .map((rec) => {
+      const old = rec.supersedes === undefined ? null : bySeq.get(rec.supersedes);
+      return old
+        ? { rec, reopened: true, why: `reaberta: estava excluída por \`${old.reason}\` (#${old.seq}), que dependia do estado; a vaga ficou livre e ela foi buscada agora, na posição dela` }
+        : { rec, reopened: false, why: "primeira candidata sem registro anterior, na ordem de hash" };
+    });
+  const displaced = records1
+    .filter((r) => r.replay?.kind === "displaced")
+    .sort((a, b) => a.seq - b.seq)
+    .map((rec) => ({ rec, why: rec.reason === "replay:target-reached" ? "a categoria fechou o alvo antes dela na ordem" : "a vaga foi tomada por uma candidata reaberta mais cedo na ordem" }));
+  return { entered, displaced };
+}
+
 /** review-applied.md. A pure function of what happened. */
-export function buildReport({ now, exportSha, exportedAt, oldLock, oldLockSha, newLockName, before, after, exclusions, added, visitedExcluded, unreviewed, kept, ignored, notReopened, saltBefore, saltAfter, shortfalls }) {
+export function buildReport({ now, exportSha, exportedAt, oldLock, oldLockSha, newLockName, before, after, exclusions, entered, displaced, visitedExcluded, unreviewed, kept, ignored, saltBefore, saltAfter, shortfalls }) {
   const L = [];
   const catRow = (c) => `| ${c.name} | ${before.filter((r) => r.category === c.name).length} | ${after.filter((r) => r.category === c.name).length} | ${c.n} |`;
   L.push("# Revisão do dono aplicada ao corpus dom-v0", "");
@@ -125,37 +151,34 @@ export function buildReport({ now, exportSha, exportedAt, oldLock, oldLockSha, n
   L.push(`- export: \`${exportSha}\` (exportado em ${exportedAt ?? "n/d"})`);
   L.push(`- lock substituído: \`${oldLock}\` (\`${oldLockSha}\`), mantido; os arquivos que ele congelou estão em \`archive/${oldLock.replace(/\.lock\.json$/, "")}/\``);
   L.push(`- lock novo: \`${newLockName}\` (o sha256 vem na saída do comando e no próprio arquivo de lock)`, "");
-  L.push("Regra aplicada (protocolo §2.1 e §2.2): a página respondida `nao` ou `duvida` é excluída (ambígua = excluída) e registrada com `reason: owner-review:<motivo>`;", "a reposição é a próxima da lista ordenada pela semente, na mesma ordem de hash, com as mesmas regras, o mesmo código e a mesma UA. Nenhuma escolha humana de substituta.", "");
-  L.push(`## O que saiu (${exclusions.length})`, "");
-  if (exclusions.length === 0) L.push("_nada_", "");
+  L.push("Regra aplicada (protocolo §2.1, §2.2 e §2.3.2): a página respondida `nao` ou `duvida` é excluída (ambígua = excluída) e registrada com `reason: owner-review:<motivo>`;", "o corpus é o resultado de **repetir a caminhada em ordem de hash**, por categoria e fase, com a exclusão do dono como mais um critério: é o que teria saído se a revisão tivesse existido durante a caminhada. As avaliações já registradas que não dependem do estado (http, robots, idioma da página, flags, chars, capture, tipo, regra da SPA) são reaproveitadas; as cotas de domínio, o teto pt/es e o pool do fallback da SPA são recalculados com o conjunto aceito da repetição. Uma candidata antes barrada só por cota, cuja vaga ficou livre, é avaliada na sua posição (e buscada agora, com o mesmo código, UA e regras, porque a cota é checada antes de carregar). Só depois de esgotar o já percorrido a caminhada segue para candidatas nunca visitadas. Nenhuma escolha humana de substituta.", "");
+  L.push(`## O que saiu (${exclusions.length + displaced.length})`, "");
+  if (exclusions.length + displaced.length === 0) L.push("_nada_", "");
   else {
-    L.push("| categoria | URL pedida | URL final | resposta | motivo | nota |", "|---|---|---|---|---|---|");
-    for (const e of exclusions) L.push(`| ${e.rec.category} | ${cell(e.rec.url)} | ${cell(e.rec.detail?.final_url ?? "")} | ${e.answer} | ${e.reason}${e.reason_text ? ` (${cell(e.reason_text)})` : ""} | ${cell(e.note)} |`);
+    L.push("| categoria | URL pedida | URL final | origem | resposta | motivo | nota |", "|---|---|---|---|---|---|---|");
+    for (const e of exclusions) L.push(`| ${e.rec.category} | ${cell(e.rec.url)} | ${cell(e.rec.detail?.final_url ?? "")} | dono | ${e.answer} | owner-review:${e.reason}${e.reason_text ? ` (${cell(e.reason_text)})` : ""} | ${cell(e.note)} |`);
+    for (const d of displaced) L.push(`| ${d.rec.category} | ${cell(d.rec.url)} | ${cell(d.rec.detail?.final_url ?? "")} | repetição | n/d | ${d.rec.reason}: ${d.why} | |`);
     L.push("");
   }
-  L.push(`## O que entrou (${added.length})`, "");
-  if (added.length === 0) L.push("_nada_", "");
+  L.push(`## O que entrou (${entered.length})`, "");
+  if (entered.length === 0) L.push("_nada_", "");
   else {
-    L.push("| categoria | URL pedida | URL final | fase | order_hash |", "|---|---|---|---|---|");
-    for (const r of added) L.push(`| ${r.category} | ${cell(r.url)} | ${cell(r.detail?.final_url ?? "")} | ${r.phase} | ${r.order_hash.slice(0, 12)} |`);
+    L.push("| categoria | URL pedida | URL final | fase | order_hash | por que entrou |", "|---|---|---|---|---|---|");
+    for (const { rec: r, why } of entered) L.push(`| ${r.category} | ${cell(r.url)} | ${cell(r.detail?.final_url ?? "")} | ${r.phase} | ${r.order_hash.slice(0, 12)} | ${why} |`);
     L.push("");
   }
   L.push(`Candidatos visitados na reposição e não aceitos: ${visitedExcluded.total}${visitedExcluded.total ? ` (${Object.entries(visitedExcluded.by_reason).map(([k, n]) => `${k} ${n}`).join(", ")})` : ""}.`, "");
   L.push("## Contagens por categoria", "", "| categoria | antes | depois | alvo |", "|---|---|---|---|", ...CATEGORIES.map(catRow), `| **total** | ${before.length} | ${after.length} | ${CATEGORIES.reduce((a, c) => a + c.n, 0)} |`, "");
   if (shortfalls.length > 0) {
-    L.push("Categorias abaixo do alvo depois da reposição: " + shortfalls.map((s) => `${s.category} ${s.accepted}/${s.target}`).join(", ") + ". O quadro de URLs dessas categorias está esgotado (nenhum candidato restante depois do cursor, fora os excluídos pelo dono): elas só perdem páginas, e isso fica registrado aqui. O split-check abaixo usa a regra ajustada do SPA, como antes.", "");
+    L.push("Categorias abaixo do alvo depois da reposição: " + shortfalls.map((s) => `${s.category} ${s.accepted}/${s.target}`).join(", ") + ". O quadro de URLs dessas categorias está esgotado (todos os candidatos já foram avaliados, fora os excluídos pelo dono): elas só perdem páginas, e isso fica registrado aqui. O split-check abaixo usa a regra ajustada do SPA, como antes.", "");
   }
   L.push("## Cotas de domínio (interpretação literal do §2.2)", "");
-  L.push("O §2.2 limita as páginas **incluídas** (1 por (domínio, categoria), 2 por domínio). Uma página excluída pelo dono deixa de estar no corpus, então a cota dela é liberada para os candidatos seguintes da caminhada. Candidatos anteriores já registrados como excluídos por cota **não** são reabertos: a reposição é a próxima da lista, não uma reavaliação do passado. O mesmo vale para a cota de idioma (pt/es).", "");
+  L.push("O §2.2 limita as páginas **incluídas** (1 por (domínio, categoria), 2 por domínio). Uma página excluída pelo dono deixa de estar no corpus, então a vaga dela fica livre para qualquer candidata que a repetição avalie depois dela na ordem, inclusive as que antes foram barradas por essa cota. O mesmo vale para o teto de idioma (pt/es). Uma página aceita antes cuja vaga foi tomada por uma candidata reaberta mais cedo na ordem sai com o motivo da cota (listada em \"O que saiu\").", "");
   for (const e of exclusions) {
     const d = groupKeyOf(e.rec);
     L.push(`- ${d} (${e.rec.category}): ${domainTotal(before, d)} página(s) do domínio no corpus antes, ${domainTotal(after, d)} depois.`);
   }
-  if (notReopened.length > 0) {
-    L.push("", "Candidatos de domínios liberados que tinham sido excluídos por cota ANTES da revisão e não foram reabertos (para o dono saber, não para decidir):");
-    for (const r of notReopened) L.push(`- ${r.category} #${r.seq} ${cell(r.url)} (${r.reason})`);
-  }
-  L.push("", "## SPA e URLs excluídas pelo dono", "", "As URLs excluídas pelo dono não voltam como candidatas em nenhuma categoria nem fase (nem como `spa-fallback`), e a caminhada retoma depois do último hash percorrido em cada fase: uma página que estava no corpus quando o fallback passou por ela não vira candidata agora.", "");
+  L.push("", "## SPA e URLs excluídas pelo dono", "", "As URLs excluídas pelo dono não voltam como candidatas em nenhuma categoria nem fase (nem como `spa-fallback`). O pool do fallback é recalculado na repetição com o que as outras categorias aceitaram; se o quadro se esgota, a SPA só perde páginas e isso fica registrado.", "");
   L.push("## Não aplicado", "");
   L.push(`- páginas aceitas mantidas (resposta \`sim\`): ${kept}`);
   L.push(`- páginas aceitas sem resposta no export (mantidas): ${unreviewed.length}`);
@@ -234,12 +257,12 @@ export async function applyReview(dataDir, exportPath, opts = {}) {
     appendFileSync(walkedPath, `${JSON.stringify(exclusionRecord(ex, ++seq, { exportSha, lockSha: curSha, now }))}\n`);
   }
 
-  // 2. the replacement walk, by the same code (Collector) in the same order, after the cursor
+  // 2. the replay of the walk, by the same code (Collector) in the same order (see replay.mjs)
   const frame = readJsonlSync(join(dataDir, "frame.jsonl"));
   const collector = collectorFactory(dataDir);
   await collector.init();
   try {
-    await walkLoop(collector, frame, CATEGORIES.map((c) => c.name), { resume: true });
+    await replayWalk(collector, frame, effectiveRecords(readJsonlSync(walkedPath)), { exportSha });
   } finally {
     await collector.close();
   }
@@ -250,14 +273,11 @@ export async function applyReview(dataDir, exportPath, opts = {}) {
   const records1 = effectiveRecords(readJsonlSync(walkedPath));
   const acc0 = records0.filter((r) => r.outcome === "accepted");
   const acc1 = records1.filter((r) => r.outcome === "accepted");
-  const had = new Set(acc0.map((r) => keyOf(r.category, r.url)));
-  const added = acc1.filter((r) => !had.has(keyOf(r.category, r.url))).sort((a, b) => a.seq - b.seq);
+  const { entered, displaced } = describeChanges(records0, records1, readJsonlSync(walkedPath));
   const seqs0 = new Set(records0.map((r) => r.seq));
-  const visited = records1.filter((r) => !seqs0.has(r.seq) && r.outcome === "excluded" && !r.reason.startsWith(OWNER_REVIEW_PREFIX));
+  const visited = records1.filter((r) => !seqs0.has(r.seq) && r.outcome === "excluded" && !r.reason.startsWith(OWNER_REVIEW_PREFIX) && !r.replay);
   const by_reason = {};
   for (const r of visited) by_reason[r.reason] = (by_reason[r.reason] ?? 0) + 1;
-  const freed = new Set(v.exclusions.map((e) => groupKeyOf(e.rec)));
-  const notReopened = records0.filter((r) => r.outcome === "excluded" && /quota/.test(r.reason) && freed.has(r.domain ?? groupKeyOf(r)));
   const newN = cur.n + 1;
   const newLockName = lockNameOf(newN);
   const exportCopy = `review-export-v0.${newN}.json`;
@@ -272,12 +292,12 @@ export async function applyReview(dataDir, exportPath, opts = {}) {
     before: acc0,
     after: acc1,
     exclusions: v.exclusions,
-    added,
+    entered,
+    displaced,
     visitedExcluded: { total: visited.length, by_reason },
     unreviewed: v.unreviewed,
     kept: v.kept,
     ignored: v.ignored_checks,
-    notReopened,
     saltBefore: saltSummary(records0),
     saltAfter: saltSummary(records1),
     shortfalls: CATEGORIES.map((c) => ({ category: c.name, accepted: acc1.filter((r) => r.category === c.name).length, target: targetOf(c.name) })).filter((s) => s.accepted < s.target),
@@ -291,5 +311,5 @@ export async function applyReview(dataDir, exportPath, opts = {}) {
     extraFiles: [exportCopy, "review-applied.md"],
     extra: { supersedes: curSha, supersedes_name: cur.name, review_export_sha256: exportSha, review_export_file: exportCopy },
   });
-  return { status: "applied", lock: newLockName, lock_sha256, supersedes: curSha, export_sha256: exportSha, excluded: v.exclusions.length, added: added.length, counts: lock.counts, plan };
+  return { status: "applied", lock: newLockName, lock_sha256, supersedes: curSha, export_sha256: exportSha, excluded: v.exclusions.length, added: entered.length, reopened: entered.filter((e) => e.reopened).length, displaced: displaced.length, counts: lock.counts, plan };
 }

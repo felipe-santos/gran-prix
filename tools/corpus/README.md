@@ -162,9 +162,15 @@ gp-corpus apply-review corpus-v0-review-answers.json           # applies it
 By rule, never by choice: (1) the export is validated (its lock is the one in force and the corpus still matches it, every page is an
 accepted page of the corpus with its snapshot id, no duplicates, known answers/reasons); (2) each `nao`/`duvida` page gets a record that
 supersedes the accepted one (`outcome: excluded`, `reason: owner-review:<motivo>`, `supersedes: <seq>`, the review attached), so
-`walked.jsonl` stays append-only and the trail is kept; (3) the walk continues where it stopped, in `order_hash` order, with the same rules,
-the same code (`Collector`) and the same user agent, until each category is complete or its frame is exhausted (SPA: the §2.3.5 fallback,
-which may end below the target; it only loses pages and `review-applied.md` says so); (4) `urls.csv`, `exclusions.jsonl`, `summary.json`,
+`walked.jsonl` stays append-only and the trail is kept; (3) the walk of §2.3.2 is **replayed** (`src/replay.mjs`): per category (table order) and phase, in `order_hash`
+order, the owner's exclusion as one more criterion, so the result is what would have come out if the review had existed during the walk, whatever
+the path. Evaluations already recorded that do not depend on the state (http, robots, page language, flags, chars, capture, type, SPA rule) are
+reused; what depends on it (the (domain, category) and domain quotas, the pt/es cap, the SPA fallback pool) is recomputed with the accepted set of
+the replay. A candidate that was only barred by a quota that is free now is fetched now, in its position, with the same code (`Collector`), user
+agent and rules (the quota is checked before loading, so it never was), and its record supersedes the old one; a page accepted before whose slot a
+reopened candidate took is superseded by an exclusion record (no fetch); only after the recorded candidates does the walk go on to never-visited ones,
+until the category is complete or the frame is exhausted (SPA: the §2.3.5 fallback may end below the target; it only loses pages and `review-applied.md`
+says so); (4) `urls.csv`, `exclusions.jsonl`, `summary.json`,
 `first20-exclusions.md`, the snapshot-set manifest and `split-check.txt` are rewritten (the split check keeps the pre-registered rule and the
 amended SPA rule), `review-applied.md` lists what left, what entered, the category and the reason, and `corpus-v0.1.lock.json` is written
 with `supersedes` (sha256 of the lock it replaces) and `review_export_sha256`.
@@ -172,13 +178,11 @@ with `supersedes` (sha256 of the lock it replaces) and `review_export_sha256`.
 Interpretations (documented in `review-applied.md` too):
 
 * **Domain quota.** §2.2 limits the pages *included*; a page the owner excluded is no longer in the corpus, so its (domain, category) and
-  per-domain slots are free for the candidates that come after it in the walk. Candidates already recorded before as excluded by quota
-  are **not** reopened (the replacement is "the next on the list", not a re-evaluation of the past); `review-applied.md` lists them. The
-  pt/es cap is recomputed the same way.
+  per-domain slots are free for every candidate the replay evaluates after it, including candidates that were barred by that quota before
+  (they are reopened and fetched). The pt/es cap is recomputed the same way. `review-applied.md` gives the reason of every entry and exit.
 * **Doubt** = exclusion (§2.1: ambiguous pages are excluded and recorded).
-* **SPA.** The walk resumes after the highest hash already walked in each phase, so a page that was in the corpus when the fallback passed it
-  does not become a candidate now; URLs excluded by the owner are never candidates again (any category, any phase). With the frame
-  exhausted the SPA category just loses pages.
+* **SPA.** The fallback pool is recomputed by the replay (the other frame URLs not in the corpus, in hash order); URLs excluded by the owner are
+  never candidates again (any category, any phase). With the frame exhausted the SPA category just loses pages.
 * **Old lock.** `corpus-v0.lock.json` is not deleted or edited. The files `apply-review` rewrites are first copied to `archive/corpus-v0/`, so
   `verify-lock --lock corpus-v0.lock.json` still passes (it reads the archive); plain `verify-lock` checks the latest lock.
 * **Idempotent and resumable.** The same export a second time prints `already-applied` and changes nothing; a run that dies after writing the

@@ -149,7 +149,6 @@ export class Collector {
     };
     appendJsonl(this.walkedPath, rec);
     this.state.walked.add(WalkState.key(cand.category, cand.url));
-    this.state.noteCursor(rec);
     if (outcome === "accepted") this.state.accept(rec);
     return rec;
   }
@@ -297,23 +296,21 @@ export async function revisit(dataDir, messageRe) {
 }
 
 /**
- * The walk loop shared by `walk` and `apply-review`: per category (given order), per phase, candidates in hash order, until the
- * target is met or the frame is exhausted. `resume` continues after the highest hash already walked in the phase (what
- * `apply-review` needs: the frame is NOT re-opened behind the cursor, e.g. a page that was in the corpus when the SPA fallback
- * passed it). URLs excluded by the owner (`state.blocked`) are never candidates. Returns the number of pages visited.
+ * The walk loop of `walk`: per category (given order), per phase, candidates in hash order, until the target is met or the frame
+ * is exhausted. URLs excluded by the owner (`state.blocked`) are never candidates. `pauseMs` is the pause between pages.
+ * (`apply-review` does not use it: it re-runs the whole walk as a replay, see replay.mjs.) Returns the number of pages visited.
  */
-export async function walkLoop(c, frame, cats, { limit, spaFallback = true, resume = false } = {}) {
+export async function walkLoop(c, frame, cats, { limit, spaFallback = true, pauseMs = 200 } = {}) {
   let visited = 0;
   for (const cat of cats) {
     const n = targetOf(cat);
     for (const ph of phasesFor(cat, frame, c.state)) {
       if (ph.phase === "spa-fallback" && !spaFallback) continue;
       if (c.state.count(cat) >= n) break;
-      const cursor = resume ? c.state.cursor(cat, ph.phase) : "";
       const rows = (typeof ph.rows === "function" ? ph.rows() : ph.rows)
-        .filter((r) => !c.state.blocked.has(r.url) && r.order_hash > cursor)
+        .filter((r) => !c.state.blocked.has(r.url))
         .map((r) => ({ ...r, category: cat, phase: ph.phase, domain: r.domain ?? etld1(r.url) }));
-      console.error(`[${cat}/${ph.phase}] ${c.state.count(cat)}/${n} accepted, ${rows.length} candidates in frame${resume ? " after the cursor" : ""}`);
+      console.error(`[${cat}/${ph.phase}] ${c.state.count(cat)}/${n} accepted, ${rows.length} candidates in frame`);
       const pending = new Map();
       const prefetch = (i) => {
         for (let j = i; j < Math.min(rows.length, i + PREFETCH); j++) {
@@ -332,7 +329,7 @@ export async function walkLoop(c, frame, cats, { limit, spaFallback = true, resu
         visited++;
         console.error(`  #${rec.seq} ${cat} ${rec.outcome === "accepted" ? "ACCEPT" : "skip  "} ${rec.reason}  ${cand.url.slice(0, 110)}  [${c.state.count(cat)}/${n}]`);
         pending.delete(cand.url);
-        await sleep(200);
+        if (pauseMs > 0) await sleep(pauseMs);
       }
     }
   }

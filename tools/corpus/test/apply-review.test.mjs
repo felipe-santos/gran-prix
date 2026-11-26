@@ -11,6 +11,7 @@ import { readJsonlSync } from "../src/jsonl.mjs";
 import { LOCK_NAME, createLock, latestLock, listLocks, sha256File, verifyLock } from "../src/lock.mjs";
 import { writeOutputs } from "../src/report.mjs";
 import { REVIEW_FORMAT } from "../src/review-format.mjs";
+import { replayWalk } from "../src/replay.mjs";
 import { WalkState, effectiveRecords } from "../src/state.mjs";
 import { Collector, walkLoop } from "../src/walk.mjs";
 
@@ -41,7 +42,7 @@ function writeSnapshot(dir, url) {
  * rejected, then the spare articles already walked (and rejected) in the SPA fallback, as the real walk leaves it.
  * `sameDomainAs`: the first spare article shares the domain of that accepted article (quota test).
  */
-async function fixture({ article = 30, spare = 3, spa = 2, sameDomainAs } = {}) {
+async function fixture({ article = 30, spare = 3, spa = 2, sameDomainAs, barred } = {}) {
   const dir = tmp("gp-corpus-apply-");
   const rows = [];
   for (let i = 0; i < article + spare; i++) rows.push(row("article", `https://a${i}.example/p${i}`, `a${i}.example`));
@@ -58,18 +59,32 @@ async function fixture({ article = 30, spare = 3, spa = 2, sameDomainAs } = {}) 
     while (!(orderHash(url) > lo && orderHash(url) < hi));
     sp = [row("article", url, dom), ...sp.slice(1)].sort(byOrderHash);
   }
+  // `barred` = {after, sameDomainAs}: a candidate between acc[after] and acc[after+1] whose domain is held by acc[sameDomainAs]; the walk
+  // recorded it as excluded by the quota BEFORE loading it (so it has no `detail`), exactly as the real walk does
+  let bar = null;
+  if (barred) {
+    const dom = acc[barred.sameDomainAs].domain;
+    let k = 0;
+    let url;
+    do url = `https://${dom}/b${k++}`;
+    while (!(orderHash(url) > acc[barred.after].order_hash && orderHash(url) < acc[barred.after + 1].order_hash));
+    bar = row("article", url, dom);
+  }
   const spaRows = Array.from({ length: spa + 1 }, (_, i) => row("spa", `https://s${i}.example/app`, `s${i}.example`, { spa_flag: true })).sort(byOrderHash);
   let seq = 0;
   const walked = [];
-  for (const r of acc) walked.push(accepted(++seq, r));
+  acc.forEach((r, i) => {
+    walked.push(accepted(++seq, r));
+    if (bar && i === barred.after) walked.push({ ...excluded(++seq, bar, "primary", "domain-category-quota"), detail: undefined });
+  });
   spaRows.forEach((r, i) => walked.push(i < spa ? accepted(++seq, r) : excluded(++seq, r, "primary", "spa-rule:server-text>=200")));
-  for (const r of sp) walked.push(excluded(++seq, { ...r, category: "spa" }, "spa-fallback", "spa-rule:server-text>=200"));
+  for (const r of [...(bar ? [bar] : []), ...sp]) walked.push(excluded(++seq, { ...r, category: "spa" }, "spa-fallback", "spa-rule:server-text>=200"));
   writeFileSync(join(dir, "walked.jsonl"), walked.map((r) => JSON.stringify(r)).join("\n") + "\n");
-  writeFileSync(join(dir, "frame.jsonl"), [...acc, ...sp, ...spaRows].map((r) => JSON.stringify(r)).join("\n") + "\n");
+  writeFileSync(join(dir, "frame.jsonl"), [...acc, ...(bar ? [bar] : []), ...sp, ...spaRows].map((r) => JSON.stringify(r)).join("\n") + "\n");
   for (const r of walked) if (r.outcome === "accepted") writeSnapshot(dir, r.url);
   await writeOutputs(dir);
   await createLock(dir, { probeVersion: PROBE, commit: "test", now: new Date("2026-11-25T12:00:00Z") });
-  return { dir, acc, spare: sp, spaRows, files: () => ["walked.jsonl", "urls.csv", "exclusions.jsonl", "summary.json", "split-check.txt", "snapshot-set/manifest.json", "frame.jsonl"].map((f) => [f, existsSync(join(dir, f)) ? readFileSync(join(dir, f), "utf8") : null]) };
+  return { dir, acc, bar, spare: sp, spaRows, files: () => ["walked.jsonl", "urls.csv", "exclusions.jsonl", "summary.json", "split-check.txt", "snapshot-set/manifest.json", "frame.jsonl"].map((f) => [f, existsSync(join(dir, f)) ? readFileSync(join(dir, f), "utf8") : null]) };
 }
 
 /** An export over the lock in force: everything `sim` except the overrides (`{[url]: {answer, reason, ...}}`). */
@@ -92,9 +107,11 @@ function makeExport(dir, overrides = {}, patch = {}) {
 
 /** Same record/quota behaviour as the real Collector.visit, with the page outcome scripted. */
 class FakeCollector extends Collector {
-  constructor(dataDir, { reject = () => false, boom = false } = {}) {
+  /** `wild`: pt pages, pages whose final domain differs, and a default 25% of rejected pages, all derived from the url hash. */
+  constructor(dataDir, { reject, boom = false, wild = false } = {}) {
     super(dataDir);
-    this.reject = reject;
+    this.wild = wild;
+    this.reject = reject ?? (wild ? (cand) => parseInt(cand.order_hash[2], 16) % 4 === 0 : () => false);
     this.boom = boom;
     this.visited = [];
   }
@@ -109,8 +126,18 @@ class FakeCollector extends Collector {
     const quota = this.state.quotaReason(cand.category, cand.domain);
     if (quota) return this.record(cand, "excluded", quota);
     if (this.reject(cand)) return this.record(cand, "excluded", "flag:error-page", { detail: { http_status: 200 } });
+    const h = cand.order_hash;
+    const lang = this.wild && parseInt(h[4], 16) % 3 === 0 ? "pt" : "en";
+    const group = this.wild && parseInt(h[5], 16) < 2 ? `g${h[6]}.example` : cand.domain;
+    const detail = { http_status: 200, final_url: cand.url, group_key: group, title: "new", lang, visible_chars: 999, flags: [] };
+    const reasons = [];
+    const q = this.state.quotaReason(cand.category, group);
+    if (q) reasons.push(`${q}:final-domain`);
+    const l = this.state.languageReason(cand.category, lang);
+    if (l) reasons.push(l);
+    if (reasons.length > 0) return this.record(cand, "excluded", reasons[0], { also: reasons.slice(1), detail });
     writeSnapshot(this.dataDir, cand.url);
-    return this.record(cand, "accepted", "ok", { detail: { http_status: 200, final_url: cand.url, group_key: cand.domain, title: "new", lang: "en", visible_chars: 999, flags: [] }, set_entry: setEntry(cand.category, cand.url, cand.domain) });
+    return this.record(cand, "accepted", "ok", { detail, set_entry: setEntry(cand.category, cand.url, group) });
   }
 }
 
@@ -256,7 +283,7 @@ describe("apply-review", () => {
     expect(md).toMatch(/spa 2\/25/);
   });
 
-  it("walkLoop never offers a blocked URL, in any category or phase, and resume continues after the cursor", async () => {
+  it("a plain walk never offers a URL the owner excluded, in any category or phase", async () => {
     const f = await fixture({ spare: 0 });
     const url = f.acc[2].url;
     const rec = effectiveRecords(readJsonlSync(join(f.dir, "walked.jsonl"))).find((r) => r.url === url);
@@ -265,15 +292,10 @@ describe("apply-review", () => {
     const c = new FakeCollector(f.dir);
     const frame = readJsonlSync(join(f.dir, "frame.jsonl"));
     expect(c.state.blocked.has(url)).toBe(true);
-    expect(c.state.cursor("article", "primary")).toBe(f.acc[29].order_hash);
-    // a fresh article row BEFORE the cursor (never walked) is not reopened by a resumed walk, but a plain walk would visit it
     const early = row("article", "https://early.example/e", "early.example");
     early.order_hash = "0".repeat(64);
-    await walkLoop(c, [...frame, early], ["article"], { resume: true });
-    expect(c.visited).toEqual([]);
-    await walkLoop(c, [...frame, early], ["article"], {});
+    await walkLoop(c, [...frame, early], ["article", "spa"], { pauseMs: 0 });
     expect(c.visited).toEqual(["article|https://early.example/e"]);
-    expect(c.visited.some((v) => v.endsWith(url))).toBe(false);
   });
 
   it("a wrong lock is refused and nothing is written", async () => {
@@ -364,6 +386,128 @@ describe("apply-review", () => {
     expect(verifyLock(f.dir)).toEqual([]);
     expect(verifyLock(f.dir, { lockName: LOCK_NAME })).toEqual([]);
   });
+});
+
+describe("replay (the corpus is what the walk would have produced with the review in place)", () => {
+  it("a candidate barred only by a quota the excluded page held is reopened at its position, and the one after the old cursor is not needed", async () => {
+    const f = await fixture({ barred: { after: 10, sameDomainAs: 5 } });
+    expect(f.bar.domain).toBe(f.acc[5].domain);
+    const { path } = makeExport(f.dir, { [f.acc[5].url]: { answer: "nao", reason: "categoria-errada" } });
+    const { res, c } = await run(f.dir, path);
+    expect(c.visited).toEqual([`article|${f.bar.url}`]); // fetched now: the quota is checked before loading, so it never was
+    expect(res).toMatchObject({ excluded: 1, added: 1, reopened: 1, displaced: 0 });
+    const eff = effectiveRecords(readJsonlSync(join(f.dir, "walked.jsonl")));
+    const b = eff.find((r) => r.category === "article" && r.url === f.bar.url);
+    expect(b).toMatchObject({ outcome: "accepted", supersedes: 12 });
+    expect(eff.filter((r) => r.category === "article" && r.outcome === "accepted")).toHaveLength(30);
+    expect(eff.find((r) => r.url === f.spare[0].url && r.category === "article")).toBeUndefined(); // nothing past the old cursor was visited
+    const md = readFileSync(join(f.dir, "review-applied.md"), "utf8");
+    expect(md).toMatch(/reaberta: estava excluída por `domain-category-quota`/);
+    expect(md).toContain(f.bar.url);
+  });
+
+  it("while the domain stays occupied the barred candidate stays barred and the walk goes on past the old cursor", async () => {
+    const f = await fixture({ barred: { after: 10, sameDomainAs: 5 } });
+    const { path } = makeExport(f.dir, { [f.acc[20].url]: { answer: "duvida", reason: "outro", reason_text: "?" } });
+    const { c } = await run(f.dir, path);
+    expect(c.visited).toEqual([`article|${f.spare[0].url}`]);
+    const eff = effectiveRecords(readJsonlSync(join(f.dir, "walked.jsonl")));
+    expect(eff.find((r) => r.category === "article" && r.url === f.bar.url)).toMatchObject({ outcome: "excluded", reason: "domain-category-quota" });
+  });
+
+  it("is a fixed point: replaying the result again visits nothing and writes nothing", async () => {
+    const f = await fixture({ barred: { after: 10, sameDomainAs: 5 } });
+    const { path } = makeExport(f.dir, { [f.acc[5].url]: { answer: "nao", reason: "login" }, [f.acc[8].url]: { answer: "nao", reason: "login" } });
+    await run(f.dir, path);
+    const before = readFileSync(join(f.dir, "walked.jsonl"), "utf8");
+    const c = new FakeCollector(f.dir);
+    await replayWalk(c, readJsonlSync(join(f.dir, "frame.jsonl")), effectiveRecords(readJsonlSync(join(f.dir, "walked.jsonl"))));
+    expect(c.visited).toEqual([]);
+    expect(readFileSync(join(f.dir, "walked.jsonl"), "utf8")).toBe(before);
+  });
+
+  it("an accepted page past the target is superseded as replay:target-reached, without fetching", async () => {
+    const f = await fixture({ article: 31, spare: 0 });
+    const c = new FakeCollector(f.dir);
+    const { events } = await replayWalk(c, readJsonlSync(join(f.dir, "frame.jsonl")), effectiveRecords(readJsonlSync(join(f.dir, "walked.jsonl"))));
+    // the 31st page is not an article any more, so it is a candidate of the SPA fallback pool, as in the sequential walk
+    expect(c.visited).toEqual([`spa|${f.acc[30].url}`]);
+    expect(events.filter((e) => e.type === "displaced").map((e) => [e.reason, e.url])).toEqual([["replay:target-reached", f.acc[30].url]]);
+    const rec = effectiveRecords(readJsonlSync(join(f.dir, "walked.jsonl"))).find((r) => r.url === f.acc[30].url && r.category === "article");
+    expect(rec).toMatchObject({ outcome: "excluded", reason: "replay:target-reached", replay: { kind: "displaced" } });
+  });
+
+  // The coordinator's invariant: "review applied afterwards" == "the same exclusions applied as a rule from the start".
+  // Synthetic frames with many domain collisions, pt pages, redirects to other domains and rejected pages; the walk
+  // below is the plain sequential walk (walkLoop) with the owner's URLs blocked from the beginning.
+  const synth = (seed) => {
+    let x = seed;
+    const rnd = () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
+    const rows = [];
+    for (const cat of ["article", "product", "docs", "forum", "landing"]) for (let i = 0; i < 70; i++) rows.push(row(cat, `https://d${Math.floor(rnd() * 55)}.example/${cat}/${i}`, null));
+    for (let i = 0; i < 8; i++) rows.push(row("spa", `https://sp${i}.example/app`, null, { spa_flag: true }));
+    return rows.map((r) => ({ ...r, domain: new URL(r.url).hostname }));
+  };
+  const acceptedSets = (dir) => {
+    const out = {};
+    for (const r of effectiveRecords(readJsonlSync(join(dir, "walked.jsonl")))) if (r.outcome === "accepted") (out[r.category] ??= []).push(r.url);
+    for (const k of Object.keys(out)) out[k].sort();
+    return out;
+  };
+  const CATS = ["article", "product", "docs", "forum", "landing", "spa"];
+
+  async function equalityCase(seed) {
+    const frame = synth(seed);
+    const mk = () => {
+      const d = tmp("gp-corpus-eq-");
+      writeFileSync(join(d, "frame.jsonl"), frame.map((r) => JSON.stringify(r)).join("\n") + "\n");
+      return d;
+    };
+    // frozen corpus: the plain walk
+    const A = mk();
+    const walkA = new FakeCollector(A, { wild: true });
+    await walkLoop(walkA, frame, CATS, { pauseMs: 0 });
+    await writeOutputs(A);
+    await createLock(A, { probeVersion: PROBE, commit: "test", now: new Date("2026-11-25T12:00:00Z") });
+    const recs0 = effectiveRecords(readJsonlSync(join(A, "walked.jsonl")));
+    const acc0 = recs0.filter((r) => r.outcome === "accepted");
+    expect(acc0.length).toBeGreaterThan(60);
+
+    // the owner excludes pages whose domain also appears in a candidate that was barred by quota (so something can reopen), plus a pt page and a spa page
+    const barredDomains = new Set(recs0.filter((r) => r.outcome === "excluded" && /quota/.test(r.reason)).map((r) => r.domain));
+    const picks = acc0.filter((r) => barredDomains.has(r.domain) || barredDomains.has(r.detail.group_key)).filter((_, i) => i % 3 === 0).slice(0, 6);
+    picks.push(acc0.find((r) => r.detail.lang === "pt" && !picks.includes(r)), acc0.find((r) => r.category === "spa" && !picks.includes(r)));
+    const E = picks.filter(Boolean);
+    expect(E.length).toBeGreaterThanOrEqual(3);
+
+    const { path } = makeExport(A, Object.fromEntries(E.map((r) => [r.url, { answer: "nao", reason: "categoria-errada" }])));
+    const { res } = await run(A, path, { wild: true });
+    expect(res.status).toBe("applied");
+
+    // the same exclusions as a rule from the start
+    const B = mk();
+    const walkB = new FakeCollector(B, { wild: true });
+    for (const r of E) walkB.state.blocked.add(r.url);
+    await walkLoop(walkB, frame, CATS, { pauseMs: 0 });
+
+    expect(acceptedSets(A)).toEqual(acceptedSets(B));
+    // the result obeys the quotas, and the new lock verifies
+    const st = WalkState.replay(effectiveRecords(readJsonlSync(join(A, "walked.jsonl"))));
+    for (const n of st.domainCategory.values()) expect(n).toBeLessThanOrEqual(1);
+    for (const n of st.domainTotal.values()) expect(n).toBeLessThanOrEqual(2);
+    expect(verifyLock(A)).toEqual([]);
+    expect(verifyLock(A, { lockName: LOCK_NAME })).toEqual([]);
+    // and applying the same review again changes nothing
+    const again = await run(A, path, { wild: true });
+    expect(again.res.status).toBe("already-applied");
+    return { reopened: res.reopened, displaced: res.displaced, excluded: E.length };
+  }
+
+  it("applying the exclusions afterwards equals a walk with them blocked from the start (4 synthetic corpora)", async () => {
+    let reopened = 0;
+    for (const seed of [1, 2, 3, 4]) reopened += (await equalityCase(seed)).reopened;
+    expect(reopened).toBeGreaterThan(0); // the reopening path was exercised, not just the trivial case
+  }, 120_000);
 });
 
 describe("saltSummary", () => {
