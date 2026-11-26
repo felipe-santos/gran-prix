@@ -5,33 +5,46 @@ import { writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { CATEGORIES } from "./config.mjs";
 import { readJsonlSync } from "./jsonl.mjs";
+import { latestLock, sha256File } from "./lock.mjs";
 import { firstTwenty } from "./report.mjs";
+import { REASONS, REVIEW_FORMAT } from "./review-format.mjs";
 import { effectiveRecords } from "./state.mjs";
+import { finalUrlOf, urlChanged, urlHints } from "./url-hints.mjs";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+/** JSON for an inline script (no `</script>` can come out of it). */
+const j = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 const SOURCE = { wcxb: "WCXB", webmainbench: "WebMainBench" };
 /** Exclusions that rest on one of the corpus heuristics (not on an HTTP/robots fact): the ones a human can disagree with. */
 export const isRuleDecided = (r) => r.outcome === "excluded" && /^(language:|out-of-scope-type$|personal-profile$|pii-evident$|adult-content$|flag:captcha$|flag:error-page$|flag:paywall$)/.test(r.reason);
 
 const ANSWERS = (kind) =>
   kind === "accepted"
-    ? [["", "(categoria correta?)"], ["sim", "sim"], ["nao", "não"], ["duvida", "dúvida"]]
+    ? [["", "(responda: a categoria está certa?)"], ["sim", "sim: a categoria está certa"], ["nao", "não: excluir"], ["duvida", "dúvida: conta como exclusão"]]
     : [["", "(exclusão correta?)"], ["sim", "sim, correta"], ["nao", "não, indevida"], ["duvida", "dúvida"]];
 
-function card(section, r, shotRel, lines, kind) {
+function card(section, r, shotRel, lines, kind, extra = {}) {
   const key = `${section}|${r.category}|${r.url}`;
   const img = shotRel ? `<a href="${esc(shotRel)}" target="_blank"><img loading="lazy" src="${esc(shotRel)}" alt="screenshot"></a>` : `<div class="noshot">sem screenshot</div>`;
   const opts = ANSWERS(kind).map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("");
-  return `<article class="card" data-key="${esc(key)}" data-section="${esc(section)}" data-url="${esc(r.url)}" data-category="${esc(r.category)}">
+  const attrs = Object.entries(extra.attrs ?? {}).map(([k, v]) => ` data-${k}="${esc(v)}"`).join("");
+  const why = kind === "accepted"
+    ? `<span class="whybox"><select class="why"><option value="">(motivo)</option>${REASONS.map(([v, t]) => `<option value="${v}">${esc(t)}</option>`).join("")}</select> <input class="why-text" type="text" placeholder="outro: descreva"></span>`
+    : "";
+  const urls = extra.urls ?? `<a class="url" href="${esc(r.url)}" target="_blank" rel="noreferrer noopener">${esc(r.url)}</a>`;
+  return `<article class="card" data-key="${esc(key)}" data-section="${esc(section)}" data-url="${esc(r.url)}" data-category="${esc(r.category)}"${attrs}>
   ${img}
-  <div class="meta"><span class="cat">${esc(r.category)}</span> <a class="url" href="${esc(r.url)}" target="_blank" rel="noreferrer noopener">${esc(r.url)}</a>
+  <div class="meta"><span class="cat">${esc(r.category)}</span> ${extra.badges ?? ""} ${urls}
   ${lines.map((l) => `<div class="line">${l}</div>`).join("\n  ")}
-  <select class="ans">${opts}</select> <input class="note" type="text" placeholder="nota (opcional)"></div>
+  <select class="ans">${opts}</select> ${why} <input class="note" type="text" placeholder="nota (opcional)"></div>
 </article>`;
 }
 
-/** Pure: records (effective walked records) -> html. `shot(r)` gives the screenshot path relative to the page, or null. */
-export function buildReviewHtml(records, shot = (r) => r.screenshot ?? null, generatedAt = new Date().toISOString()) {
+/**
+ * Pure: records (effective walked records) -> html. `shot(r)` gives the screenshot path relative to the page, or null.
+ * `lockCtx` = {name, sha256} of the lock in force: the export carries it so `apply-review` refuses a review made over another corpus.
+ */
+export function buildReviewHtml(records, shot = (r) => r.screenshot ?? null, generatedAt = new Date().toISOString(), lockCtx = {}) {
   const accepted = records.filter((r) => r.outcome === "accepted");
   const { any, flagged } = firstTwenty(records);
   const ruleDecided = records.filter(isRuleDecided).sort((a, b) => a.seq - b.seq);
@@ -43,10 +56,32 @@ export function buildReviewHtml(records, shot = (r) => r.screenshot ?? null, gen
       r.detail?.title ? `título: ${esc(r.detail.title)}` : "",
     ].filter(Boolean), "excluded");
 
+  const aids = (r) => {
+    const final = finalUrlOf(r);
+    return { final, sealed: final ? urlChanged(r.url, final) : false, hints: final ? urlHints(r.url, final) : [] };
+  };
+  const cardA = (r) => {
+    const { final, sealed, hints } = aids(r);
+    const badges = [sealed ? `<span class="seal" title="o host ou o path mudaram (host sem www., path sem / final)">URL final ≠ pedida</span>` : "", ...hints.map((h) => `<span class="hint" title="dica, não decisão">${esc(h.label)}</span>`)].join(" ");
+    const urls = `<div class="urls"><div><small>pedida</small><br><a class="url" href="${esc(r.url)}" target="_blank" rel="noreferrer noopener">${esc(r.url)}</a></div>
+  <div><small>final</small><br>${final ? `<a class="url${sealed ? " changed" : ""}" href="${esc(final)}" target="_blank" rel="noreferrer noopener">${esc(final)}</a>` : "n/d"}</div></div>`;
+    return card("A", r, shot(r), [`fonte: <b>${esc(SOURCE[r.source_dataset] ?? r.source_dataset)}</b> (${esc(r.source_type)}) · fase: ${esc(r.phase)}`, r.detail?.title ? `título: ${esc(r.detail.title)}` : "", `idioma: ${esc(r.detail?.lang)} · chars visíveis: ${esc(r.detail?.visible_chars)}`].filter(Boolean), "accepted", {
+      badges,
+      urls,
+      attrs: { snapshot: r.set_entry?.snapshot_id ?? "", seal: sealed ? "1" : "0", hints: hints.map((h) => h.kind).join(" ") },
+    });
+  };
+  const stat = accepted.map(aids);
+  const sealedN = stat.filter((x) => x.sealed).length;
+  const hintedN = stat.filter((x) => x.hints.length > 0).length;
+  const byKind = {};
+  for (const x of stat) for (const h of x.hints) byKind[h.kind] = (byKind[h.kind] ?? 0) + 1;
+  const kinds = Object.entries(byKind).map(([k, n]) => `${esc(k)} ${n}`).join(", ") || "nenhuma";
+
   const secA = CATEGORIES.map((c) => {
     const rows = accepted.filter((r) => r.category === c.name).sort((a, b) => a.seq - b.seq);
-    return `<h3 id="a-${c.name}">${esc(c.name)} <small>(${rows.length} de ${c.n})</small></h3><div class="grid">
-${rows.map((r) => card("A", r, shot(r), [`fonte: <b>${esc(SOURCE[r.source_dataset] ?? r.source_dataset)}</b> (${esc(r.source_type)}) · fase: ${esc(r.phase)}`, r.detail?.title ? `título: ${esc(r.detail.title)}` : "", `idioma: ${esc(r.detail?.lang)} · chars visíveis: ${esc(r.detail?.visible_chars)}`].filter(Boolean), "accepted")).join("\n")}
+    return `<h3 id="a-${c.name}">${esc(c.name)} <small>(${rows.length} de ${c.n})</small></h3><div class="grid wide">
+${rows.map(cardA).join("\n")}
 </div>`;
   }).join("\n");
 
@@ -65,9 +100,16 @@ h1{font-size:22px}h2{margin-top:36px;border-bottom:1px solid var(--line);padding
 .ans{margin-top:8px}.note{margin-top:8px;width:55%}.card.done{outline:2px solid #2da44e}.card.bad{outline:2px solid #cf222e}.card.maybe{outline:2px solid #bf8700}
 nav{position:sticky;top:0;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line);z-index:5}button{padding:4px 10px}
 code{background:var(--line);padding:0 4px;border-radius:3px}
+.grid.wide{grid-template-columns:repeat(auto-fill,minmax(420px,1fr))}.urls{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}.urls small{color:var(--mut)}
+.seal{background:#bf8700;color:#fff;border-radius:10px;padding:1px 8px;font-size:12px;font-weight:600}.hint{border:1px solid #bf8700;border-radius:10px;padding:0 7px;font-size:12px}
+a.url.changed{color:#cf222e}.hidden{display:none}.whybox{display:none}.card.bad .whybox,.card.maybe .whybox{display:inline}.why-text{width:40%}
+.sum{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:8px 12px}
 </style></head><body>
 <h1>Conferência do corpus dom-v0</h1>
-<p>Gerado em ${esc(generatedAt)}. Arquivo local (nunca publicado). Suas respostas ficam no navegador (localStorage) e saem em JSON pelo botão. Nada é decidido por esta página: ela só coleta o seu veredito.</p>
+<p>Gerado em ${esc(generatedAt)}. Arquivo local (nunca publicado). Suas respostas ficam no navegador (localStorage) e saem em JSON pelo botão. Nada é decidido por esta página: ela só coleta o seu veredito, e o <code>gp-corpus apply-review</code> o aplica pela regra do protocolo (exclui, repõe pela próxima da lista ordenada pela semente, gera um lock novo).</p>
+<div class="sum"><b>Seção A:</b> ${sealedN} de ${accepted.length} páginas aceitas têm o selo <span class="seal">URL final ≠ pedida</span> (o host ou o path mudaram; host sem <code>www.</code>, path sem <code>/</code> final); ${hintedN} têm alguma dica (${kinds}).
+ Dicas apontam, não decidem. <b>Dúvida conta como exclusão</b> (§2.1: páginas ambíguas são excluídas e registradas). <b>Toda página aceita precisa de resposta</b>: o <code>apply-review</code> recusa um export com página sem resposta (só passa com <code>--allow-partial</code>, que fica registrado). Faltam <b id="missing">${accepted.length}</b> de ${accepted.length}. Lock em vigor: <code>${esc(lockCtx.sha256 ?? "nenhum (rode gp-corpus lock)")}</code>.
+ <label><input type="checkbox" id="onlySeal"> só as com selo</label></div>
 <nav><button id="export">exportar JSON</button> <button id="clear">limpar respostas</button> <span id="count"></span>
  · <a href="#secA">A. Aceitas (${accepted.length})</a> · <a href="#secB">B. Primeiras 20 exclusões</a> · <a href="#secC">C. Decididas pela regra (${ruleDecided.length})</a></nav>
 <h2 id="secA">A. Aceitas <small>a categoria atribuída está certa pela URL e pelo screenshot?</small></h2>
@@ -84,24 +126,37 @@ ${ruleDecided.length ? ruleDecided.map((r) => excl("C", r)).join("\n") : "<p>nen
 </div>
 <script>
 (function(){
-  var KEY="gp-corpus-review-v0", cards=[].slice.call(document.querySelectorAll(".card"));
+  var KEY="gp-corpus-review-v0", FORMAT=${j(REVIEW_FORMAT)}, LOCK_NAME=${j(lockCtx.name ?? null)}, LOCK_SHA=${j(lockCtx.sha256 ?? null)};
+  var cards=[].slice.call(document.querySelectorAll(".card"));
   var store={}; try{store=JSON.parse(localStorage.getItem(KEY)||"{}");}catch(e){}
   function save(){try{localStorage.setItem(KEY,JSON.stringify(store));}catch(e){}}
-  function paint(c){var v=(store[c.dataset.key]||{}).answer||"";c.classList.toggle("done",v==="sim");c.classList.toggle("bad",v==="nao");c.classList.toggle("maybe",v==="duvida");}
-  function count(){var n=0;cards.forEach(function(c){if((store[c.dataset.key]||{}).answer)n++;});document.getElementById("count").textContent=n+" de "+cards.length+" respondidas";}
+  function isA(c){return c.dataset.section==="A";}
+  function ansOf(c){return (store[c.dataset.key]||{}).answer||"";}
+  function paint(c){var v=ansOf(c),explicit=!!(store[c.dataset.key]||{}).answer;c.classList.toggle("done",explicit&&v==="sim");c.classList.toggle("bad",v==="nao");c.classList.toggle("maybe",v==="duvida");}
+  function count(){var n=0,x=0,d=0,tot=0,a=0;cards.forEach(function(c){var v=(store[c.dataset.key]||{}).answer;if(v)n++;if(isA(c)){tot++;if(v)a++;if(v==="nao")x++;if(v==="duvida")d++;}});
+    document.getElementById("count").textContent=n+" de "+cards.length+" respondidas · seção A: "+a+" de "+tot+" respondidas, faltam "+(tot-a)+" · "+x+" não + "+d+" dúvida = "+(x+d)+" a excluir";
+    var m=document.getElementById("missing");if(m)m.textContent=String(tot-a);}
   cards.forEach(function(c){
-    var s=c.querySelector(".ans"), t=c.querySelector(".note"), cur=store[c.dataset.key]||{};
-    s.value=cur.answer||""; t.value=cur.note||""; paint(c);
-    function upd(){store[c.dataset.key]={answer:s.value,note:t.value};save();paint(c);count();}
-    s.addEventListener("change",upd); t.addEventListener("input",upd);
+    var s=c.querySelector(".ans"), t=c.querySelector(".note"), w=c.querySelector(".why"), wt=c.querySelector(".why-text"), cur=store[c.dataset.key]||{};
+    s.value=cur.answer||""; t.value=cur.note||""; if(w){w.value=cur.reason||"";wt.value=cur.reason_text||"";} paint(c);
+    function upd(){store[c.dataset.key]={answer:s.value,note:t.value,reason:w?w.value:"",reason_text:wt?wt.value:""};save();paint(c);count();}
+    s.addEventListener("change",upd); t.addEventListener("input",upd); if(w){w.addEventListener("change",upd);wt.addEventListener("input",upd);}
   });
   count();
+  document.getElementById("onlySeal").addEventListener("change",function(e){
+    cards.forEach(function(c){if(isA(c))c.classList.toggle("hidden",e.target.checked&&c.dataset.seal!=="1");});
+  });
   document.getElementById("export").addEventListener("click",function(){
-    var rows=cards.map(function(c){var a=store[c.dataset.key]||{};return {section:c.dataset.section,category:c.dataset.category,url:c.dataset.url,answer:a.answer||"",note:a.note||""};});
-    var blob=new Blob([JSON.stringify({exported_at:new Date().toISOString(),answers:rows},null,2)],{type:"application/json"});
+    var pages=[],checks=[];
+    cards.forEach(function(c){var a=store[c.dataset.key]||{};
+      if(isA(c)){var v=a.answer||"",no=(v!=="nao"&&v!=="duvida");pages.push({snapshot_id:c.dataset.snapshot,url:c.dataset.url,category:c.dataset.category,answer:v,reason:no?"":(a.reason||""),reason_text:no?"":(a.reason_text||""),note:a.note||""});}
+      else if(a.answer){checks.push({section:c.dataset.section,category:c.dataset.category,url:c.dataset.url,answer:a.answer,note:a.note||""});}
+    });
+    var out={format:FORMAT,exported_at:new Date().toISOString(),lock_name:LOCK_NAME,lock_sha256:LOCK_SHA,pages:pages,exclusion_checks:checks};
+    var blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
     var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="corpus-v0-review-answers.json";document.body.appendChild(a);a.click();a.remove();
   });
-  document.getElementById("clear").addEventListener("click",function(){if(confirm("Apagar todas as respostas?")){store={};save();cards.forEach(function(c){c.querySelector(".ans").value="";c.querySelector(".note").value="";paint(c);});count();}});
+  document.getElementById("clear").addEventListener("click",function(){if(confirm("Apagar todas as respostas?")){store={};save();cards.forEach(function(c){c.querySelector(".ans").value="";c.querySelector(".note").value="";var w=c.querySelector(".why");if(w){w.value="";c.querySelector(".why-text").value="";}paint(c);});count();}});
 })();
 </script></body></html>
 `;
@@ -109,8 +164,14 @@ ${ruleDecided.length ? ruleDecided.map((r) => excl("C", r)).join("\n") : "<p>nen
 
 export async function reviewPage(dataDir) {
   const records = effectiveRecords(readJsonlSync(join(dataDir, "walked.jsonl")));
-  const html = buildReviewHtml(records, (r) => (r.screenshot ? relative(dataDir, r.screenshot) : null));
+  const lock = latestLock(dataDir);
+  const lockCtx = lock ? { name: lock.name, sha256: sha256File(lock.path) } : {};
+  const html = buildReviewHtml(records, (r) => (r.screenshot ? relative(dataDir, r.screenshot) : null), new Date().toISOString(), lockCtx);
   await writeFile(join(dataDir, "review.html"), html);
-  const n = records.filter((r) => r.outcome === "accepted").length;
-  console.log(`review.html: ${n} accepted, ${records.filter(isRuleDecided).length} rule-decided exclusions`);
+  const accepted = records.filter((r) => r.outcome === "accepted");
+  const aids = accepted.map((r) => {
+    const f = finalUrlOf(r);
+    return { sealed: f ? urlChanged(r.url, f) : false, hints: f ? urlHints(r.url, f) : [] };
+  });
+  console.log(`review.html: ${accepted.length} accepted (${aids.filter((x) => x.sealed).length} with seal, ${aids.filter((x) => x.hints.length > 0).length} with hint), ${records.filter(isRuleDecided).length} rule-decided exclusions; lock ${lockCtx.name ?? "none"} ${lockCtx.sha256 ?? ""}`);
 }
