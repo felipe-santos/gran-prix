@@ -78,6 +78,7 @@ export function createAnswerStage(deps: QaStageDeps = REAL_DEPS): StagePlugin {
       if (bad !== undefined) throw new Error(`unknown arm "${bad}"`);
       if (new Set(arms).size !== arms.length) throw new Error("params.arms repeats an arm");
       const taskSet = assertValid("qa-task-set", single(ctx, "taskset").json());
+      if (taskSet.generator.model === model.model) throw new Error(`the generator and the respondent must differ (protocol 9): both are "${model.model}"`);
       const bundle = new MarkdownBundle(single(ctx, "markdown"));
       const dryRun = p.dry_run === true;
       const res = await runAnswers(

@@ -346,6 +346,20 @@ describe("the QA tool end to end (fake transport, 13 fixture pages)", () => {
     expect(t.calls).toHaveLength(0);
   });
 
+  it("a respondent equal to the generator is refused before any call", async () => {
+    const t = new QaFakeTransport(() => "x");
+    const ans = createQaStages({ provider: "fake", make: () => t }).find((s) => s.spec.impl === "ts:qa.answer@1.0.0")!;
+    const ctx = {
+      params: { respondent: "r1", llm: { model: taskSet.generator.model, prices: PRICES } },
+      inputs: { taskset: store.handle(out(run2, "taskset", "taskset"), "QaTaskSet"), markdown: store.handle(out(run2, "tokens", "markdown"), "Bundle") },
+      ledger: { reserve: () => { throw new Error("no call expected"); }, capUSD: 100, remainingUSD: () => 100 },
+      log: () => undefined,
+      dataDir: join(dir, "data"),
+    } as unknown as Parameters<typeof ans.run>[0];
+    await expect(ans.run(ctx)).rejects.toThrow(/generator and the respondent must differ/);
+    expect(t.calls).toHaveLength(0);
+  });
+
   it("the reports go into the decision script, which decides with the numbers it read from them", () => {
     const config = readJson<Record<string, unknown>>(join(ROOT, "pipelines/dom-v0-decision.json"));
     const e = evidenceOf(GO);
