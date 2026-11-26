@@ -200,6 +200,16 @@ with `@swc/core` 1.16 ("missing field `type`") and, with `@swc/core` held back, 
 `@gran-prix/contracts`' `DEFAULT_SPLIT_RANGES` (train 0-70, val 70-85, test 85-100) is a general default. The dom-v0
 protocol uses train [0,55), val [55,70), test [70,100): pass the ranges explicitly, as `tools/corpus` does.
 
+### The CDP CPU throttle understates long tasks, and the G5 latency is far over its limit
+
+`ts:measure.latency` throttles the CPU with `Emulation.setCPUThrottlingRate`. In the pinned Chromium a ~100 ms task gets
+only about 1.9-2.4x slower at rate 4, so the default `throttle: "cdp-rate"` gives optimistic numbers. The opt-in
+`throttle: "calibrated"` searches for the rate that makes a reference loop 4x slower, and it records the search plus a
+second check after the pages. On a shared, loaded machine that check drifts a lot (1.0x to 13.7x were seen), so a
+calibrated run counts only when both checks land within 4 +- 0.5. The most stable figure on such a machine is the 1x
+run times 4. Even after the probe and vectorize work (same output, about 25-30% faster), the 4x p95 is several hundred
+ms against the 150 ms limit. Static flattened pages are an approximation too: the real G5 is measured in the extension.
+
 ## Items closed
 
 Closed in stage E0 (2026-11):
